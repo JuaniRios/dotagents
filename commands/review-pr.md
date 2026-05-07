@@ -111,21 +111,246 @@ find "$repo_root" -maxdepth 3 \( -name "CLAUDE.md" -o -name "AGENTS.md" \) \
 
 Keep only the paths. Reviewers will read them themselves.
 
-## 6. Run cross-review
+## 6. Build the reviewer prompt
 
-Invoke the `cross-review` skill's orchestration, with these overrides:
+Save a shared reviewer prompt to `$out_dir/prompt.txt`. Every reviewer gets
+the same text, adapted from the `cross-review` skill's Step 3:
 
-- **Scope** is the fetched diff at `$out_dir/diff.patch` (not `gt parent..HEAD`).
-- **Repo root** is the local checkout (same as normal).
-- **Reviewers** get the head SHA in their prompt so they can read source at
-  that commit: "The PR was authored against commit `<head_sha>`. Read source
-  files via `git show $head_sha:<path>` — the working tree does not match."
-- **Aggregator** receives the PR metadata (title, author, description) as
-  extra context alongside the reviews.
+```
+You are a senior staff engineer performing a rigorous code review. You have
+15+ years of experience and a track record of catching subtle, high-impact
+bugs before they ship. You are thorough but not pedantic. You care about
+correctness, security, and maintainability — not style.
 
-All three reviewers run in parallel in a single message (Opus via Agent, Codex
-via `codex exec --sandbox read-only`, Gemini via `gemini -p --approval-mode plan`).
-Save raw outputs to `$out_dir/raw-{opus,codex,gemini}.md`.
+Your task: review the diff at {DIFF_PATH} against the project's conventions
+documented in these files:
+{PROJECT_DOCS_PATHS}
+
+The PR was authored against commit <head_sha>. Read source files via
+`git show <head_sha>:<path>` — the working tree does not match the PR.
+
+The diff is scoped to exactly the changes on this PR. Everything in the diff
+is in scope; everything outside is context you may read but should not review.
+
+Review priorities, in order:
+
+1. CORRECTNESS — bugs, logic errors, off-by-ones, race conditions, unhandled
+   errors, incorrect assumptions about external systems, broken invariants,
+   dead/unreachable code.
+2. SECURITY — injection, authentication/authorization gaps, secret handling,
+   input validation, unsafe deserialization, TOCTOU, privilege escalation.
+3. CONVENTION ADHERENCE — violations of rules explicitly stated in the
+   project docs above. Do NOT invent conventions the docs don't mandate.
+4. MAINTAINABILITY — only flag things that will actively hurt the next
+   engineer to touch this code. Not "could be slightly cleaner."
+5. TEST COVERAGE — missing coverage for new logic, tests that assert the
+   wrong thing, tests that document gaps instead of fixing them. Only flag if
+   the project's docs call test coverage out as required.
+
+What NOT to flag:
+
+- Style, formatting, import ordering, naming nits unless the project docs
+  explicitly mandate them.
+- Issues the compiler, linter, or typechecker would catch — assume CI exists.
+- Pre-existing issues on lines the diff did not modify.
+- Speculative "what if" concerns without a concrete trigger.
+- Missing documentation unless the docs mandate it.
+- Renamings, reorganizations, or "this could be factored differently"
+  suggestions.
+- Pedantic edge cases a senior engineer would not call out in a real PR.
+
+Output format — you MUST follow this exactly:
+
+For each finding, emit a section like:
+
+### <short title>
+
+- **Severity:** critical | high | medium | low | nit
+- **File:** <path>:<start-line>[-<end-line>]
+- **Category:** correctness | security | convention | maintainability | tests
+- **Finding:** <one-paragraph description of the issue>
+- **Why it matters:** <concrete consequence if not fixed>
+- **Recommended fix:** <specific, actionable fix — not "consider doing X">
+- **Confidence:** <0-100> — how confident you are this is a real issue (100 =
+  certain, 50 = plausible but unverified, 25 = hunch)
+
+Order findings by severity (critical first) then by file.
+
+If you find nothing worth raising, output exactly:
+
+### No findings
+
+<one-sentence justification of why you believe the diff is clean>
+
+Do not include preamble, disclaimers, emojis, or summaries. Start directly
+with the first finding (or "### No findings").
+```
+
+## 6a. Prepare Gemini file access
+
+Gemini CLI cannot read gitignored files or files outside the workspace.
+Copy the diff to Gemini's allowed temp directory:
+
+```bash
+gemini_tmp="$HOME/.gemini/tmp/$(basename "$repo_root")"
+mkdir -p "$gemini_tmp"
+cp "$out_dir/diff.patch" "$gemini_tmp/"
+```
+
+Reference `$gemini_tmp/diff.patch` in the Gemini prompt.
+
+## 6b. Spawn three reviewers in parallel
+
+**CRITICAL: Use three different model families, not three Claude variants.**
+Spawn all three in a **single message with three parallel tool calls**:
+
+1. **Claude Opus** — via the `Agent` tool (`model: "opus"`)
+2. **OpenAI Codex** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
+3. **Google Gemini** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
+
+### Reviewer 1 — Claude Opus (Agent tool)
+
+Use the `Agent` tool, `subagent_type: "general-purpose"`, `model: "opus"`.
+The prompt is the shared reviewer text above, plus:
+
+```
+The diff is at: $out_dir/diff.patch
+Project docs: <list of paths>
+Repo root: $repo_root
+
+Read the diff, read the project docs, and read any source files referenced
+by the diff that you need for context. Return your review in the format
+specified above — nothing else.
+```
+
+Write the Agent's output to `$out_dir/raw-opus.md` after it returns.
+
+### Reviewer 2 — OpenAI Codex (Bash)
+
+```bash
+cat "$out_dir/diff.patch" | codex exec \
+  --sandbox read-only \
+  -C "$repo_root" \
+  "The diff is provided on stdin. Analyze it as a code reviewer.
+
+$(cat "$out_dir/prompt.txt")
+
+Project docs: <list of paths>
+Repo root: $repo_root
+
+Read the project docs and any source files referenced by the diff that you
+need for context. Return your review in the format specified above —
+nothing else." \
+  > "$out_dir/codex-stdout.log" 2>&1
+codex_exit=$?
+
+# Extract review from Codex output.
+# Codex mixes file-read echoes and tool-call logs with the actual review.
+# The review appears after a bare "codex" marker line near the end.
+codex_marker=$(grep -n '^codex$' "$out_dir/codex-stdout.log" | tail -1 | cut -d: -f1)
+if [ -n "$codex_marker" ]; then
+  tail -n +$((codex_marker + 1)) "$out_dir/codex-stdout.log" \
+    | sed '/^tokens used$/,$d' \
+    > "$out_dir/raw-codex.md"
+fi
+```
+
+Notes:
+- `--sandbox read-only` is non-negotiable.
+- Diff is piped via stdin so codex has content without finding the file.
+- **Daily quota fallback**: If Codex fails with a daily limit error (look
+  for `rate_limit` or `quota` with reset in hours), retry once with `-m o3`.
+
+### Reviewer 3 — Google Gemini (Bash)
+
+Use the retry wrapper from the `cross-review` skill to handle rate limits:
+
+```bash
+gemini_with_fallback() {
+  local out_file="$1"
+  local log_file="$2"
+  shift 2
+  local max_wait=60 attempt=0 delay=5 elapsed=0
+  local model_args=("$@")
+
+  while [ "$elapsed" -lt "$max_wait" ]; do
+    attempt=$((attempt + 1))
+    gemini "${model_args[@]}" > "$log_file" 2>&1
+
+    if [ -f "$out_file" ] && [ "$(wc -l < "$out_file")" -gt 5 ]; then
+      return 0
+    fi
+    if grep -q '^### ' "$log_file" 2>/dev/null; then
+      sed -n '/^### /,$p' "$log_file" > "$out_file"
+      return 0
+    fi
+
+    if grep -q 'TerminalQuotaError\|quota will reset after [0-9]*h' "$log_file" 2>/dev/null; then
+      echo "Gemini daily quota exhausted. Falling back to gemini-2.5-flash..." >&2
+      local new_args=()
+      local skip_next=false
+      for arg in "${model_args[@]}"; do
+        if $skip_next; then new_args+=("gemini-2.5-flash"); skip_next=false
+        elif [ "$arg" = "-m" ]; then new_args+=("$arg"); skip_next=true
+        else new_args+=("$arg"); fi
+      done
+      gemini "${new_args[@]}" > "$log_file" 2>&1
+      if grep -q '^### ' "$log_file" 2>/dev/null; then
+        sed -n '/^### /,$p' "$log_file" > "$out_file"
+        return 0
+      fi
+      return 1
+    fi
+
+    if grep -q '429\|exhausted your capacity\|quota will reset after [0-9]*s\|quota will reset after [0-9]*m' "$log_file" 2>/dev/null; then
+      echo "Gemini attempt $attempt rate-limited, retrying in ${delay}s..." >&2
+      sleep "$delay"
+      elapsed=$((elapsed + delay))
+      delay=$((delay * 2))
+      [ "$delay" -gt 30 ] && delay=30
+    else
+      return "$gemini_exit"
+    fi
+  done
+  return 1
+}
+
+gemini_with_fallback "$out_dir/raw-gemini.md" "$out_dir/gemini-stdout.log" \
+  -m gemini-2.5-pro \
+  -p "$(cat "$out_dir/prompt.txt")
+
+The diff is at: $gemini_tmp/diff.patch
+Project docs: <list of paths>
+Repo root: $repo_root
+
+Read the diff, project docs, and any source files for context.
+Return your review in the format specified above — nothing else." \
+  --approval-mode plan \
+  -o text
+```
+
+### Output validation
+
+After all three finish, validate each output file:
+
+```bash
+validate_review() {
+  local file="$1" reviewer="$2"
+  [ ! -f "$file" ] && echo "$reviewer: no output" && return 1
+  [ "$(wc -l < "$file")" -lt 5 ] && echo "$reviewer: too short" && return 1
+  grep -q '^### ' "$file" || { echo "$reviewer: no findings headings"; return 1; }
+  return 0
+}
+```
+
+If a reviewer errors, record it as "reviewer errored" in the aggregator and
+continue. Two reviewers is still valuable. If all three error, stop.
+
+### Failure modes
+
+- **Codex or Gemini not installed**: Check `command -v codex gemini` before
+  spawning. If missing, warn the user and run with only the available
+  reviewers. A single-model review is better than aborting.
 
 ## 7. Aggregate with review-pr-specific output
 
