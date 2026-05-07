@@ -1,22 +1,23 @@
 ---
 name: cross-review
-description: Run a multi-agent code review of the current branch/PR. Spawns three senior-engineer reviewers in parallel (Claude Opus, OpenAI Codex, Google Gemini), aggregates their findings with a Claude Opus aggregator, saves a markdown report, and prints structured findings to the terminal. Use when the user asks for a "cross review", "multi-agent review", "second opinion", "code review of this PR/branch/stack", or any phrasing that implies reviewing the current change set before pushing or handing off.
-allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(gemini:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Read, Write, Agent
+description: Run a multi-agent code review of the current branch/PR. Spawns four senior-engineer reviewers in parallel (Claude Opus, Claude Sonnet, Claude Haiku, OpenAI Codex), aggregates their findings with a Claude Opus aggregator, saves a markdown report, and prints structured findings to the terminal. Use when the user asks for a "cross review", "multi-agent review", "second opinion", "code review of this PR/branch/stack", or any phrasing that implies reviewing the current change set before pushing or handing off.
+allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Read, Write, Agent
 ---
 
-# Cross-review — three reviewers in parallel
+# Cross-review — four reviewers in parallel
 
 Runs an exhaustive code review of the **current branch's diff against its
-graphite parent** using three independent frontier reasoning models, then
-aggregates their findings into one canonical report.
+graphite parent** using four independent model reviewers across two provider
+families, then aggregates their findings into one canonical report.
 
 Reviewers:
 
-1. **Claude Opus** (via the `Agent` tool, subagent_type `general-purpose`, model `opus`)
-2. **OpenAI Codex** (via `codex exec`, read-only sandbox)
-3. **Google Gemini 2.5 Pro** (via `gemini -m gemini-2.5-pro -p`, `--approval-mode plan`)
+1. **Claude Opus** (via the `Agent` tool, model `opus`)
+2. **Claude Sonnet** (via the `Agent` tool, model `sonnet`)
+3. **Claude Haiku** (via the `Agent` tool, model `haiku`)
+4. **OpenAI Codex** (via `codex exec`, read-only sandbox)
 
-Aggregator: a second **Claude Opus** Agent that merges, dedupes, scores, and
+Aggregator: a **Claude Opus** Agent that merges, dedupes, scores, and
 gives a personal opinion on each finding's validity.
 
 ---
@@ -28,11 +29,13 @@ Before invoking the reviewers, verify:
 1. You are in a git repo with a graphite-tracked branch. If the user is
    reviewing someone else's PR or a non-checked-out diff, they should use the
    `/review-pr` command instead, which supplies the diff externally.
-2. `codex`, `gemini`, and `gt` are on PATH:
+2. `codex` and `gt` are on PATH:
 
    ```bash
-   command -v codex gemini gt
+   command -v codex gt
    ```
+
+   If `codex` is missing, warn the user and proceed with Claude-only reviewers.
 
 3. The working tree is clean or stashed. A dirty tree pollutes the diff and
    confuses reviewers. If dirty, tell the user and stop.
@@ -156,19 +159,19 @@ Do not include preamble, disclaimers, emojis, or summaries. Start directly
 with the first finding (or "### No findings").
 ```
 
-Save this prompt to `$out_dir/prompt.txt` so all three reviewers read the same
+Save this prompt to `$out_dir/prompt.txt` so all four reviewers read the same
 text and you have a record of what was asked.
 
 ## Step 4 — Spawn reviewers in parallel
 
-All three reviewers must be spawned in a **single message with three parallel
-tool calls**. Do not run them sequentially — it wastes wall time and defeats
-the point of cross-review.
+All four reviewers must be spawned in a **single message with four parallel
+tool calls**. Do not run them sequentially.
 
-### Reviewer 1 — Claude Opus (Agent tool)
+### Reviewers 1-3 — Claude Opus, Sonnet, Haiku (Agent tool)
 
-Use the `Agent` tool, `subagent_type: "general-purpose"`, `model: "opus"`. The
-prompt is the senior-engineer text above, plus:
+Spawn three `Agent` tool calls, one per Claude model (`opus`, `sonnet`, `haiku`).
+Each uses `subagent_type: "general-purpose"`. The prompt is the shared
+senior-engineer text above, plus:
 
 ```
 The diff is at: {DIFF_PATH}
@@ -180,7 +183,10 @@ the diff that you need for context. Return your review in the format
 specified above — nothing else.
 ```
 
-### Reviewer 2 — OpenAI Codex (Bash)
+Write each Agent's output to `$out_dir/raw-opus.md`, `$out_dir/raw-sonnet.md`,
+and `$out_dir/raw-haiku.md` respectively.
+
+### Reviewer 4 — OpenAI Codex (Bash)
 
 ```bash
 cat "$out_dir/diff.patch" | codex exec \
@@ -227,139 +233,6 @@ Notes:
   `-m o3` as a cheaper fallback. Short rate limits (reset in seconds/minutes)
   should be retried with backoff, not model-switched.
 
-### Reviewer 3 — Google Gemini (Bash)
-
-Gemini's API has aggressive rate limits. Use a retry loop with exponential
-backoff (max 60 seconds total):
-
-```bash
-gemini_with_fallback() {
-  local out_file="$1"
-  local log_file="$2"
-  shift 2
-  local max_wait=60
-  local attempt=0
-  local delay=5
-  local elapsed=0
-  local model_args=("$@")
-
-  while [ "$elapsed" -lt "$max_wait" ]; do
-    attempt=$((attempt + 1))
-    gemini "${model_args[@]}" > "$log_file" 2>&1
-    gemini_exit=$?
-
-    # Success: check if findings were produced
-    if [ -f "$out_file" ] && [ "$(wc -l < "$out_file")" -gt 5 ]; then
-      return 0
-    fi
-    # Also check log for findings (Gemini may output to stdout, not file)
-    if grep -q '^### ' "$log_file" 2>/dev/null; then
-      sed -n '/^### /,$p' "$log_file" > "$out_file"
-      return 0
-    fi
-
-    # Check for DAILY quota exhaustion (reset in hours — NOT short rate limits)
-    # TerminalQuotaError with reset time in hours means daily limit, not transient.
-    if grep -q 'TerminalQuotaError\|quota will reset after [0-9]*h' "$log_file" 2>/dev/null; then
-      echo "Gemini daily quota exhausted. Falling back to gemini-2.5-flash..." >&2
-      # Replace the model arg and retry once with the cheaper model
-      local new_args=()
-      local skip_next=false
-      for arg in "${model_args[@]}"; do
-        if $skip_next; then
-          new_args+=("gemini-2.5-flash")
-          skip_next=false
-        elif [ "$arg" = "-m" ]; then
-          new_args+=("$arg")
-          skip_next=true
-        else
-          new_args+=("$arg")
-        fi
-      done
-      gemini "${new_args[@]}" > "$log_file" 2>&1
-      if grep -q '^### ' "$log_file" 2>/dev/null; then
-        sed -n '/^### /,$p' "$log_file" > "$out_file"
-        echo "(Gemini review produced via gemini-2.5-flash fallback)" >> "$out_file"
-        return 0
-      fi
-      return 1
-    fi
-
-    # Short rate limit (429 with reset in seconds/minutes) — retry with backoff
-    if grep -q '429\|exhausted your capacity\|quota will reset after [0-9]*s\|quota will reset after [0-9]*m' "$log_file" 2>/dev/null; then
-      echo "Gemini attempt $attempt rate-limited, retrying in ${delay}s..." >&2
-      sleep "$delay"
-      elapsed=$((elapsed + delay))
-      delay=$((delay * 2))
-      [ "$delay" -gt 30 ] && delay=30
-    else
-      # Non-rate-limit failure — don't retry
-      return "$gemini_exit"
-    fi
-  done
-  echo "Gemini exhausted retry budget (${max_wait}s)" >&2
-  return 1
-}
-
-gemini_with_fallback "$out_dir/raw-gemini.md" "$out_dir/gemini-stdout.log" \
-  -m gemini-2.5-pro \
-  -p "$(cat "$out_dir/prompt.txt")
-
-The diff is at: $gemini_tmp/diff.patch
-Project docs: <list of paths>
-Repo root: $repo_root
-
-Read the diff, project docs, and any source files for context.
-Return your review in the format specified above — nothing else." \
-  --approval-mode plan \
-  -o text
-```
-
-Notes:
-- `--approval-mode plan` keeps gemini read-only.
-- `-o text` forces plain text output (not interactive TUI).
-- The retry loop handles 429 rate limits and `MODEL_CAPACITY_EXHAUSTED` errors
-  with exponential backoff, giving up after 60 seconds total.
-- Like codex, the prompt instructs gemini to write findings to the output file.
-- Gemini CLI has its own internal retry/backoff for 429s. Our wrapper adds an
-  outer retry that checks if the output file was actually written.
-- If Gemini is capacity-exhausted across all retries, record it as "reviewer
-  errored" and continue with Opus + Codex. Two reviewers is still valuable.
-
-**CRITICAL: Gemini file access restrictions.** Gemini CLI cannot read files that
-are (a) gitignored or (b) outside the workspace. Since `claude-local-ctx/` is
-gitignored and `/tmp/` is outside workspace, neither works for diff files.
-
-**Solution**: Copy diff files to Gemini's allowed temp directory before launching:
-
-```bash
-gemini_tmp="$HOME/.gemini/tmp/$(basename "$repo_root")"
-mkdir -p "$gemini_tmp"
-cp "$out_dir"/diff.patch "$gemini_tmp/"
-# For chunked reviews, also copy chunk patches
-cp "$out_dir"/chunk-*.patch "$gemini_tmp/" 2>/dev/null
-```
-
-Then reference `$gemini_tmp/diff.patch` (or `$gemini_tmp/chunk-*.patch`) in the
-Gemini prompt. Gemini can read from its own temp directory.
-
-**Gemini output extraction**: Gemini outputs review findings to stdout (it
-cannot write to gitignored dirs either). Extract findings from the log by
-finding the first `### ` heading:
-
-```bash
-if grep -q '^### ' "$log_file"; then
-  sed -n '/^### /,$p' "$log_file" > "$out_dir/raw-gemini.md"
-fi
-```
-
-**Stagger launches**: When running multiple Gemini instances (e.g., chunked
-reviews), stagger them by 10 seconds to avoid simultaneous rate-limit hits.
-Gemini 2.5 Pro has aggressive per-minute quotas; 3-5s gaps are not enough.
-Launch the first immediately, then `sleep 10` between each subsequent one.
-For 4+ chunks, consider running Gemini chunks sequentially rather than in
-parallel — the rate limits make parallel execution counterproductive.
-
 ### Output validation
 
 After all reviewers finish, verify each output file contains actual review
@@ -395,17 +268,14 @@ file contents to the output file (common with Codex), do not use that output.
 
 In a single Claude message, issue:
 
-1. `Agent` call for Opus (one per chunk if chunked — see below)
-2. `Bash` call for codex (use `run_in_background: true`)
-3. `Bash` call for gemini (use `run_in_background: true`)
+1. `Agent` call for Opus
+2. `Agent` call for Sonnet
+3. `Agent` call for Haiku
+4. `Bash` call for Codex (use `run_in_background: true`, `timeout: 600000`)
 
 Claude's runtime parallelizes sibling tool calls in a single assistant message,
-so all three run concurrently. Use long timeouts (`timeout: 600000`, 10 min)
-on the bash calls — reasoning models are slow. Use `run_in_background: true` on
-the Bash calls so Claude can proceed when they finish rather than blocking.
-
-The Opus result comes back as the Agent tool result. Write it to
-`$out_dir/raw-opus.md` (or `raw-opus-{chunk}.md` if chunked) after it returns.
+so all four run concurrently. Use `run_in_background: true` on the Bash call
+so Claude can proceed when it finishes rather than blocking.
 
 ## Step 4a — Chunk splitting for large diffs
 
@@ -431,9 +301,9 @@ each reviewer within quality range. Each chunk should be under ~3,500 lines.
 
 ### Chunked reviewer dispatch
 
-With N chunks, spawn **3 x N** reviewers (one per model per chunk):
-- N Opus Agent calls (one per chunk, all in `run_in_background: true`)
-- One Bash call per model that loops over chunks (Codex and Gemini)
+With N chunks, spawn **4 x N** reviewers (one per model per chunk):
+- N Agent calls per Claude model (Opus, Sonnet, Haiku)
+- One Bash call for Codex that loops over chunks
 
 Each reviewer gets the chunk-specific diff path and the same prompt. Output
 files are named `raw-{model}-{chunk}.md` (e.g., `raw-opus-a.md`,
@@ -455,20 +325,21 @@ list all raw review files and note which chunk each covers.
 
 ## Step 5 — Aggregate
 
-Spawn a **fourth** Agent call — another Claude Opus — to aggregate. This must
+Spawn a **fifth** Agent call — another Claude Opus — to aggregate. This must
 be a fresh Agent so it has no context pollution from the reviewers.
 
 Aggregator prompt (paste verbatim):
 
 ```
-You are a senior staff engineer aggregating three independent code reviews of
+You are a senior staff engineer aggregating four independent code reviews of
 the same diff. Your job is to produce a single canonical review report that
 is more reliable than any individual reviewer.
 
-You have three raw reviews:
-- {OPUS_PATH}  (Claude Opus)
-- {CODEX_PATH} (OpenAI Codex)
-- {GEMINI_PATH} (Google Gemini)
+You have four raw reviews:
+- {OPUS_PATH}    (Claude Opus)
+- {SONNET_PATH}  (Claude Sonnet)
+- {HAIKU_PATH}   (Claude Haiku)
+- {CODEX_PATH}   (OpenAI Codex)
 
 And the diff itself at:
 - {DIFF_PATH}
@@ -483,8 +354,8 @@ Do this:
 3. For each distinct finding across the three reviews:
    a. Merge duplicates — findings that describe the same underlying issue
       should become one entry, even if worded differently.
-   b. Record which reviewer(s) raised it: [opus], [codex], [gemini], or a
-      combination like [opus, codex].
+   b. Record which reviewer(s) raised it: [opus], [sonnet], [haiku],
+      [codex], or a combination like [opus, sonnet].
    c. Verify the finding by reading the relevant code. For each one, form
       YOUR OWN opinion on whether it is:
          - valid: a real issue that should be fixed
@@ -506,7 +377,7 @@ Output format:
 **Parent:** {PARENT_SHA} ({PARENT_BRANCH})
 **Files changed:** {N}
 **Diff size:** {LOC} lines
-**Reviewers:** Claude Opus, OpenAI Codex, Google Gemini
+**Reviewers:** Claude Opus, Claude Sonnet, Claude Haiku, OpenAI Codex
 **Aggregator:** Claude Opus
 
 ## Summary
@@ -527,7 +398,7 @@ For each finding:
 - **Category:** correctness | security | convention | maintainability | tests
 - **Validity:** valid | likely | disputed | invalid | out-of-scope
 - **Confidence:** <0-100>
-- **Found by:** [opus], [codex], [gemini], or a list
+- **Found by:** [opus], [sonnet], [haiku], [codex], or a list
 - **Issue:** <one paragraph>
 - **Why it matters:** <concrete consequence>
 - **Recommended fix:** <specific action>
@@ -619,10 +490,10 @@ claude-local-ctx/reviews/<ts>-<branch>/
 ├── files.txt           # file change manifest
 ├── prompt.txt          # the reviewer prompt (for reproducibility)
 ├── raw-opus.md         # Claude Opus's raw review
+├── raw-sonnet.md       # Claude Sonnet's raw review
+├── raw-haiku.md        # Claude Haiku's raw review
 ├── raw-codex.md        # OpenAI Codex's raw review
-├── raw-gemini.md       # Google Gemini's raw review
 ├── codex-stdout.log    # Codex session log (for debugging)
-├── gemini-stdout.log   # Gemini session log (for debugging)
 └── review.md           # the aggregated canonical report
 ```
 
@@ -637,12 +508,13 @@ claude-local-ctx/reviews/<ts>-<branch>/
 ├── prompt.txt
 ├── raw-opus-a.md           # per-chunk per-model raw reviews
 ├── raw-opus-b.md
+├── raw-sonnet-a.md
+├── raw-sonnet-b.md
+├── raw-haiku-a.md
+├── raw-haiku-b.md
 ├── raw-codex-a.md
 ├── raw-codex-b.md
-├── raw-gemini-a.md
-├── raw-gemini-b.md
 ├── codex-stdout.log
-├── gemini-stdout.log
 └── review.md               # single aggregated report across all chunks
 ```
 
@@ -662,8 +534,7 @@ and for tools like `/review-loop` to re-read without re-running reviewers.
 
 1. Always diff against `gt parent`, never against trunk on a stacked branch.
 2. Spawn all reviewers in a single message with parallel tool calls.
-3. Use `--sandbox workspace-write` for codex and `--approval-mode plan` for
-   gemini — non-negotiable.
+3. Use `--sandbox read-only` for codex — non-negotiable.
 4. The aggregator is a separate Agent call, never reuse the main session to
    aggregate (context pollution).
 5. Never fabricate findings when a reviewer errors — record the failure.
@@ -673,5 +544,5 @@ and for tools like `/review-loop` to re-read without re-running reviewers.
 8. Validate reviewer output files before passing to aggregator — reject files
    that contain dumped file contents instead of review analysis.
 9. For diffs over 3,500 lines, chunk by domain and run reviewers per-chunk.
-10. Gemini calls must use the retry-with-backoff wrapper (max 60s) to handle
-    429 rate limits.
+10. If Codex is unavailable, proceed with Claude-only reviewers rather than
+    aborting.

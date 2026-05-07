@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(gemini:*), Bash(linear:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Read, Write, Edit, Agent, Skill, AskUserQuestion
+allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Read, Write, Edit, Agent, Skill, AskUserQuestion
 description: Cross-review the current branch, auto-fix findings, and re-review until clean. Loops automatically — only stops for user input on disputed findings or massive changes.
 ---
 
@@ -19,7 +19,7 @@ Follow these steps precisely.
 Invoke the `cross-review` skill. When it finishes you will have:
 
 - `$out_dir/review.md` — the canonical aggregated report
-- `$out_dir/raw-{opus,codex,gemini}.md` — raw reviewer outputs
+- `$out_dir/raw-{opus,sonnet,haiku,codex}.md` — raw reviewer outputs
 - A printed terminal summary
 
 Record `$out_dir` — you'll reference the report again.

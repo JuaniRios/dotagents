@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(codex:*), Bash(gemini:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Bash(grep:*), Read, Write, Agent, Skill
-description: Cross-review a pull request by number or URL without checking it out. Runs three reviewers in parallel, aggregates, and starts a conversation so you can decide which findings (if any) to comment on the PR.
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(codex:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Bash(grep:*), Read, Write, Agent, Skill
+description: Cross-review a pull request by number or URL without checking it out. Runs four reviewers in parallel (Opus, Sonnet, Haiku, Codex), aggregates, and starts a conversation so you can decide which findings (if any) to comment on the PR.
 argument-hint: <pr-number | pr-url>
 ---
 
@@ -186,31 +186,19 @@ Do not include preamble, disclaimers, emojis, or summaries. Start directly
 with the first finding (or "### No findings").
 ```
 
-## 6a. Prepare Gemini file access
+## 6a. Spawn four reviewers in parallel
 
-Gemini CLI cannot read gitignored files or files outside the workspace.
-Copy the diff to Gemini's allowed temp directory:
-
-```bash
-gemini_tmp="$HOME/.gemini/tmp/$(basename "$repo_root")"
-mkdir -p "$gemini_tmp"
-cp "$out_dir/diff.patch" "$gemini_tmp/"
-```
-
-Reference `$gemini_tmp/diff.patch` in the Gemini prompt.
-
-## 6b. Spawn three reviewers in parallel
-
-**CRITICAL: Use three different model families, not three Claude variants.**
-Spawn all three in a **single message with three parallel tool calls**:
+Spawn all four in a **single message with four parallel tool calls**:
 
 1. **Claude Opus** — via the `Agent` tool (`model: "opus"`)
-2. **OpenAI Codex** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
-3. **Google Gemini** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
+2. **Claude Sonnet** — via the `Agent` tool (`model: "sonnet"`)
+3. **Claude Haiku** — via the `Agent` tool (`model: "haiku"`)
+4. **OpenAI Codex** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
 
-### Reviewer 1 — Claude Opus (Agent tool)
+### Reviewers 1-3 — Claude Opus, Sonnet, Haiku (Agent tool)
 
-Use the `Agent` tool, `subagent_type: "general-purpose"`, `model: "opus"`.
+Spawn three `Agent` tool calls, one per Claude model (`opus`, `sonnet`,
+`haiku`). Each uses `subagent_type: "general-purpose"`.
 The prompt is the shared reviewer text above, plus:
 
 ```
@@ -223,9 +211,10 @@ by the diff that you need for context. Return your review in the format
 specified above — nothing else.
 ```
 
-Write the Agent's output to `$out_dir/raw-opus.md` after it returns.
+Write each Agent's output to `$out_dir/raw-opus.md`, `$out_dir/raw-sonnet.md`,
+and `$out_dir/raw-haiku.md` respectively.
 
-### Reviewer 2 — OpenAI Codex (Bash)
+### Reviewer 4 — OpenAI Codex (Bash)
 
 ```bash
 cat "$out_dir/diff.patch" | codex exec \
@@ -260,74 +249,6 @@ Notes:
 - Diff is piped via stdin so codex has content without finding the file.
 - **Daily quota fallback**: If Codex fails with a daily limit error (look
   for `rate_limit` or `quota` with reset in hours), retry once with `-m o3`.
-
-### Reviewer 3 — Google Gemini (Bash)
-
-Use the retry wrapper from the `cross-review` skill to handle rate limits:
-
-```bash
-gemini_with_fallback() {
-  local out_file="$1"
-  local log_file="$2"
-  shift 2
-  local max_wait=60 attempt=0 delay=5 elapsed=0
-  local model_args=("$@")
-
-  while [ "$elapsed" -lt "$max_wait" ]; do
-    attempt=$((attempt + 1))
-    gemini "${model_args[@]}" > "$log_file" 2>&1
-
-    if [ -f "$out_file" ] && [ "$(wc -l < "$out_file")" -gt 5 ]; then
-      return 0
-    fi
-    if grep -q '^### ' "$log_file" 2>/dev/null; then
-      sed -n '/^### /,$p' "$log_file" > "$out_file"
-      return 0
-    fi
-
-    if grep -q 'TerminalQuotaError\|quota will reset after [0-9]*h' "$log_file" 2>/dev/null; then
-      echo "Gemini daily quota exhausted. Falling back to gemini-2.5-flash..." >&2
-      local new_args=()
-      local skip_next=false
-      for arg in "${model_args[@]}"; do
-        if $skip_next; then new_args+=("gemini-2.5-flash"); skip_next=false
-        elif [ "$arg" = "-m" ]; then new_args+=("$arg"); skip_next=true
-        else new_args+=("$arg"); fi
-      done
-      gemini "${new_args[@]}" > "$log_file" 2>&1
-      if grep -q '^### ' "$log_file" 2>/dev/null; then
-        sed -n '/^### /,$p' "$log_file" > "$out_file"
-        return 0
-      fi
-      return 1
-    fi
-
-    if grep -q '429\|exhausted your capacity\|quota will reset after [0-9]*s\|quota will reset after [0-9]*m' "$log_file" 2>/dev/null; then
-      echo "Gemini attempt $attempt rate-limited, retrying in ${delay}s..." >&2
-      sleep "$delay"
-      elapsed=$((elapsed + delay))
-      delay=$((delay * 2))
-      [ "$delay" -gt 30 ] && delay=30
-    else
-      return "$gemini_exit"
-    fi
-  done
-  return 1
-}
-
-gemini_with_fallback "$out_dir/raw-gemini.md" "$out_dir/gemini-stdout.log" \
-  -m gemini-2.5-pro \
-  -p "$(cat "$out_dir/prompt.txt")
-
-The diff is at: $gemini_tmp/diff.patch
-Project docs: <list of paths>
-Repo root: $repo_root
-
-Read the diff, project docs, and any source files for context.
-Return your review in the format specified above — nothing else." \
-  --approval-mode plan \
-  -o text
-```
 
 ### Output validation
 
