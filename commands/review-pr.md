@@ -111,10 +111,23 @@ find "$repo_root" -maxdepth 3 \( -name "CLAUDE.md" -o -name "AGENTS.md" \) \
 
 Keep only the paths. Reviewers will read them themselves.
 
-## 6. Build the reviewer prompt
+## 6. Build the reviewer prompts
 
-Save a shared reviewer prompt to `$out_dir/prompt.txt`. Every reviewer gets
-the same text, adapted from the `cross-review` skill's Step 3:
+Build per-reviewer prompts following the `cross-review` skill's Step 3
+structure: a **shared base prompt** plus a **per-reviewer focus paragraph**.
+Each reviewer gets a different focus to maximize coverage diversity:
+
+- **Opus A**: concurrency & async ordering
+- **Opus B**: goal evaluation & domain logic (adversarial)
+- **Sonnet**: error handling & failure modes
+- **Codex A**: edge cases & boundary conditions
+- **Codex B**: broad general sweep
+
+See the cross-review skill for the exact focus paragraph text.
+
+Save each to `$out_dir/prompt-{reviewer}.txt`.
+
+The shared base prompt (adapted for PR review context):
 
 ```
 You are a senior staff engineer performing a rigorous code review. You have
@@ -132,18 +145,28 @@ The PR was authored against commit <head_sha>. Read source files via
 The diff is scoped to exactly the changes on this PR. Everything in the diff
 is in scope; everything outside is context you may read but should not review.
 
+The PR author describes the change as:
+{PR_DESCRIPTION}
+
+Evaluate whether the implementation actually delivers on this description.
+If the PR claims to prevent event loss, verify that it does. If it claims
+idempotency, check the dedup path. Do not take the description at face value.
+
 Review priorities, in order:
 
 1. CORRECTNESS — bugs, logic errors, off-by-ones, race conditions, unhandled
    errors, incorrect assumptions about external systems, broken invariants,
    dead/unreachable code.
-2. SECURITY — injection, authentication/authorization gaps, secret handling,
-   input validation, unsafe deserialization, TOCTOU, privilege escalation.
-3. CONVENTION ADHERENCE — violations of rules explicitly stated in the
+2. CONCURRENCY & ORDERING — async operation sequencing, setup step ordering,
+   TOCTOU between async calls, assumptions about which operation completes
+   first, whether concurrent writers can produce inconsistent state.
+3. SECURITY — injection, authentication/authorization gaps, secret handling,
+   input validation, unsafe deserialization, privilege escalation.
+4. CONVENTION ADHERENCE — violations of rules explicitly stated in the
    project docs above. Do NOT invent conventions the docs don't mandate.
-4. MAINTAINABILITY — only flag things that will actively hurt the next
+5. MAINTAINABILITY — only flag things that will actively hurt the next
    engineer to touch this code. Not "could be slightly cleaner."
-5. TEST COVERAGE — missing coverage for new logic, tests that assert the
+6. TEST COVERAGE — missing coverage for new logic, tests that assert the
    wrong thing, tests that document gaps instead of fixing them. Only flag if
    the project's docs call test coverage out as required.
 
@@ -153,7 +176,6 @@ What NOT to flag:
   explicitly mandate them.
 - Issues the compiler, linter, or typechecker would catch — assume CI exists.
 - Pre-existing issues on lines the diff did not modify.
-- Speculative "what if" concerns without a concrete trigger.
 - Missing documentation unless the docs mandate it.
 - Renamings, reorganizations, or "this could be factored differently"
   suggestions.

@@ -89,8 +89,13 @@ themselves) — don't inline them into the prompt, they're often 20k+ chars.
 
 ## Step 3 — The reviewer prompt
 
-Every reviewer gets the same system prompt. Paste it verbatim into each
-reviewer invocation, with the diff path and project-docs paths substituted:
+Every reviewer gets a **shared base prompt** plus a **per-reviewer focus
+paragraph** that biases each toward a different class of bugs. This ensures
+systematic coverage rather than relying on stochastic sampling alone.
+
+### Base prompt
+
+Save this to `$out_dir/prompt-base.txt`:
 
 ```
 You are a senior staff engineer performing a rigorous code review. You have
@@ -106,18 +111,28 @@ The diff is scoped to exactly the changes on the current PR (parent..HEAD on a
 graphite stack). Everything in the diff is in scope; everything outside is
 context you may read but should not review.
 
+The PR author describes the change as:
+{PR_DESCRIPTION}
+
+Evaluate whether the implementation actually delivers on this description.
+If the PR claims to prevent event loss, verify that it does. If it claims
+idempotency, check the dedup path. Do not take the description at face value.
+
 Review priorities, in order:
 
 1. CORRECTNESS — bugs, logic errors, off-by-ones, race conditions, unhandled
    errors, incorrect assumptions about external systems, broken invariants,
    dead/unreachable code.
-2. SECURITY — injection, authentication/authorization gaps, secret handling,
-   input validation, unsafe deserialization, TOCTOU, privilege escalation.
-3. CONVENTION ADHERENCE — violations of rules explicitly stated in the
+2. CONCURRENCY & ORDERING — async operation sequencing, setup step ordering,
+   TOCTOU between async calls, assumptions about which operation completes
+   first, whether concurrent writers can produce inconsistent state.
+3. SECURITY — injection, authentication/authorization gaps, secret handling,
+   input validation, unsafe deserialization, privilege escalation.
+4. CONVENTION ADHERENCE — violations of rules explicitly stated in the
    project docs above. Do NOT invent conventions the docs don't mandate.
-4. MAINTAINABILITY — only flag things that will actively hurt the next
+5. MAINTAINABILITY — only flag things that will actively hurt the next
    engineer to touch this code. Not "could be slightly cleaner."
-5. TEST COVERAGE — missing coverage for new logic, tests that assert the
+6. TEST COVERAGE — missing coverage for new logic, tests that assert the
    wrong thing, tests that document gaps instead of fixing them. Only flag if
    the project's docs call test coverage out as required.
 
@@ -127,7 +142,6 @@ What NOT to flag:
   explicitly mandate them.
 - Issues the compiler, linter, or typechecker would catch — assume CI exists.
 - Pre-existing issues on lines the diff did not modify.
-- Speculative "what if" concerns without a concrete trigger.
 - Missing documentation unless the docs mandate it.
 - Renamings, reorganizations, or "this could be factored differently"
   suggestions.
@@ -160,8 +174,59 @@ Do not include preamble, disclaimers, emojis, or summaries. Start directly
 with the first finding (or "### No findings").
 ```
 
-Save this prompt to `$out_dir/prompt.txt` so all four reviewers read the same
-text and you have a record of what was asked.
+### Per-reviewer focus paragraphs
+
+Append one of these to the base prompt for each reviewer. The focus
+paragraph biases the reviewer toward a specific class of bugs without
+restricting what they can find — it just tells them where to look hardest.
+
+**Opus A — Concurrency & async ordering:**
+```
+YOUR FOCUS: Pay special attention to the ordering of async operations
+during setup, teardown, and reconnection. When two async steps happen in
+sequence (subscribe then query, or query then subscribe), consider what
+happens if the world changes between them. Look for TOCTOU gaps in async
+setup sequences, concurrent writers to shared state, and assumptions about
+which operation completes first.
+```
+
+**Opus B — Goal evaluation & domain logic:**
+```
+YOUR FOCUS: Read the PR description carefully, then evaluate whether the
+implementation actually achieves what it claims. If the PR says "events
+are never lost," find a scenario where they could be. If it says
+"checkpoint only advances safely," find a case where it doesn't. Be
+adversarial about the stated goals — your job is to find the gap between
+intent and implementation.
+```
+
+**Sonnet — Error handling & failure modes:**
+```
+YOUR FOCUS: Trace every error path and failure mode. What happens when a
+database write fails mid-operation? When a background job exhausts its
+retries? When a network call times out during a multi-step process? Look
+for silent failures, missing error propagation, and recovery paths that
+leave the system in an inconsistent state.
+```
+
+**Codex A — Edge cases & boundary conditions:**
+```
+YOUR FOCUS: Look for edge cases at boundaries. What happens at block 0?
+When a range is empty? When both inputs are equal? When an optional value
+is None for the first time? When a counter overflows? Find the inputs
+that the author probably didn't test.
+```
+
+**Codex B — Broad general sweep:**
+```
+YOUR FOCUS: Do a broad, unbiased review. Don't focus on any particular
+category — instead, try to find anything the other reviewers might miss.
+Look at the change holistically: does the overall design make sense? Are
+there interactions between components that could produce surprising
+behavior? Are there implicit assumptions that aren't documented?
+```
+
+Save each complete prompt (base + focus) to `$out_dir/prompt-{reviewer}.txt`.
 
 ## Step 4 — Spawn reviewers in parallel
 
@@ -171,8 +236,14 @@ tool calls**. Do not run them sequentially.
 ### Reviewers 1-3 — Claude Opus A, Opus B, Sonnet (Agent tool)
 
 Spawn three `Agent` tool calls: two with `model: "opus"`, one with
-`model: "sonnet"`. Each uses `subagent_type: "general-purpose"`. The prompt
-is the shared senior-engineer text above, plus:
+`model: "sonnet"`. Each uses `subagent_type: "general-purpose"`. Each
+gets its own prompt (base + focus paragraph from Step 3):
+
+- **Opus A**: `$out_dir/prompt-opus-a.txt` (concurrency & async ordering)
+- **Opus B**: `$out_dir/prompt-opus-b.txt` (goal evaluation & domain logic)
+- **Sonnet**: `$out_dir/prompt-sonnet.txt` (error handling & failure modes)
+
+Plus the usual suffix:
 
 ```
 The diff is at: {DIFF_PATH}
@@ -187,25 +258,22 @@ specified above — nothing else.
 Write each Agent's output to `$out_dir/raw-opus-a.md`,
 `$out_dir/raw-opus-b.md`, and `$out_dir/raw-sonnet.md` respectively.
 
-The two Opus instances run the same model at the same effort level — stochastic
-sampling means they will catch different things, which is the point of running
-two instances.
-
 ### Reviewers 4-5 — Codex gpt-5.5 A, Codex gpt-5.5 B (Bash)
 
 Spawn two parallel `Bash` calls (both with `run_in_background: true`,
 `timeout: 600000`). Both use `-m gpt-5.5`:
 
 ```bash
-# Run for each instance: A and B
+# Run for each instance: A (edge cases) and B (broad sweep).
 # Replace $INSTANCE accordingly (a or b).
+# Each gets its own prompt file: prompt-codex-a.txt or prompt-codex-b.txt
 cat "$out_dir/diff.patch" | codex exec \
   --sandbox read-only \
   -m gpt-5.5 \
   -C "$repo_root" \
   "The diff is provided on stdin. Analyze it as a code reviewer.
 
-$(cat "$out_dir/prompt.txt")
+$(cat "$out_dir/prompt-codex-${INSTANCE}.txt")
 
 Project docs: <list of paths>
 Repo root: $repo_root
