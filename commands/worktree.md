@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(git:*), Bash(gt:*), Bash(rm:*), Bash(mkdir:*), Bash(basename:*), Bash(ls:*), Bash(test:*), Bash(cat:*), Bash(wc:*), Bash(shuf:*), Bash(printf:*), Bash(direnv:*), Read
-description: Create or remove a git worktree for the current repo. Creates worktrees in ../<repo>-worktrees/<adjective-noun> detached at trunk, with optimized submodule init. Use /worktree to create, /worktree remove <name> to delete.
+description: Create or remove a git worktree for the current repo. Creates worktrees in ../<repo>-worktrees/<adjective-noun> detached at trunk, with project setup (direnv, sqlx, graphite). Use /worktree to create, /worktree remove <name> to delete.
 argument-hint: [remove <name> | list | detach-all]
 ---
 
@@ -130,21 +130,6 @@ direnv: allowed <wt_path>/.envrc
 Run these checks from `$wt_path`. Each check is independent — run all
 that apply, in order.
 
-### Solidity artifacts
-
-If the repo has a nix flake with `prep-sol-artifacts`, compile them:
-
-```bash
-cd "$wt_path"
-if nix flake show 2>/dev/null | grep -q prep-sol-artifacts; then
-  echo "Setup: compiling Solidity artifacts..."
-  nix run .#prep-sol-artifacts
-  echo "Setup: Solidity artifacts ready"
-fi
-```
-
-This is **not optional** — the build will fail without these artifacts.
-
 ### sqlx database
 
 If the repo uses sqlx (has a `.sqlx/` directory or `sqlx` in any
@@ -239,7 +224,7 @@ Worktree ready: <name>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Path:       <wt_path>
   Detached at: <trunk> (<short sha>)
-  Submodules: <count> initialized
+  Submodules: <count> initialized  (only if .gitmodules exists)
   Setup:      <commands run, or "none needed">
   Graphite:   initialized (trunk: <trunk>)
 
