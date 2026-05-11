@@ -130,6 +130,21 @@ direnv: allowed <wt_path>/.envrc
 Run these checks from `$wt_path`. Each check is independent — run all
 that apply, in order.
 
+### Solidity artifacts
+
+If the repo has a nix flake with `prep-sol-artifacts`, compile them:
+
+```bash
+cd "$wt_path"
+if nix flake show 2>/dev/null | grep -q prep-sol-artifacts; then
+  echo "Setup: compiling Solidity artifacts..."
+  nix run .#prep-sol-artifacts
+  echo "Setup: Solidity artifacts ready"
+fi
+```
+
+This is **not optional** — the build will fail without these artifacts.
+
 ### sqlx database
 
 If the repo uses sqlx (has a `.sqlx/` directory or `sqlx` in any
