@@ -18,6 +18,7 @@ the output to ~10-15 lines max:
 - Status section becomes 1 line (🟢/🟡/🔴 + one sentence)
 - No Action Items section (unless 🔴 items exist)
 - "What Was Done" becomes 3-5 one-line bullets (one per theme, no sub-bullets)
+- "Continued / Refined" becomes a single line listing PR numbers touched
 - No theme sub-headings — just a flat list
 
 Compressed format example:
@@ -33,7 +34,8 @@ Logging off for the day. @highonhopium_josh @dcatki
 - [st0x.issuance] Recovered stuck mint, triaged queue, PR #145 open (RAI-364)
 - [st0x.liquidity] Fixed orphaned order bug, merged PR #640; resilient transfers PR #641 open (RAI-365, RAI-366)
 - [st0x.liquidity] Deployed 3 new tokens to prod, fixed crash-loop, PR #642 open (RAI-367)
-- [st0x.liquidity] Merged dashboard PRs #633–#635; closed Schwab/Alpaca removal (RAI-140, RAI-166, RAI-247, RAI-99)
+
+🔄 <b>Refined:</b> Restacked PRs #633–#635, addressed review feedback on PR #640
 
 ⚡ <b>Urgent</b>
 - 🔴 Merge #642 — prod crashes on non-USDC TakeOrder events
@@ -426,6 +428,25 @@ user's corrections from Step 2.5):
    appears in the report. If git commits reference issue IDs not found in
    Linear data, include them anyway.
 
+### Classifying work: new vs continued
+
+Before writing themes, classify each piece of work as **new** or
+**continued** using these signals:
+
+- **New today**: PR created today, new branch with first commit today,
+  new Linear issue created today, investigation started today, prod
+  incident discovered and triaged today.
+- **Continued / refined**: PR created on a prior day but amended,
+  restacked, or had review feedback addressed today. Branch that existed
+  before today but was rebased or force-pushed. Linear issue that was
+  already in progress and just had status updated.
+
+Key heuristic: check `gh pr view <N> --json createdAt` — if
+`createdAt < today`, it's continued work. If `createdAt >= today`, it's
+new. For work without a PR (e.g., prod ops, config changes), use the
+session context to judge whether this was a new initiative or follow-up
+on prior work.
+
 ### Report structure
 
 ```
@@ -440,10 +461,17 @@ needs to happen. If all green, say so in one line.}
 
 ✅ <b>What Was Done</b>
 
-{Thematic groups. Each theme gets an emoji + bold name + repo link.
-2-4 bullets per theme. Lead with OUTCOME ("Dashboard now shows X")
-not activity ("Merged PR that changes X"). Include root causes for
-bugs, duration for incidents, and deployment state for fixes.}
+{Thematic groups for work that was NEWLY started or created today.
+Each theme gets an emoji + bold name + repo link. 2-4 bullets per
+theme. Lead with OUTCOME not activity. Include root causes for bugs,
+duration for incidents, and deployment state for fixes.}
+
+🔄 <b>Continued / Refined</b>
+
+{Work on PRs or branches that existed before today. Keep this concise
+— one bullet per PR/branch, stating what changed (e.g., "addressed
+review feedback", "restacked on latest main", "fixed CI failures").
+No need for full thematic grouping — a flat list is fine here.}
 
 ⚡ <b>Action Items</b>
 {Priority-ordered list. Each item gets a marker:
@@ -493,7 +521,8 @@ Make references clickable using `<a href="...">`:
 
 - 📋 Title
 - 🚦 Status
-- ✅ What Was Done
+- ✅ What Was Done (new work started today)
+- 🔄 Continued / Refined (prior PRs/branches touched today)
 - 🔧 Bug fix / reliability theme
 - 🏗 Architecture / infrastructure theme
 - 🚀 Feature / capability theme
