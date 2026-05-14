@@ -79,49 +79,29 @@ NOT delegate CI to a subagent or Agent tool call.
 commands.** The default 120s timeout causes auto-backgrounding which
 breaks the flow. **NEVER use `run_in_background: true`** for CI steps.
 
-Run steps sequentially. Each depends on the prior passing.
+### Launch all 4 steps in parallel
 
-### Step 1: nixfmt check (~150ms)
+Fire all steps simultaneously in a **single message with 4 Bash tool
+calls**. This is the fastest approach — total wall-clock time equals the
+slowest step (~2-3 min for clippy) instead of the sum of all steps.
 
-```bash
-nixfmt --check $(find . -name '*.nix' -not -path './.tmp/*' -not -path './.direnv/*')
+```
+Bash: nixfmt --check $(find . -name '*.nix' -not -path './.tmp/*' -not -path './.direnv/*')   timeout: 60000
+Bash: nix develop .#ci-backend -c cargo check --workspace --all-features 2>&1                  timeout: 600000
+Bash: nix develop .#ci-backend -c cargo clippy --workspace --all-targets --all-features 2>&1   timeout: 600000
+Bash: nix develop .#ci-backend -c cargo fmt -- --check 2>&1                                    timeout: 60000
 ```
 
-If it fails, fix with `nixfmt` (same command without `--check`).
+### Handle results
 
-### Step 2: cargo check --all-features
+When all 4 return, check each result:
 
-```bash
-nix develop .#ci-backend -c cargo check --workspace --all-features 2>&1
-```
+- **All passed**: go to section 4 (On success).
+- **Some failed**: fix the issues (section 3), then re-run **only the
+  failed steps** — again in parallel if multiple failed. Already-passed
+  steps are not re-run.
 
-### Step 3: cargo clippy
-
-```bash
-nix develop .#ci-backend -c cargo clippy --workspace --all-targets --all-features 2>&1
-```
-
-### Step 4: cargo fmt --check
-
-```bash
-nix develop .#ci-backend -c cargo fmt -- --check 2>&1
-```
-
-If it fails, run `cargo fmt` (without `--check`) to fix.
-
-### Per-step behavior
-
-**If the step passes (exit 0):**
-- Print "Step N passed: `<command>`"
-- Move to the next step.
-
-**If the step fails (exit != 0):**
-- Read the full output.
-- Parse and fix the issues (see section 3).
-- Re-run **only the failed step**.
-- Once it passes, continue to the next step.
-
-Track which steps have passed. Max **8** fix iterations per step.
+Max **8** fix iterations total. Track which steps have passed.
 
 ## 3. Fix issues
 
@@ -157,10 +137,12 @@ Use `Edit` for surgical changes. Never touch unrelated files.
 
 ### Re-running after fixes
 
-Re-run **only the step that failed**. If it still fails, loop (max 8).
+Re-run **only the steps that failed** — in parallel if multiple failed.
+If they still fail, loop (max 8 total iterations).
 
-**Exception**: if your fix changed code that could affect compilation,
-re-run from `cargo check` forward to catch regressions.
+**Exception**: if your fix changed code that could affect compilation
+(not just formatting), re-run check and clippy together to catch
+regressions.
 
 ## 4. On success
 
