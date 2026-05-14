@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(nix:*), Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(mktemp:*), Bash(rm:*), Bash(cat:*), Bash(grep:*), Bash(tail:*), Bash(wc:*), Bash(test:*), Bash(cd:*), Bash(bun:*), Read, Edit, Write, Grep, Glob, TodoWrite
+allowed-tools: Bash(nix:*), Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(mktemp:*), Bash(rm:*), Bash(cat:*), Bash(grep:*), Bash(tail:*), Bash(wc:*), Bash(test:*), Bash(cd:*), Bash(bun:*), Bash(nixfmt:*), Bash(find:*), Read, Edit, Write, Grep, Glob, TodoWrite
 description: Run CI steps individually (check, test, clippy, fmt, dashboard) and fix every issue, iterating until all pass clean. Final verification only — run after substantive work is done.
 argument-hint: "[upstack]"
 ---
@@ -90,15 +90,33 @@ in order:
 
 | Step | Command | Shell |
 |------|---------|-------|
-| 1 | `cargo check --workspace` | `nix develop .#ci-backend -c` |
-| 2 | `cargo check --workspace --all-features` | `nix develop .#ci-backend -c` |
-| 3 | `cargo nextest run --workspace --all-features` | `nix develop .#ci-backend -c` |
-| 4 | `cargo clippy --workspace --all-targets --all-features` | `nix develop .#ci-backend -c` |
-| 5 | `cargo fmt -- --check` | `nix develop .#ci-backend -c` |
-| 6 | `nix run .#genBunNix` | direct |
-| 7 | `nix fmt -- dashboard/bun.nix` | direct |
-| 8 | `nix run .#st0x-dto -- dashboard/src/lib/api` | direct |
-| 9 | `cd dashboard && bun install --frozen-lockfile && bun run lint && bun run check` | `nix develop .#ci-dashboard -c bash -c` |
+| 1 | `nixfmt --check` on all `*.nix` files | direct (see below) |
+| 2 | `cargo check --workspace` | `nix develop .#ci-backend -c` |
+| 3 | `cargo check --workspace --all-features` | `nix develop .#ci-backend -c` |
+| 4 | `cargo nextest run --workspace --all-features` | `nix develop .#ci-backend -c` |
+| 5 | `cargo clippy --workspace --all-targets --all-features` | `nix develop .#ci-backend -c` |
+| 6 | `cargo fmt -- --check` | `nix develop .#ci-backend -c` |
+| 7 | `nix run .#genBunNix` | direct |
+| 8 | `nix fmt -- dashboard/bun.nix` | direct |
+| 9 | `nix run .#st0x-dto -- dashboard/src/lib/api` | direct |
+| 10 | `cd dashboard && bun install --frozen-lockfile && bun run lint && bun run check` | `nix develop .#ci-dashboard -c bash -c` |
+
+### Step 1: nixfmt check
+
+This is very fast (~150ms) so it runs first. Find all nix files and check
+formatting:
+
+```bash
+nixfmt --check $(find . -name '*.nix' -not -path './.tmp/*' -not -path './.direnv/*')
+```
+
+If it fails, fix with:
+
+```bash
+nixfmt $(find . -name '*.nix' -not -path './.tmp/*' -not -path './.direnv/*')
+```
+
+Then re-run the check to confirm. Do not hand-edit nix whitespace.
 
 Track which steps have passed. Set a max fix-loop iteration cap of **8**
 per step. If you hit the cap on any step, stop and ask the user.
@@ -283,6 +301,7 @@ When all steps pass:
 2. Print a step-by-step summary:
    ```
    CI passed clean:
+     ✓ nixfmt --check
      ✓ cargo check --workspace
      ✓ cargo check --workspace --all-features
      ✓ cargo nextest run --workspace --all-features
