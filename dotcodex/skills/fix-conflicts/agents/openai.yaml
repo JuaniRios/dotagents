@@ -1,0 +1,6 @@
+interface:
+  display_name: "Fix Conflicts"
+  short_description: "Resolve git and Graphite stack conflicts"
+  default_prompt: "Use $fix-conflicts to resolve branch conflicts."
+policy:
+  allow_implicit_invocation: true

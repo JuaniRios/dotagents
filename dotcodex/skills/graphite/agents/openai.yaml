@@ -1,0 +1,6 @@
+interface:
+  display_name: "Graphite"
+  short_description: "Manage stacked branches with Graphite"
+  default_prompt: "Use $graphite to manage a stacked branch workflow."
+policy:
+  allow_implicit_invocation: true

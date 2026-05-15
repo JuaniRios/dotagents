@@ -1,0 +1,6 @@
+interface:
+  display_name: "Edit Skill"
+  short_description: "Update Codex or Claude skills and commands"
+  default_prompt: "Use $edit-skill to update a skill or command."
+policy:
+  allow_implicit_invocation: true

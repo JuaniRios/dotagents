@@ -1,0 +1,6 @@
+interface:
+  display_name: "CI Fix"
+  short_description: "Debug and fix failing CI checks"
+  default_prompt: "Use $ci-fix to debug and fix failing CI checks."
+policy:
+  allow_implicit_invocation: true

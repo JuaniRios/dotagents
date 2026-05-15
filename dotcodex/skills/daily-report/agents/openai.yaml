@@ -1,0 +1,6 @@
+interface:
+  display_name: "Daily Report"
+  short_description: "Create concise daily work reports"
+  default_prompt: "Use $daily-report to create a daily work report."
+policy:
+  allow_implicit_invocation: true

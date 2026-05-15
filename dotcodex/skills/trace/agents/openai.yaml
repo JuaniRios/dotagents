@@ -1,0 +1,6 @@
+interface:
+  display_name: "Trace"
+  short_description: "Manage persistent investigation traces"
+  default_prompt: "Use $trace to manage an investigation trace."
+policy:
+  allow_implicit_invocation: true

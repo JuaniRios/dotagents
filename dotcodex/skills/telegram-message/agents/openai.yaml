@@ -1,0 +1,6 @@
+interface:
+  display_name: "Telegram Message"
+  short_description: "Send concise Telegram status messages"
+  default_prompt: "Use $telegram-message to send a Telegram update."
+policy:
+  allow_implicit_invocation: true

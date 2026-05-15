@@ -1,0 +1,6 @@
+interface:
+  display_name: "Nix Darwin"
+  short_description: "Edit nix-darwin and home-manager config"
+  default_prompt: "Use $nix-darwin to update the macOS Nix config."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Linear CLI"
+  short_description: "Manage Linear issues from the command line"
+  default_prompt: "Use $linear-cli to manage Linear issues."
+policy:
+  allow_implicit_invocation: true

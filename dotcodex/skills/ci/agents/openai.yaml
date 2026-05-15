@@ -1,0 +1,6 @@
+interface:
+  display_name: "CI"
+  short_description: "Run project verification and CI workflows"
+  default_prompt: "Use $ci to run project verification."
+policy:
+  allow_implicit_invocation: true

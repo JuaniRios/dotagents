@@ -1,0 +1,6 @@
+interface:
+  display_name: "Idiomatic Rust Inspector"
+  short_description: "Inspect Rust code for idiomatic design"
+  default_prompt: "Use $idiomatic-rust-inspector to inspect Rust code."
+policy:
+  allow_implicit_invocation: true

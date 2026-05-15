@@ -1,0 +1,6 @@
+interface:
+  display_name: "Check Liquidity Bot"
+  short_description: "Inspect liquidity bot status and production state"
+  default_prompt: "Use $check-liquidity-bot to inspect liquidity bot status."
+policy:
+  allow_implicit_invocation: true

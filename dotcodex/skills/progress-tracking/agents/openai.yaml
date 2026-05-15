@@ -1,0 +1,6 @@
+interface:
+  display_name: "Progress Tracking"
+  short_description: "Track implementation progress and status"
+  default_prompt: "Use $progress-tracking to track work progress."
+policy:
+  allow_implicit_invocation: true

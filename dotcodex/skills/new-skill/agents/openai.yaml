@@ -1,0 +1,6 @@
+interface:
+  display_name: "New Skill"
+  short_description: "Create new Claude or Codex skills"
+  default_prompt: "Use $new-skill to create a new skill."
+policy:
+  allow_implicit_invocation: true

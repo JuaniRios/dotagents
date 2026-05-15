@@ -1,0 +1,6 @@
+interface:
+  display_name: "PR Description"
+  short_description: "Draft and update pull request descriptions"
+  default_prompt: "Use $pr-description to write a PR description."
+policy:
+  allow_implicit_invocation: true

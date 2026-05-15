@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review PR"
+  short_description: "Perform a pull request code review"
+  default_prompt: "Use $review-pr to review a pull request."
+policy:
+  allow_implicit_invocation: true

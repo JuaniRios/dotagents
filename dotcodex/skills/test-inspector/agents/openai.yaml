@@ -1,0 +1,6 @@
+interface:
+  display_name: "Test Inspector"
+  short_description: "Inspect test quality and coverage"
+  default_prompt: "Use $test-inspector to inspect test quality."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Loop"
+  short_description: "Run review, fix, and re-review loops"
+  default_prompt: "Use $review-loop to review and fix the current branch."
+policy:
+  allow_implicit_invocation: true
