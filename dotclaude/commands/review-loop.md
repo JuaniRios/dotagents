@@ -687,20 +687,14 @@ If while implementing a fix you realize it's larger than expected or the
 finding is more nuanced than the report suggests, stop and tell the user.
 Offer to re-triage (defer, dismiss, or adjust the fix).
 
-After all fix-now items are done:
-
-1. Run `/ci` (invoke the `ci` skill) to verify all changes are correct.
-   Let the ci loop run until it passes or it asks the user for help. If
-   `/ci` makes additional fixes, that's expected — it's part of this loop.
-2. Report results. If something broke during `/ci`, address it before
-   moving on — do not leave red tests or lint failures.
-3. **Do not commit or `gt modify` automatically.**
-4. Proceed to step 12 (re-review).
+After all fix-now items are done, proceed directly to step 12 (re-review).
+Do NOT run `/ci` here — it runs only after the review loop converges
+(see step 12).
 
 ## 12. Re-review loop
 
-After CI passes, re-run the full review to catch issues introduced by the
-fixes. This is the core of the automatic loop.
+Re-run the full review to catch issues introduced by the fixes. This is
+the core of the automatic loop.
 
 **CRITICAL: The re-review is NOT optional.** After fixing findings, you
 MUST re-run the review at least once. Do not skip it because the fixes
@@ -713,8 +707,9 @@ when the loop is done, not your judgment.
 done when a review pass returns no new actionable findings. Fixing the
 last batch of findings is NOT convergence — you must run another review
 to verify those fixes didn't introduce new issues. The pattern is always:
-`review → fix → review → fix → review(clean) → done`. You can never
-end on a fix — you must always end on a clean review.
+`review → fix → review → fix → review(clean) → /ci → done`. You can
+never end on a fix — you must always end on a clean review. `/ci` runs
+only after convergence, and if it makes changes, you re-enter the loop.
 
 1. Re-run **steps 2 through 7** in full — resolve scope, generate the
    diff, build prompts, spawn all five reviewers, aggregate, and print
@@ -726,9 +721,17 @@ end on a fix — you must always end on a clean review.
    ```bash
    cp "$new_out_dir/review.md" "$original_out_dir/review-iter${iteration}.md"
    ```
-2. If the review returns **no findings**: the loop is done. Print
-   "Re-review clean — no new findings" and proceed to step 13 (defer) or
-   step 14 (summarize).
+2. If the review returns **no findings**: the review loop has converged.
+   Run `/ci` (invoke the `ci` skill) to verify all changes compile, pass
+   tests, and satisfy lints. Let the ci loop run until it passes or it
+   asks the user for help.
+   - If `/ci` made **no code changes** (only verified): proceed to
+     step 13 (defer) or step 14 (summarize).
+   - If `/ci` **made code changes** (fixed lint, formatting, etc.):
+     re-enter the review loop — go back to step 12 from the top (re-run
+     steps 2–7, re-review). This should converge quickly since `/ci`
+     changes are typically mechanical, but let it loop normally if it
+     doesn't.
 3. If the review returns findings:
    - **Filter out findings already addressed** in a previous iteration.
      Compare by file + line range + issue description. If a finding is
@@ -912,7 +915,8 @@ mutation — the user decides when to amend and push.
 6. Always re-verify findings against the current source before applying
    fixes — the code may have changed since the review.
 7. Keep fixes surgical. No "while I'm here" cleanups.
-8. After all fixes, run `/ci` and report results before re-reviewing.
+8. Run `/ci` only after the review loop converges clean, not after each
+   fix pass. If `/ci` makes code changes, re-enter the review loop.
 9. Cap at 4 review passes. Convergence requires a clean pass — never end on a fix. Stop and ask the user if you don't converge.
 10. Spawn all reviewers in a single message with parallel tool calls.
 11. Use `--sandbox read-only` for codex — non-negotiable.

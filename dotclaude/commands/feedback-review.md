@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(jq:*), Bash(mktemp:*), Bash(rm:*), Bash(wc:*), Bash(date:*), Bash(test:*), Bash(linear:*), Bash(cat:*), Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(jq:*), Bash(mktemp:*), Bash(rm:*), Bash(wc:*), Bash(date:*), Bash(test:*), Bash(linear:*), Bash(cat:*), Bash(python3:*), Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Skill
 description: Triage and address PR feedback (CodeRabbit + human reviewer comments) on the current branch. Summarizes each comment with severity and agent opinion, asks which to implement, fixes chosen ones, and drafts replies for dismissed or differently-handled comments.
 ---
 
@@ -200,10 +200,25 @@ After all fixes are applied:
 1. Run the project's fast verification command (`cargo check -p <crate>` or
    equivalent from CLAUDE.md/AGENTS.md).
 2. Report results. If something broke, fix it.
-3. **Do not commit automatically.** Tell the user what changed and let them
-   decide when to commit.
 
-## 7. Create issues for deferred comments
+## 7. Commit and restack
+
+After fixes pass verification, ask the user via `AskUserQuestion`:
+
+> "Run `gt modify -a` and `gt ss` to amend the commit and restack the stack?"
+
+Options: **"Yes (Recommended)"**, **"No, I'll handle it"**.
+
+If yes, run:
+
+```bash
+gt modify -a
+gt ss
+```
+
+Report the result. If restack has conflicts, tell the user and stop.
+
+## 8. Create issues for deferred comments
 
 For each "Defer to issue" decision, create a Linear issue using the `linear`
 CLI. Follow the linear-cli skill's workflow:
@@ -226,10 +241,15 @@ CLI. Follow the linear-cli skill's workflow:
 5. Optionally post a reply on the PR comment thread referencing the issue
    (with user approval).
 
-## 8. Handle post-commit responses
+## 9. Handle comment replies
 
-After the user commits (or tells you to proceed), handle responses for each
-comment type:
+Ask the user via `AskUserQuestion`:
+
+> "Post replies for skipped/fixed comments on GitHub?"
+
+Options: **"Yes (Recommended)"**, **"Skip replies"**.
+
+If no, skip to the summary step.
 
 ### Comments that were fixed
 
@@ -293,7 +313,31 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
   -F in_reply_to=<original-comment-id>
 ```
 
-## 9. Summary
+## 10. Check for stacked PRs
+
+After replies are handled (or skipped), check if there is a PR stacked on top
+of the current one:
+
+```bash
+gh pr list --base "$(git branch --show-current)" --json number,title,headRefName --jq '.[0]'
+```
+
+If a stacked PR exists, ask via `AskUserQuestion`:
+
+> "PR #<N> (<title>) is stacked on top. Run /feedback-review on it?"
+
+Options: **"Yes, switch and review"**, **"No, stop here"**.
+
+If yes, use the graphite skill to switch to that branch:
+
+```bash
+gt co <headRefName>
+```
+
+Then invoke `/feedback-review` via the `Skill` tool to start the feedback
+review on the next PR in the stack.
+
+## 11. Summary
 
 Print a final summary:
 
@@ -322,7 +366,9 @@ Remaining:
 
 1. Never post any comment or reply without explicit user approval of the
    exact text.
-2. Never commit or push automatically -- the user controls version control.
+2. Never commit or push without explicit user approval -- the user controls
+   version control. `gt modify -a` / `gt ss` are offered but never run without
+   consent.
 3. Always read the source code before forming your opinion on a comment.
    Don't assess blindly from the comment text alone.
 4. Keep fixes surgical -- no scope creep or "while I'm here" cleanups.

@@ -1,39 +1,48 @@
 ---
 name: edit-skill
-description: Modify, update, or refactor an existing Claude Code skill or slash command in the dotclaude repo. Use when the user asks to edit, change, update, fix, improve, or tweak a skill or command. Supports "/edit-skill improve" to auto-diagnose and fix the last skill/command that ran in this session.
+description: Modify, update, or refactor an existing Claude command, Claude skill, Codex skill, or paired workflow in the dotagents repo. Use when the user asks to edit, change, update, fix, improve, or tweak a skill or command. Supports "/edit-skill improve" to auto-diagnose and fix the last skill/command that ran in this session.
 allowed-tools: Bash(git:*), Bash(test:*), Bash(ls:*), Read, Edit, Write, Grep, Glob, AskUserQuestion
 argument-hint: "improve | <command-or-skill> [change description]"
 ---
 
 # Edit skill / command
 
-Modify an existing Claude Code skill or slash command in `~/Github/dotclaude`,
-which is git-tracked and symlinked into `~/.claude/`.
+Modify an existing Claude Code command/skill or Codex skill in
+`~/Github/dotagents`, which is git-tracked and symlinked into `~/.claude/` or
+`~/.codex/`.
 
 ## Architecture context
 
 ```
-~/Github/dotclaude/          # git repo (source of truth)
-  commands/                  # slash commands — one .md file each
+~/Github/dotagents/          # git repo (source of truth)
+  dotclaude/
+    commands/                # Claude slash commands — one .md file each
     ci.md                    #   invoked as /ci
     pr-description.md        #   invoked as /pr-description
     review-loop.md
     review-pr.md
     worktree.md
     new-skill.md
-  skills/                    # skills — subdirectory with SKILL.md each
-    graphite/SKILL.md
-    linear-cli/SKILL.md
-    edit-skill/SKILL.md      #   this skill
+    skills/                  # Claude skills — subdirectory with SKILL.md each
+      graphite/SKILL.md
+      linear-cli/SKILL.md
+      edit-skill/SKILL.md    #   this skill
+  dotcodex/
+    skills/                  # Codex skills — subdirectory with SKILL.md each
+      ci/SKILL.md
+      graphite/SKILL.md
 
 ~/.claude/
-  commands -> ~/Github/dotclaude/commands   # symlink
-  skills   -> ~/Github/dotclaude/skills     # symlink
+  commands -> ~/Github/dotagents/dotclaude/commands
+  skills   -> ~/Github/dotagents/dotclaude/skills
+
+~/.codex/
+  skills   -> ~/Github/dotagents/dotcodex/skills
 ```
 
 ### File formats
 
-**Commands** — `commands/<name>.md`:
+**Claude commands** — `dotclaude/commands/<name>.md`:
 ```yaml
 ---
 allowed-tools: <tools>
@@ -42,7 +51,7 @@ argument-hint: <hint>  # optional
 ---
 ```
 
-**Skills** — `skills/<name>/SKILL.md`:
+**Claude skills** — `dotclaude/skills/<name>/SKILL.md`:
 ```yaml
 ---
 name: <name>
@@ -50,6 +59,19 @@ description: <one-line — Claude matches against this>
 allowed-tools: <tools>
 ---
 ```
+
+**Codex skills** — `dotcodex/skills/<name>/SKILL.md`:
+```yaml
+---
+name: <name>
+description: <one-line — Codex matches against this>
+---
+```
+
+Codex skill bodies should use Codex-native language. Remove or rewrite
+Claude-only references such as `allowed-tools`, `argument-hint`, `$ARGUMENTS`,
+`Agent`, `AskUserQuestion`, and slash-command invocation unless the file is
+explicitly documenting compatibility with a Claude workflow.
 
 ## "improve" mode
 
@@ -110,18 +132,26 @@ Determine which skill or command the user wants to edit from the
 conversation context. If ambiguous, list what's available and ask:
 
 ```bash
-echo "Commands:"
-ls ~/Github/dotclaude/commands/*.md 2>/dev/null | xargs -I{} basename {} .md
+echo "Claude commands:"
+ls ~/Github/dotagents/dotclaude/commands/*.md 2>/dev/null | xargs -I{} basename {} .md
 echo ""
-echo "Skills:"
-ls -d ~/Github/dotclaude/skills/*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {}
+echo "Claude skills:"
+ls -d ~/Github/dotagents/dotclaude/skills/*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {}
+echo ""
+echo "Codex skills:"
+ls -d ~/Github/dotagents/dotcodex/skills/*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {}
 ```
 
 Then ask the user which one to edit using `AskUserQuestion`.
 
 Resolve the file path:
-- Command `<name>`: `~/Github/dotclaude/commands/<name>.md`
-- Skill `<name>`: `~/Github/dotclaude/skills/<name>/SKILL.md`
+- Claude command `<name>`: `~/Github/dotagents/dotclaude/commands/<name>.md`
+- Claude skill `<name>`: `~/Github/dotagents/dotclaude/skills/<name>/SKILL.md`
+- Codex skill `<name>`: `~/Github/dotagents/dotcodex/skills/<name>/SKILL.md`
+
+If the user asks to edit "both" or asks for a shared workflow, resolve both
+the Claude and Codex files with that name. Preserve agent-specific differences
+instead of forcing identical text.
 
 ## Step 2 — Read and understand
 
@@ -158,6 +188,10 @@ When editing:
   behavior changed, `allowed-tools` if new tools are needed)
 - Don't reformat or restructure parts the user didn't ask to change
 - If adding new steps, number them consistently with the existing scheme
+- For Codex skills, do not add Claude `allowed-tools` or `argument-hint`
+  frontmatter. Describe required commands or tools in the body instead.
+- For paired Claude/Codex edits, make the semantic change in both files, but
+  keep each version idiomatic for that agent.
 
 ## Step 5 — Show the result
 
@@ -184,7 +218,7 @@ until they approve.
 Stage and commit directly on master:
 
 ```bash
-cd ~/Github/dotclaude
+cd ~/Github/dotagents
 git add <path>
 git commit -m "refactor: update /<name> <type>"
 ```
@@ -210,7 +244,8 @@ Wait for confirmation. If yes, run `git push`. If no, stop.
 
 ## Hard rules
 
-1. Always edit files in `~/Github/dotclaude/`, never directly in `~/.claude/`.
+1. Always edit files in `~/Github/dotagents/`, never directly in `~/.claude/`
+   or `~/.codex/`.
 2. Never delete a skill or command file without explicit confirmation —
    editing means modifying, not removing.
 3. Commit directly to master — no branches.
