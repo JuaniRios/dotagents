@@ -158,9 +158,24 @@ Resolve the file path:
 - Claude skill `<name>`: `~/Github/dotagents/dotclaude/skills/<name>/SKILL.md`
 - Codex skill `<name>`: `~/Github/dotagents/dotcodex/skills/<name>/SKILL.md`
 
-If the user asks to edit "both" or asks for a shared workflow, resolve both
-the Claude and Codex files with that name. Preserve agent-specific differences
-instead of forcing identical text.
+**Always probe for a paired counterpart.** After resolving the target file,
+check whether a same-named file exists in the other agent's tree (Claude
+`commands/<name>.md` or `skills/<name>/SKILL.md` ↔ Codex `skills/<name>/SKILL.md`):
+
+```bash
+ls ~/Github/dotagents/dotclaude/commands/<name>.md \
+   ~/Github/dotagents/dotclaude/skills/<name>/SKILL.md \
+   ~/Github/dotagents/dotcodex/skills/<name>/SKILL.md 2>/dev/null
+```
+
+If a paired file exists, edit **both by default** — skills with the same name
+are kept in sync, and the user expects a change to apply everywhere. Only edit
+one side when the user explicitly scopes the request ("only the Claude
+version", "Codex only", "just the command", etc.). When editing both, preserve
+each agent's idioms (Claude frontmatter and tool references on the Claude
+side; plain language on the Codex side); do not force identical text.
+
+If no paired file exists, proceed with the single target.
 
 ## Step 2 — Read and understand
 
@@ -228,9 +243,12 @@ Stage and commit directly on master:
 
 ```bash
 cd ~/Github/dotagents
-git add <path>
+git add <path(s)>
 git commit -m "refactor: update /<name> <type>"
 ```
+
+When editing a paired Claude/Codex skill, stage **both** files in the same
+commit so the two sides never drift.
 
 Use an appropriate commit prefix:
 - `refactor:` for restructuring or improving
@@ -262,3 +280,6 @@ Wait for confirmation. If yes, run `git push`. If no, stop.
 5. Keep frontmatter in sync with content — if behavior changes, update
    the `description` field.
 6. Don't reformat or restructure parts the user didn't ask to change.
+7. If a skill or command has a paired counterpart (same name in both
+   `dotclaude` and `dotcodex`), edit both files in the same operation
+   unless the user explicitly scopes the change to one side.
