@@ -129,8 +129,15 @@ Fill every section of the template based on what you read in the diff. Rules:
   "various changes to X." For non-trivial files, name them with a
   one-line summary each.
 - **Link issues** you can discover from branch name, commit messages, or
-  existing PR body. Use the repo's convention (e.g., `Closes #123`,
-  `Fixes LINEAR-456`).
+  existing PR body. GitHub issues/PRs autolink from `#123` (use the repo's
+  convention, e.g. `Closes #123`). **Linear issue references MUST be real
+  markdown hyperlinks** — never leave a bare `RAI-374` or `LINEAR-456` in
+  the body, because Linear IDs do not autolink on GitHub. Use the
+  `linear-cli` skill (or `linear issue view <ID>`) to fetch the issue's
+  URL, then write it as `[RAI-374](https://linear.app/<workspace>/issue/RAI-374)`.
+  If the existing PR body or repo already shows a workspace URL pattern,
+  match it. If you cannot resolve the URL, ask the user rather than
+  leaving the ID bare.
 - **Preserve user-authored content from the existing body** under the
   appropriate section. If the user wrote a `## Deploy notes` section, keep
   it — do not merge it into another section.
@@ -246,3 +253,5 @@ And a one-line confirmation per PR updated.
 4. Preserve user-authored content from the existing PR body.
 5. Never fabricate tests, screenshots, or deploy notes that aren't real.
 6. Use `gt submit` to open new PRs, never `gh pr create`.
+7. Never leave a bare Linear ID (`RAI-374`, `LINEAR-456`, etc.) in a PR
+   body — always render it as a markdown hyperlink to the Linear issue.
