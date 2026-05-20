@@ -145,20 +145,31 @@ Commit the `.age` file, add the plaintext filename to `.gitignore`.
 
 1. **Read** the file(s) you'll edit
 2. **Edit** them
-3. **Commit** with the user's identity:
+3. **Commit directly on `master` with raw `git`**, even in Codex sessions where
+   a separate Graphite skill exists. Do not create a Graphite branch, do not use
+   `gt`, and do not open a PR for `~/Github/nix-darwin-config` changes.
+   First verify the branch:
    ```bash
    cd ~/Github/nix-darwin-config
+   git rev-parse --abbrev-ref HEAD
+   ```
+   If not on `master`, stop and ask before switching branches.
+4. **Stage and commit** with the user's identity:
+   ```bash
+   cd ~/Github/nix-darwin-config
+   git add <files>
    git -c user.name=JuaniRios -c user.email=juani.rios.99@gmail.com commit -am "message"
    ```
-   For new files, use `git add <files>` first instead of `-a`.
-4. **Push** to master:
+   For new files, ensure they are included in `git add <files>`. Use a normal
+   `git commit` after staging if `commit -am` is not appropriate.
+5. **Push straight to `master`** with raw `git`:
    ```bash
    cd ~/Github/nix-darwin-config
-   git push
+   git push origin master
    ```
-5. **Tell the user** to run `rebuild` (Claude cannot `sudo` — no TTY for
+6. **Tell the user** to run `rebuild` (Claude cannot `sudo` — no TTY for
    password/TouchID).
-6. **Post-rebuild notes** — remind the user if applicable:
+7. **Post-rebuild notes** — remind the user if applicable:
    - Shell config change → `exec nu` or new ghostty window
    - `nix.custom.conf` change → `sudo launchctl kickstart -k system/org.nixos.nix-daemon`
    - Ghostty config change → close and reopen ghostty windows
