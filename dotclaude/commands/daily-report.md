@@ -63,9 +63,9 @@ echo "Report date: $today"
 echo "Epoch ms start: $today_start_epoch_ms"
 ```
 
-## Step 2 — Collect data (run all four in parallel using Agent sub-agents)
+## Step 2 — Collect data (run all five in parallel using Agent sub-agents)
 
-Launch four parallel sub-agents to collect data simultaneously. Each agent
+Launch five parallel sub-agents to collect data simultaneously. Each agent
 should return structured findings.
 
 ### Agent A — Claude Code session activity
@@ -347,9 +347,104 @@ gh search issues --author="$gh_user" --closed=">=$today" --json title,url,reposi
   --jq '.[] | "- [\(.repository.nameWithOwner)] \(.title) — \(.url)"' 2>/dev/null
 ```
 
+### Agent E — Codex CLI session activity
+
+The user also works through the Codex CLI, which stores its conversations
+separately from Claude Code. Include Codex work so the report reflects
+everything done today, not just Claude Code sessions. Codex keeps two stores:
+
+1. `~/.codex/history.jsonl` — flat list of user prompts, one JSON object per
+   line with `session_id`, `ts` (epoch **seconds**, not milliseconds), and
+   `text`.
+2. `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl` — full session
+   transcripts, organized into per-day directories.
+
+First, find today's Codex sessions and their opening prompts from
+history.jsonl (note `ts` is epoch **seconds**):
+
+```bash
+python3 -c "
+import json
+from datetime import datetime
+
+today = datetime.now().strftime('%Y-%m-%d')
+start_ts = int(datetime.strptime(today + ' 00:00:00', '%Y-%m-%d %H:%M:%S').timestamp())
+
+sessions = {}
+with open('$HOME/.codex/history.jsonl') as f:
+    for line in f:
+        try:
+            entry = json.loads(line.strip())
+        except json.JSONDecodeError:
+            continue
+        if entry.get('ts', 0) >= start_ts:
+            sid = entry.get('session_id', 'unknown')
+            sessions.setdefault(sid, []).append(entry.get('text', ''))
+
+for sid, prompts in sessions.items():
+    print(f'\n## Codex session {sid[:8]}... ({len(prompts)} prompts)')
+    for p in prompts[:5]:
+        if p and not p.startswith('/'):
+            print(f'    - {p[:120]}')
+" 2>/dev/null
+```
+
+Then read today's rollout files for full scope. They live under today's
+date directory:
+
+```bash
+today_path=$(date +%Y/%m/%d)
+ls ~/.codex/sessions/$today_path/rollout-*.jsonl 2>/dev/null
+```
+
+Each rollout file's first line is a `session_meta` object whose
+`payload.cwd` gives the repo the session ran in — use it to group Codex
+work by project. The conversation lives in `response_item` lines with
+`payload.type == "message"`: `role == "user"` are the user's requests and
+`role == "assistant"` are Codex's actions. These files are large (often
+several MB), so DON'T cat them whole — extract just the messages:
+
+```bash
+today_path=$(date +%Y/%m/%d)
+for f in ~/.codex/sessions/$today_path/rollout-*.jsonl; do
+  [ -f "$f" ] || continue
+  python3 -c "
+import json, sys
+f = sys.argv[1]
+cwd = None
+msgs = []
+with open(f) as fh:
+    for line in fh:
+        try: e = json.loads(line)
+        except json.JSONDecodeError: continue
+        if e.get('type') == 'session_meta':
+            cwd = e.get('payload', {}).get('cwd')
+        elif e.get('type') == 'response_item':
+            p = e.get('payload', {})
+            if p.get('type') == 'message' and p.get('role') in ('user', 'assistant'):
+                parts = [c.get('text', '') for c in p.get('content', []) if isinstance(c, dict)]
+                txt = ' '.join(t for t in parts if t).strip()
+                if txt:
+                    msgs.append((p['role'], txt[:200]))
+print(f'### Codex: {cwd}')
+for role, txt in msgs[:10]:
+    print(f'  [{role}] {txt}')
+print(f'  ... ({len(msgs)} messages total)')
+" "$f"
+done
+```
+
+Extract the same fields as Agent A (what was asked, what was accomplished,
+whether work is complete, prod incidents, root causes). Feed Codex findings
+into the same thematic synthesis — do NOT separate "Claude work" from "Codex
+work" in the report; the team cares about outcomes regardless of which tool
+produced them. The concrete commits and PRs from Agents B and D already
+capture the shipped work no matter which tool authored it; Codex session
+data is for intent and context.
+
 ## Step 2.5 — User review before writing
 
-Once all four agents return, compile a short summary of what you found and
+Once all five agents return, compile a short summary of what you found and
 present it to the user for review using `AskUserQuestion`. This lets the
 user correct emphasis, flag things you missed, or add context you couldn't
 infer from the data (e.g., "prod is currently down", "this issue is the
@@ -604,7 +699,7 @@ Do NOT save the report to a permanent file unless the user asks.
 8. Write the entire report in first person ("I fixed...", "I investigated...")
    — this is pasted directly into a team group chat.
 9. Never mention internal tooling or process in the output. This includes:
-   Claude Code sessions, JSONL files, AI tooling, traces, cross-reviews,
+   Claude Code sessions, Codex CLI sessions, JSONL files, AI tooling, traces, cross-reviews,
    feedback-reviews, review loops, slash commands, skills, sub-agents, or
    any other implementation detail of how the work was done. These are
    input sources for understanding what was accomplished — the team only
@@ -643,6 +738,9 @@ Do NOT save the report to a permanent file unless the user asks.
 
 - **No sessions today**: Report says "No Claude Code sessions found for
   today" and proceeds with git/GitHub data only.
+- **No Codex sessions today**: Skip the Codex section silently and rely on
+  Claude Code sessions plus git/GitHub data. If `~/.codex/history.jsonl` or
+  `~/.codex/sessions/` is missing, treat it the same as no activity.
 - **`gh` not authenticated**: Skip GitHub section, add a note: "GitHub
   activity skipped (gh not authenticated)".
 - **`linear` not authenticated or fails**: Fall back to extracting issue
