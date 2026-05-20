@@ -638,7 +638,7 @@ Make references clickable using `<a href="...">`:
 Pick the most fitting emoji per theme (or use another relevant one if none
 fits). Every `<b>` header gets an emoji prefix.
 
-## Step 4 — Send via Telegram
+## Step 4 — Confirm, then send via Telegram
 
 Send the report to the user's Telegram "Saved Messages" via the bot API.
 Credentials are in `~/.config/telegram-bot.env` (must contain
@@ -646,7 +646,14 @@ Credentials are in `~/.config/telegram-bot.env` (must contain
 
 1. Write the report text to `/tmp/daily-report.txt` using Telegram HTML
    formatting (see formatting rules below).
-2. Send it:
+2. **Always show the full message and wait for explicit confirmation before
+   sending.** Print the complete report inline exactly as it will appear in
+   Telegram, then ask the user directly to approve or request changes and
+   wait for a clear yes. Do NOT run the send command until the user has
+   explicitly approved this run's message. If they request changes, edit
+   `/tmp/daily-report.txt`, show the updated message, and ask again — repeat
+   until approved. This applies in compressed mode too.
+3. Once approved, send it:
 
 ```bash
 source ~/.config/telegram-bot.env
@@ -674,9 +681,7 @@ else:
 "
 ```
 
-3. Print a brief confirmation ("Report sent to Telegram Saved Messages.")
-   and also print the report inline so the user can review it in the
-   terminal.
+4. Print a brief confirmation ("Report sent to Telegram Saved Messages.").
 
 ### Telegram HTML formatting rules
 
@@ -743,6 +748,11 @@ Do NOT save the report to a permanent file unless the user asks.
 15. **State incident duration**: When a bug or outage is discovered, always
     state how long it lasted if the data is available (e.g., from log
     timestamps, git history, or session conversations).
+16. **Never send before approval**: Always show the user the full composed
+    message and get explicit confirmation before calling the Telegram send
+    command. The send is irreversible — the bot can't edit or delete prior
+    messages, so a premature send means a duplicate the user has to clean up.
+    Wait for an explicit "send it" on every run, including compressed mode.
 
 ## Failure modes
 
