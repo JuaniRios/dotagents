@@ -101,33 +101,47 @@ gh api repos/{owner}/{repo}/issues/{number}/comments \
   > /tmp/pr-issue-comments.json
 ```
 
-Top-level comments matter for CodeRabbit: when it cannot attach a finding to
-the PR diff, it often emits an "outside diff range" / "out-of-diff" finding in a
-general PR comment instead of a review thread. Do not treat every CodeRabbit
-top-level comment as a summary. Keep CodeRabbit issue comments that contain
-actionable review sections such as "Potential issue", "Suggestion", "Outside diff
-range", "out of diff", explicit file paths/line references, or wording that asks
-for a code/config/doc change. Skip only boilerplate comments such as
-walkthroughs, pre-merge checks, finishing touches, share/tips blocks, and merge
-queue/status comments.
+Also fetch pull review bodies. This is separate from issue comments and review
+threads:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{number}/reviews \
+  --paginate --jq '.[] | {id, node_id, user: .user.login, state, body, submitted_at, html_url}' \
+  > /tmp/pr-reviews.json
+```
+
+Pull review bodies matter for CodeRabbit: when it cannot attach a finding to
+the PR diff, it often emits "outside diff range" / "out-of-diff" findings in the
+review body itself. These do **not** appear in issue comments, and they may not
+appear in `reviewThreads` because GitHub could not place them inline. Do not
+treat every CodeRabbit review body as a summary. Keep CodeRabbit issue comments
+or review bodies that contain actionable review sections such as "Potential
+issue", "Suggestion", "Outside diff range", "out of diff", explicit file
+paths/line references, or wording that asks for a code/config/doc change. Skip
+only boilerplate comments such as walkthroughs, pre-merge checks, finishing
+touches, share/tips blocks, run configuration, learnings, and merge queue/status
+comments.
 
 ## 3. Filter to actionable feedback
 
-From the **unresolved** threads and actionable top-level comments, keep only
-**actionable feedback** -- comments that request a code change, flag a bug,
-suggest an improvement, or ask a question that needs a response. Skip:
+From the **unresolved** threads, actionable top-level comments, and actionable
+pull review body sections, keep only **actionable feedback** -- comments that
+request a code change, flag a bug, suggest an improvement, or ask a question
+that needs a response. Skip:
 
 - Bot summary comments (CodeRabbit's top-level "walkthrough" posts, pre-merge
-  checks, finishing touches, share/tips blocks)
+  checks, finishing touches, share/tips blocks, run configuration, learnings)
 - Pure praise / acknowledgement comments ("LGTM", "looks good", etc.)
 - The PR author's own comments (unless they're self-review requesting changes)
 
-For CodeRabbit top-level comments, split the comment into individual actionable
-review items when it contains multiple findings. Preserve each item's comment
-URL and any file/line text CodeRabbit provided. Mark the `file` field as
-`general` only when CodeRabbit did not provide a path. These comments do not
-have GitHub review-thread resolution status, so treat them as pending unless a
-later reply clearly says the item was fixed, resolved, or superseded.
+For CodeRabbit top-level comments and pull review bodies, split the body into
+individual actionable review items when it contains multiple findings. In
+particular, parse "Outside diff range comments" and "Additional comments"
+sections instead of skipping the whole review as a summary. Preserve each item's
+comment/review URL and any file/line text CodeRabbit provided. Mark the `file`
+field as `general` only when CodeRabbit did not provide a path. These items do
+not have GitHub review-thread resolution status, so treat them as pending unless
+a later reply clearly says the item was fixed, resolved, or superseded.
 
 For each remaining comment, classify the **source**:
 
