@@ -57,20 +57,65 @@ again once or twice before giving up.
 
 ### 3. Poll until it finishes (~10 min)
 
-Watch the run in the **background** so you can keep working while CI runs — the
-harness re-invokes you when it exits:
+**Do NOT pin a single `gh run watch <run-id>`.** On a Graphite stack, a re-push
+(of this branch or anything downstack) **cancels the in-flight run and spawns a
+fresh one**. A frozen run-id would watch the cancelled run, see it exit, and
+report `cancelled` as if it were the final result — silently abandoning the real
+run. Instead, poll the **newest run on the branch** and follow replacements:
+when a watched run ends in `cancelled`, re-discover and follow its successor;
+only treat `success`/`failure`/`timed_out` as terminal.
+
+Run this poller in the **background** so you can keep working while CI runs — the
+harness re-invokes you when it exits. Write it to a temp file and launch with
+`run_in_background: true`:
 
 ```bash
-gh run watch <run-id> --exit-status
+cat > /tmp/ci-poll.sh <<'EOF'
+#!/usr/bin/env bash
+# Follows the newest run on the branch; survives cancel-and-restart
+# (stack re-push superseding a run). Exits 0 on success, 1 otherwise.
+set -uo pipefail
+BRANCH="$(git branch --show-current)"
+cancel_retries=0
+newest_run() {
+  gh run list --branch "$BRANCH" --limit 1 \
+    --json databaseId,status,conclusion,headSha \
+    --jq '.[0] | "\(.databaseId)\t\(.status)\t\(.conclusion)\t\(.headSha)"'
+}
+while true; do
+  read -r RID STATUS CONCLUSION SHA <<<"$(newest_run)"
+  if [[ -z "${RID:-}" ]]; then echo "No run yet for $BRANCH; retrying..."; sleep 10; continue; fi
+  if [[ "$STATUS" != "completed" ]]; then
+    echo ">> Watching run $RID (sha ${SHA:0:8}, status=$STATUS)"
+    gh run watch "$RID" --exit-status
+    read -r RID STATUS CONCLUSION SHA <<<"$(newest_run)"
+  fi
+  case "$CONCLUSION" in
+    success) echo "CI_RESULT=success run=$RID sha=${SHA:0:8}"; exit 0 ;;
+    cancelled)
+      cancel_retries=$((cancel_retries + 1))
+      if (( cancel_retries > 12 )); then
+        echo "CI_RESULT=cancelled run=$RID sha=${SHA:0:8} (no replacement)"; exit 1
+      fi
+      echo ">> Run $RID cancelled; looking for replacement (try $cancel_retries)..."; sleep 10 ;;
+    "") echo ">> Newest run is in progress; following it."; cancel_retries=0 ;;
+    *) echo "CI_RESULT=$CONCLUSION run=$RID sha=${SHA:0:8}"; exit 1 ;;
+  esac
+done
+EOF
+bash /tmp/ci-poll.sh
 ```
 
-Run this with `run_in_background: true`. Do not block the foreground on it. Tell
-the user CI is running (~10 min) and continue with any remaining light work.
+Tell the user CI is running (~10 min) and continue with any remaining light work.
 
 ### 4. When CI finishes
 
-- **Passed** (`gh run watch` exits 0): tell the user CI is green and report the
-  run URL.
+The poller's final line is `CI_RESULT=<conclusion> run=<id> sha=<sha>`; its exit
+code mirrors it (0 = success).
+
+- **Passed** (exit 0 / `CI_RESULT=success`): tell the user CI is green and report
+  the run URL. Confirm the reported `sha` matches the current HEAD — if HEAD
+  moved while CI ran, resubmit and poll again.
 - **Failed** (non-zero exit): hand off to `/ci-fix` to fetch the failed logs,
   diagnose, and fix locally — then re-run this cycle (amend + submit + poll).
   Repeat until green.
@@ -84,5 +129,8 @@ the user CI is running (~10 min) and continue with any remaining light work.
    the user asks otherwise.
 3. Route every git mutation through `/graphite`; never raw `git commit`/`push`.
 4. Poll CI in the background — never block the foreground for 10 minutes.
-5. On CI failure, fix and resubmit; do not leave the branch red without telling
+5. Track the newest run on the branch, never a frozen run-id. A stack re-push
+   cancels and replaces runs; follow the replacement and only treat
+   `success`/`failure`/`timed_out` as terminal — never `cancelled`.
+6. On CI failure, fix and resubmit; do not leave the branch red without telling
    the user.
