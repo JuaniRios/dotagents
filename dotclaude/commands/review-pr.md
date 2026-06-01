@@ -533,13 +533,20 @@ review.
 - Keep each comment to 2-4 sentences. Say what's wrong, why it matters,
   and what to do about it.
 
+**Leave the review `body` empty.** Do NOT post the overall assessment to
+the draft — GitHub would attach it as the review summary, and the user
+wants to write/paste that themselves at submit time. You'll print the
+assessment in the conversation in Step 2 instead.
+
 ```bash
-# Build the review payload as a JSON file
+# Build the review payload as a JSON file.
+# "body" is intentionally empty — the overall assessment is displayed in
+# the conversation (Step 2), not posted to the draft.
 review_json=$(mktemp -t pr-review.XXXXXX.json)
 cat > "$review_json" <<'ENDJSON'
 {
   "commit_id": "<head_sha>",
-  "body": "<overall assessment — 2-3 sentences>",
+  "body": "",
   "comments": [
     {
       "path": "<file relative to repo root>",
@@ -570,10 +577,20 @@ The GitHub API does NOT accept `"event": "PENDING"` — it returns a 422.
 Omitting `event` is what makes the review a draft.
 
 This creates a draft review visible only to you (the reviewer) until
-submitted. Tell the user:
+submitted. Tell the user the draft is up, then **print the overall
+assessment in the conversation as a fenced copy-paste block** so they can
+paste it into the review summary box when they submit from the GitHub UI:
 
-> Draft review created with N inline comments. Go to <pr-url> to
-> inspect, edit, or delete comments, then click "Submit review."
+> Draft review created with N inline comments. The overall summary is not
+> part of the draft — paste this into the review summary box when you
+> submit:
+>
+> ```
+> <overall assessment — 2-3 sentences>
+> ```
+>
+> Go to <pr-url> to inspect, edit, or delete comments, then click
+> "Submit review."
 
 **CRITICAL: `line` must be a line present in the diff hunk, not any
 arbitrary line in the file.** To find the right line number:
@@ -590,11 +607,12 @@ makes sense contextually. For example, if a finding is about an
 interaction between existing code and newly introduced code (e.g., "the
 existing reconciler doesn't account for the new compaction policy"),
 place the comment on the new code that introduces the interaction, not
-on the untouched code. Only fall back to the review `body` when the
-finding has genuinely no related changed code anywhere in the diff
-(e.g., a missing file, a documentation gap, a broad architectural
-concern). The goal is to minimize the top-level body so the review
-reads as targeted inline feedback, not a wall of text.
+on the untouched code. Only when a finding has genuinely no related
+changed code anywhere in the diff (e.g., a missing file, a documentation
+gap, a broad architectural concern), fold it into the copy-paste
+assessment block you print in the conversation (Step 2) rather than the
+posted `body` — the draft `body` stays empty. The goal is for the draft
+itself to be targeted inline feedback, not a wall of text.
 
 ## Hard rules
 
@@ -618,8 +636,9 @@ reads as targeted inline feedback, not a wall of text.
    direct comments like a colleague would. The `raw-*.md` and
    `review.md` on disk can use structured formatting (they're local),
    but anything posted to GitHub must be conversational and concise.
-8. **Maximize inline comments, minimize top-level body.** The review
-   `body` should be a 2-3 sentence overall assessment only. Every
-   finding should be an inline comment on a diff line. When a finding
-   references unchanged code, place the comment on the nearest related
-   changed line instead of putting it in the body.
+8. **Maximize inline comments; the draft `body` stays empty.** Never post
+   the overall assessment to the draft review — leave `body` empty and
+   print the 2-3 sentence assessment in the conversation as a copy-paste
+   block for the user to paste at submit time. Every finding should be an
+   inline comment on a diff line. When a finding references unchanged
+   code, place the comment on the nearest related changed line.
