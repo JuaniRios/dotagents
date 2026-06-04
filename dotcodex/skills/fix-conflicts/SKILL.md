@@ -52,19 +52,67 @@ and fix. Also run with `--all-features` to catch `cfg`-gated paths.
 
 `git add <file>` for each resolved file.
 
-## Step 7 — Report
+## Step 7 — Verify, stage, and drive the stack forward
 
-Tell the user:
-- Which files were resolved and how
-- Which conflicts (if any) are ambiguous and need manual review
-- Whether `cargo check` passed
-- Remind them to run `gt continue` when satisfied
+This skill **drives the whole restack/sync to completion** — it does not stop
+after one branch. After resolving every conflict at the current stopping point:
+
+1. **Verify** (Step 5): run `cargo check` (with `--all-features`). NEVER run
+   `gt continue` on code that does not compile — fix it first.
+2. **Stage** (Step 6): `git add` every resolved file.
+3. **Continue**: run `gt continue` to resume the interrupted operation.
+4. **Inspect the outcome and loop:**
+   - **More conflicts** (the next branch in the stack stopped): go back to
+     Step 2 and resolve them, then `gt continue` again. Repeat for every
+     branch until the operation completes.
+   - **Operation finished** (no conflicts remain): proceed to Step 8.
+   - **A genuine semantic conflict you cannot safely resolve** (hard rule #2):
+     STOP. Do not run `gt continue`. Report the ambiguous conflict and ask the
+     user how to resolve it; resume the loop only after they decide.
+
+Print a one-line progress note as each branch clears
+(e.g. `"Resolved <branch>, continuing -> <next branch>"`).
+
+## Step 8 — Restack, sync, and re-loop
+
+Once the interrupted operation completes with no remaining conflicts:
+
+1. Run `gt restack` to re-parent the whole stack onto the latest commits.
+2. Run `gt sync` to fetch trunk and rebase the stack on top.
+   - `gt sync` may prompt to delete merged branches — deleting a branch is a
+     human decision, so do not blindly confirm; surface the prompt to the user.
+3. **If `gt restack` or `gt sync` surfaces new conflicts:** go back to Step 2
+   and resolve them (the full Step 7 loop applies again).
+4. **If both complete with no conflicts and no changes:** the stack is clean —
+   go to Step 9.
+
+## Step 9 — Final report
+
+When the stack is fully resolved, restacked, and synced clean, tell the user:
+- Every branch that had conflicts and how each was resolved
+- Any conflicts that required a human decision (and what was decided)
+- Confirmation that `cargo check` passed and `gt restack` + `gt sync` are clean
+
+### Stopping conditions (when the loop ends)
+
+- **Clean:** `gt restack` and `gt sync` produce no conflicts and no changes.
+- **Human decision needed:** a true semantic conflict (hard rule #2), or a
+  `gt sync` branch-deletion prompt — stop and ask, then resume after they
+  decide.
+- **No progress:** if the same conflict reappears or you loop without
+  advancing, stop and ask rather than looping forever.
 
 ## Hard rules
 
 1. Use `gt continue` / `gt abort` — NEVER `git rebase --continue/--abort`.
 2. Do NOT guess at semantic conflicts — if both sides change the same logic
-   differently, stop and ask.
+   differently, STOP and ask the user. Never `gt continue` past a conflict you
+   resolved by guessing.
 3. Do NOT delete code from either side unless clearly superseded.
-4. Always verify with `cargo check` after resolving.
-5. Do NOT run `gt continue` yourself — let the user do it after reviewing.
+4. Always verify with `cargo check` BEFORE running `gt continue` — never
+   continue on code that does not compile.
+5. **Drive the stack to completion:** after resolving and verifying, run
+   `gt continue` yourself and keep looping (resolve -> verify -> stage ->
+   continue) until the whole stack is applied, then `gt restack` + `gt sync`,
+   re-looping until clean. Only stop for a human decision (a semantic conflict
+   or a `gt sync` prompt) or when you stop making progress.
