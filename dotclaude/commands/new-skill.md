@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git:*), Bash(test:*), Bash(ls:*), Read, Write, Edit, Glob, Grep, AskUserQuestion
+allowed-tools: Bash(git:*), Bash(test:*), Bash(ls:*), Bash(ln:*), Read, Write, Edit, Glob, Grep, AskUserQuestion
 description: Create a new Claude command, Claude skill, Codex skill, or paired Claude/Codex skill in the dotagents repo. Handles file creation, git commit, and symlink verification.
 argument-hint: [claude-command|claude-skill|codex-skill|both] [name]
 ---
@@ -29,12 +29,21 @@ agent config.
       graphite/SKILL.md
 
 ~/.claude/
-  commands -> ~/Github/dotagents/dotclaude/commands
-  skills   -> ~/Github/dotagents/dotclaude/skills
+  commands/                # REAL dir — one symlink PER command file
+    <name>.md -> ~/Github/dotagents/dotclaude/commands/<name>.md
+  skills/                  # REAL dir — one symlink PER skill directory
+    <name>  -> ~/Github/dotagents/dotclaude/skills/<name>
 
 ~/.codex/
-  skills   -> ~/Github/dotagents/dotcodex/skills
+  skills   -> ~/Github/dotagents/dotcodex/skills   # whole-dir symlink
 ```
+
+Link granularity matters when adding something new:
+- `~/.claude/commands` and `~/.claude/skills` are **real directories** whose
+  entries are individually symlinked. Creating a file in the repo does **not**
+  make it appear — you must create the per-entry symlink yourself (Step 4b).
+- `~/.codex/skills` is a **whole-directory** symlink, so a new Codex skill shows
+  up automatically with no extra linking.
 
 ### Claude commands vs Claude skills vs Codex skills
 
@@ -179,15 +188,40 @@ make the wording agent-native:
 
 Write the file using the `Write` tool.
 
+## Step 4b — Create the symlink (Claude command/skill only)
+
+`~/.claude/commands` and `~/.claude/skills` are real directories with per-entry
+symlinks, so a newly written repo file is **not** reachable until you link it.
+Create the symlink yourself:
+
+For a **Claude command**:
+
+```bash
+ln -s ~/Github/dotagents/dotclaude/commands/<name>.md ~/.claude/commands/<name>.md
+```
+
+For a **Claude skill** (link the whole skill directory):
+
+```bash
+ln -s ~/Github/dotagents/dotclaude/skills/<name> ~/.claude/skills/<name>
+```
+
+For a **Codex skill**: skip this — `~/.codex/skills` is a whole-directory
+symlink, so the new skill is already reachable.
+
 ## Step 5 — Verify
 
-1. Confirm the file exists and is reachable through the symlink:
+1. Confirm the entry exists and resolves through its symlink (`test -L` checks
+   the link exists, `test -f`/`-e` that it resolves to the real file):
 
    ```bash
-   test -f ~/.claude/commands/<name>.md && echo "Claude command linked"
-   test -f ~/.claude/skills/<name>/SKILL.md && echo "Claude skill linked"
+   test -L ~/.claude/commands/<name>.md && test -f ~/.claude/commands/<name>.md && echo "Claude command linked"
+   test -L ~/.claude/skills/<name> && test -f ~/.claude/skills/<name>/SKILL.md && echo "Claude skill linked"
    test -f ~/.codex/skills/<name>/SKILL.md && echo "Codex skill linked"
    ```
+
+   If a Claude command/skill check fails, the per-entry symlink from Step 4b is
+   missing — create it and re-verify.
 
 2. Print the file path and a summary of what was created.
 
@@ -227,4 +261,6 @@ Wait for confirmation. If yes, run `git push`. If no, stop.
 2. Never overwrite an existing skill or command without explicit confirmation.
 3. Commit directly to master — no branches.
 4. Show the full draft to the user before writing any file.
-5. Verify the relevant symlink works after creating the file.
+5. For a Claude command/skill, create the per-entry symlink (Step 4b) — writing
+   the repo file alone does not make it reachable. Codex skills need no link.
+6. Verify the relevant symlink resolves after creating the file.
