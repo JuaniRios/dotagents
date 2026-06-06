@@ -1,6 +1,7 @@
 ---
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, AskUserQuestion
-description: Cross-review the current branch, auto-fix findings, and re-review until clean. Loops automatically — only stops for user input on disputed findings or massive changes.
+description: Cross-review the current branch, auto-fix findings, and re-review until clean. Loops automatically — only stops for user input on disputed findings or massive changes. Pass `stack` to run the loop across the whole upstack, amending each branch.
+argument-hint: [stack]
 ---
 
 Run a full self-review loop on the current branch: review → auto-fix →
@@ -12,7 +13,60 @@ are fixed without asking. The loop re-runs the full review after each fix
 pass to catch issues introduced by the fixes themselves. It stops when
 the review returns no new actionable findings.
 
+**Argument:** with no argument, the loop runs on the **current branch only**
+and never touches version control (the safe default). With `stack`, it runs
+across the **entire upstack** — current branch and every branch above it —
+amending each branch as it goes (see **Stack mode** below).
+
 Follow these steps precisely.
+
+---
+
+## Stack mode (`/review-loop stack`)
+
+When invoked with the `stack` argument, wrap the single-branch loop (steps
+1–14) in an upstack walk: review-loop the current branch, fold the fixes into
+its commit, move up, and repeat until the top of the stack. Passing `stack` is
+an explicit opt-in to the amend-and-advance flow, so in stack mode **hard rule
+#4 is relaxed**: you MAY `gt modify -a` to amend fixes into the current
+branch before moving up. You still never `gt submit`/push without the user
+asking.
+
+With no `stack` argument, skip this section entirely and run steps 1–14 once
+on the current branch.
+
+### Stack flow
+
+1. Record the starting branch: `git branch --show-current`. You return here at
+   the very end.
+2. Run the full single-branch loop (**steps 1–14**) on the current branch.
+   - **Relax the step-1 clean-tree gate after the first branch**: `gt up`
+     restacks descendants, so a non-empty tree from that is expected. Still
+     stop if there are unrelated uncommitted edits you did not make.
+3. After the loop converges clean and `/ci` has passed, if any files were
+   modified on this branch (by fixes or by `/ci`), amend them into the
+   branch's commit with `gt modify -a` (invoke the `graphite` skill). This
+   also restacks descendants. If nothing was modified, skip the amend.
+4. Move up the stack with `gt up` (via the `graphite` skill):
+   - If `gt up` succeeds and the branch changed, print
+     `"Moving up stack -> <new branch>"` and repeat from step 2.
+   - If `gt up` fails or the branch did not change, you are at the top. Print
+     `"Reached top of stack."` and end the stack walk.
+5. If the single-branch loop **fails to converge** on any branch (hits the
+   4-pass cap), stop on that branch — do **NOT** continue up the stack. Report
+   which branch is stuck and follow the normal non-convergence flow.
+6. When done (success or failure), return to the starting branch
+   (`gt checkout <starting-branch>`) and print a per-branch summary:
+   ```
+   Stack review-loop summary:
+     branch-a: converged clean (fixed 3, amended)
+     branch-b: converged clean (no changes)
+     branch-c: stuck (4-pass cap — see above)
+   ```
+
+Each branch gets its own review directory (the step-2 `out_dir` is
+branch-named), its own diff against its own `gt parent`, and its own 4-pass
+cap. The Defer-to-Linear step (13) still applies per branch.
 
 ---
 
@@ -906,6 +960,10 @@ Reports: <paths to review.md files from each iteration>
 Then stop. Do not auto-run `gt modify`, `gt submit`, or any other
 mutation — the user decides when to amend and push.
 
+**In stack mode**, this is where the single-branch loop returns to the Stack
+flow: the wrapper amends the branch (`gt modify -a`) and moves up. Print the
+per-branch summary line, then continue the upstack walk — do not stop here.
+
 ---
 
 ## Failure modes
@@ -936,7 +994,10 @@ mutation — the user decides when to amend and push.
 3. Never create Linear issues without explicit per-issue user confirmation
    of the exact draft content.
 4. Never amend, commit, or `gt submit` automatically — the user drives
-   version control.
+   version control. **Exception (stack mode only):** when invoked with the
+   `stack` argument, `gt modify -a` to amend fixes into the current branch
+   before moving up is expected and allowed. Never `gt submit`/push without
+   the user asking, even in stack mode.
 5. Always use `--description-file` with `linear issue create`, never inline
    `--description`.
 6. Always re-verify findings against the current source before applying
