@@ -1,0 +1,6 @@
+interface:
+  display_name: "External Contract Inspector"
+  short_description: "Flag unverified assumptions about external APIs/contracts"
+  default_prompt: "Use $external-contract-inspector to check external-contract assumptions."
+policy:
+  allow_implicit_invocation: true

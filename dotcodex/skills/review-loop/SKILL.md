@@ -354,9 +354,9 @@ If a Claude lane exits non-zero, record it as "reviewer errored" and
 continue. Skip Claude entirely when the CLI is unavailable or the user asks
 for Codex-only review.
 
-### Inspector agents — Test Inspector and Idiomatic Rust Inspector
+### Inspector agents — Test, Idiomatic Rust, and External Contract Inspectors
 
-Alongside the five reviewers, spawn two additional specialized inspector
+Alongside the five reviewers, spawn three additional specialized inspector
 agents. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary
 input.
@@ -396,10 +396,31 @@ files are in the diff, say so and stop.
 
 Write output to `$out_dir/raw-rust-inspector.md`.
 
+**External Contract Inspector**:
+
+Prompt: the full content of the Codex `external-contract-inspector` skill
+(`~/.codex/skills/external-contract-inspector/SKILL.md`, everything below
+the frontmatter). Treat the current branch as the user request. Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+
+Identify external touchpoints in the diff (HTTP/RPC/SDK responses, on-chain
+ABIs and message formats, units/decimals). For each, check whether the
+assumed shape is backed by a cited spec or a test encoding a real response.
+Read the relevant test files and fixtures to decide. Produce your inspection
+report. If the diff has no external touchpoints, say so and stop.
+```
+
+Write output to `$out_dir/raw-contract-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (this is fine — record "no test files, skipped"). If the
 diff contains no `.rs` files, the Rust inspector will self-exit (same
-handling). The aggregator handles missing inspector reports gracefully.
+handling). If the diff has no external touchpoints, the external contract
+inspector will self-exit (same handling). The aggregator handles missing
+inspector reports gracefully.
 
 ### Chunk splitting for large diffs
 
@@ -450,8 +471,9 @@ In one parallel batch, issue:
 5. Codex subagent call for Codex E
 6. Codex subagent call for Test Inspector
 7. Codex subagent call for Idiomatic Rust Inspector
-8. Optional `claude -p` process for Claude A
-9. Optional `claude -p` process for Claude B
+8. Codex subagent call for External Contract Inspector
+9. Optional `claude -p` process for Claude A
+10. Optional `claude -p` process for Claude B
 
 ## 6. Aggregate
 
@@ -476,10 +498,11 @@ You may also have optional external raw reviews:
 - {CLAUDE_A_PATH}  (Claude A)
 - {CLAUDE_B_PATH}  (Claude B)
 
-You also have two specialized inspector reports (may be empty if no
+You also have three specialized inspector reports (may be empty if no
 relevant files were in the diff):
-- {TEST_INSPECTOR_PATH}    (Test Inspector — test quality assessment)
-- {RUST_INSPECTOR_PATH}    (Idiomatic Rust Inspector — Rust idiom assessment)
+- {TEST_INSPECTOR_PATH}      (Test Inspector — test quality assessment)
+- {RUST_INSPECTOR_PATH}      (Idiomatic Rust Inspector — Rust idiom assessment)
+- {CONTRACT_INSPECTOR_PATH}  (External Contract Inspector — unverified external-API/contract assumptions)
 
 And the diff itself at:
 - {DIFF_PATH}
@@ -540,7 +563,8 @@ For each finding:
 - **Validity:** valid | likely | disputed | invalid | out-of-scope
 - **Confidence:** <0-100>
 - **Found by:** [codex-a], [codex-b], [codex-c], [codex-d], [codex-e],
-  [claude-a], [claude-b], [test-inspector], [rust-inspector], or a list
+  [claude-a], [claude-b], [test-inspector], [rust-inspector],
+  [contract-inspector], or a list
 - **Issue:** <one paragraph>
 - **Why it matters:** <concrete consequence>
 - **Recommended fix:** <specific action>
@@ -575,11 +599,19 @@ their findings as follows:
   "correctness" for ownership bugs or unsafe misuse. Severity: non-idiomatic
   with correctness impact = high, non-idiomatic style-only = medium,
   suboptimal = low.
+- **External Contract Inspector findings** (unverified assumptions about an
+  external API/contract — wire types, numeric widths, units/decimals, field
+  shapes — not backed by a cited spec or a real-response test): convert each
+  into a standard finding entry. Use category "correctness". Carry over the
+  inspector's risk-weighted severity verbatim (critical for wrong
+  width/unit/encoding at a money or on-chain boundary, down to low for
+  cosmetic shape assumptions). The recommended fix should name how to pin
+  the assumption (cite the spec, or add the real-response test).
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the reviewer
   findings — merge duplicates as you would between any two reviewers.
-- In the "Found by" field, use [test-inspector] or [rust-inspector] as
-  the attribution.
+- In the "Found by" field, use [test-inspector], [rust-inspector], or
+  [contract-inspector] as the attribution.
 
 Do not include emojis, apologies, or disclaimers. Be decisive.
 ```

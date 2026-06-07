@@ -310,9 +310,9 @@ specified above — nothing else.
 Write each Agent's output to `$out_dir/raw-opus-a.md`,
 `$out_dir/raw-opus-b.md`, and `$out_dir/raw-sonnet.md` respectively.
 
-### Inspector agents — Test, Idiomatic Rust, and Strong Typing Inspectors
+### Inspector agents — Test, Idiomatic Rust, Strong Typing, and External Contract Inspectors
 
-Alongside the five reviewers, spawn three additional specialized inspector
+Alongside the five reviewers, spawn four additional specialized inspector
 agents. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary
 input.
@@ -371,12 +371,33 @@ strong typing is relevant, say so and stop.
 
 Write output to `$out_dir/raw-typing-inspector.md`.
 
+**External Contract Inspector** — `model: "opus"`, `subagent_type: "general-purpose"`:
+
+Prompt: the full content of the `/external-contract-inspector` command skill
+(`~/.claude/commands/external-contract-inspector.md`, everything below the
+frontmatter). Replace `$ARGUMENTS` with the empty string (use the current
+branch). Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+
+Identify external touchpoints in the diff (HTTP/RPC/SDK responses, on-chain
+ABIs and message formats, units/decimals). For each, check whether the
+assumed shape is backed by a cited spec or a test encoding a real response.
+Read the relevant test files and fixtures to decide. Produce your inspection
+report. If the diff has no external touchpoints, say so and stop.
+```
+
+Write output to `$out_dir/raw-contract-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (this is fine — record "no test files, skipped"). If the
 diff contains no `.rs` files, the Rust inspector will self-exit (same
 handling). If the diff has no source files where strong typing applies,
-the typing inspector will self-exit (same handling). The aggregator
-handles missing inspector reports gracefully.
+the typing inspector will self-exit (same handling). If the diff has no
+external touchpoints, the external contract inspector will self-exit (same
+handling). The aggregator handles missing inspector reports gracefully.
 
 ### Reviewers 4-5 — Codex gpt-5.5 A and B (Bash)
 
@@ -475,6 +496,7 @@ In a single Claude message, issue:
 6. `Agent` call for Test Inspector (`model: "sonnet"`)
 7. `Agent` call for Idiomatic Rust Inspector (`model: "opus"`)
 8. `Agent` call for Strong Typing Inspector (`model: "sonnet"`)
+9. `Agent` call for External Contract Inspector (`model: "opus"`)
 
 ## 6. Aggregate
 
@@ -495,11 +517,12 @@ You have five raw reviews:
 - {CODEX_A_PATH}   (Codex gpt-5.5 A)
 - {CODEX_B_PATH}   (Codex gpt-5.5 B)
 
-You also have three specialized inspector reports (may be empty if no
+You also have four specialized inspector reports (may be empty if no
 relevant files were in the diff):
-- {TEST_INSPECTOR_PATH}    (Test Inspector — test quality assessment)
-- {RUST_INSPECTOR_PATH}    (Idiomatic Rust Inspector — Rust idiom assessment)
-- {TYPING_INSPECTOR_PATH}  (Strong Typing Inspector — primitive-vs-domain-type assessment)
+- {TEST_INSPECTOR_PATH}      (Test Inspector — test quality assessment)
+- {RUST_INSPECTOR_PATH}      (Idiomatic Rust Inspector — Rust idiom assessment)
+- {TYPING_INSPECTOR_PATH}    (Strong Typing Inspector — primitive-vs-domain-type assessment)
+- {CONTRACT_INSPECTOR_PATH}  (External Contract Inspector — unverified external-API/contract assumptions)
 
 And the diff itself at:
 - {DIFF_PATH}
@@ -598,11 +621,19 @@ their findings as follows:
   entry. Use category "maintainability". Severity: primitive-where-domain-
   type-exists = medium (high if it touches financial values or
   identifiers), missed-newtype opportunity = low.
+- **External Contract Inspector findings** (unverified assumptions about an
+  external API/contract — wire types, numeric widths, units/decimals, field
+  shapes — not backed by a cited spec or a real-response test): convert each
+  into a standard finding entry. Use category "correctness". Carry over the
+  inspector's risk-weighted severity verbatim (critical for wrong
+  width/unit/encoding at a money or on-chain boundary, down to low for
+  cosmetic shape assumptions). The recommended fix should name how to pin
+  the assumption (cite the spec, or add the real-response test).
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the five reviewer
   findings — merge duplicates as you would between any two reviewers.
-- In the "Found by" field, use [test-inspector], [rust-inspector], or
-  [typing-inspector] as the attribution.
+- In the "Found by" field, use [test-inspector], [rust-inspector],
+  [typing-inspector], or [contract-inspector] as the attribution.
 
 Do not include emojis, apologies, or disclaimers. Be decisive.
 ```

@@ -262,6 +262,7 @@ Spawn all in a **single message with parallel tool calls**:
 6. **Test Inspector** — via the `Agent` tool (`model: "sonnet"`)
 7. **Idiomatic Rust Inspector** — via the `Agent` tool (`model: "opus"`)
 8. **Strong Typing Inspector** — via the `Agent` tool (`model: "sonnet"`)
+9. **External Contract Inspector** — via the `Agent` tool (`model: "opus"`)
 
 ### Reviewers 1-3 — Claude Opus A, Opus B, Sonnet (Agent tool)
 
@@ -322,9 +323,9 @@ Notes:
 - **Daily quota fallback**: If Codex fails with a daily limit error (look
   for `rate_limit` or `quota` with reset in hours), retry once with `-m o3`.
 
-### Inspectors 6-8 — Test, Idiomatic Rust, and Strong Typing Inspectors (Agent tool)
+### Inspectors 6-9 — Test, Idiomatic Rust, Strong Typing, and External Contract Inspectors (Agent tool)
 
-Spawn three additional specialized inspector agents alongside the five
+Spawn four additional specialized inspector agents alongside the five
 reviewers. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary input.
 
@@ -385,12 +386,34 @@ strong typing is relevant, say so and stop.
 
 Write output to `$out_dir/raw-typing-inspector.md`.
 
+**External Contract Inspector** — `model: "opus"`, `subagent_type: "general-purpose"`:
+
+Prompt: the full content of the `/external-contract-inspector` command skill
+(`~/.claude/commands/external-contract-inspector.md`, everything below the
+frontmatter). Replace `$ARGUMENTS` with the PR reference. Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+The PR is at commit <head_sha>. Read source files via
+`git show <head_sha>:<path>` — the working tree does not match the PR.
+
+Identify external touchpoints in the diff (HTTP/RPC/SDK responses, on-chain
+ABIs and message formats, units/decimals). For each, check whether the
+assumed shape is backed by a cited spec or a test encoding a real response.
+Read the relevant test files and fixtures to decide. Produce your inspection
+report. If the diff has no external touchpoints, say so and stop.
+```
+
+Write output to `$out_dir/raw-contract-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (record "no test files, skipped"). If the diff contains no
 `.rs` files, the Rust inspector will self-exit (same handling). If the
 diff has no source files where strong typing applies, the typing
-inspector will self-exit (same handling). The aggregator handles missing
-inspector reports gracefully.
+inspector will self-exit (same handling). If the diff has no external
+touchpoints, the external contract inspector will self-exit (same
+handling). The aggregator handles missing inspector reports gracefully.
 
 ### Output validation
 
@@ -417,10 +440,10 @@ continue. If all five error, stop.
 
 ## 7. Aggregate with review-pr-specific output
 
-The aggregator receives the five reviewer reports **plus** the three
+The aggregator receives the five reviewer reports **plus** the four
 inspector reports (`$out_dir/raw-test-inspector.md`,
-`$out_dir/raw-rust-inspector.md`, and
-`$out_dir/raw-typing-inspector.md`). Pass all eight to the aggregator.
+`$out_dir/raw-rust-inspector.md`, `$out_dir/raw-typing-inspector.md`, and
+`$out_dir/raw-contract-inspector.md`). Pass all nine to the aggregator.
 
 Inspector reports use a different format from the five reviewers. The
 aggregator should integrate their findings as follows:
@@ -440,6 +463,14 @@ aggregator should integrate their findings as follows:
   entry. Use category "maintainability". Severity: primitive-where-domain-
   type-exists = medium (high if it touches financial values or
   identifiers), missed-newtype opportunity = low.
+- **External Contract Inspector findings** (unverified assumptions about an
+  external API/contract — wire types, numeric widths, units/decimals, field
+  shapes — not backed by a cited spec or a real-response test): convert each
+  into a standard finding entry. Use category "correctness". Carry over the
+  inspector's risk-weighted severity verbatim (critical for wrong
+  width/unit/encoding at a money or on-chain boundary, down to low for
+  cosmetic shape assumptions). The recommended fix should name how to pin
+  the assumption (cite the spec, or add the real-response test).
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the five reviewer
   findings — merge duplicates as usual.

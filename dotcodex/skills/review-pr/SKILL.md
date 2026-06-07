@@ -278,6 +278,7 @@ Default reviewer set:
 5. **Codex E** — broad general sweep
 6. **Test Inspector** — Codex subagent using the test-inspector workflow
 7. **Idiomatic Rust Inspector** — Codex subagent using the Rust inspector workflow
+8. **External Contract Inspector** — Codex subagent using the external-contract-inspector workflow
 
 Optional external reviewers:
 
@@ -341,9 +342,9 @@ Notes:
   in the final user-facing report or GitHub comments.
 - If Claude exits non-zero, record that lane as errored and continue.
 
-### Inspectors 6-7 — Test Inspector and Idiomatic Rust Inspector
+### Inspectors 6-8 — Test, Idiomatic Rust, and External Contract Inspectors
 
-Spawn two additional Codex subagents alongside the five
+Spawn three additional Codex subagents alongside the five
 reviewers. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary input.
 
@@ -386,10 +387,32 @@ files are in the diff, say so and stop.
 
 Write output to `$out_dir/raw-rust-inspector.md`.
 
+**External Contract Inspector**:
+
+Prompt: the full content of the Codex `external-contract-inspector` skill
+(`~/.codex/skills/external-contract-inspector/SKILL.md`, everything below
+the frontmatter). Treat the PR reference as the user request. Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+The PR is at commit <head_sha>. Read source files via
+`git show <head_sha>:<path>` — the working tree does not match the PR.
+
+Identify external touchpoints in the diff (HTTP/RPC/SDK responses, on-chain
+ABIs and message formats, units/decimals). For each, check whether the
+assumed shape is backed by a cited spec or a test encoding a real response.
+Read the relevant test files and fixtures to decide. Produce your inspection
+report. If the diff has no external touchpoints, say so and stop.
+```
+
+Write output to `$out_dir/raw-contract-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (record "no test files, skipped"). If the diff contains no
-`.rs` files, the Rust inspector will self-exit (same handling). The
-aggregator handles missing inspector reports gracefully.
+`.rs` files, the Rust inspector will self-exit (same handling). If the diff
+has no external touchpoints, the external contract inspector will self-exit
+(same handling). The aggregator handles missing inspector reports gracefully.
 
 ### Output validation
 
@@ -415,9 +438,10 @@ continue. If all five Codex reviewer lanes error, stop.
 
 ## 7. Aggregate with review-pr-specific output
 
-The aggregator receives the five reviewer reports **plus** the two
-inspector reports (`$out_dir/raw-test-inspector.md` and
-`$out_dir/raw-rust-inspector.md`). Pass all seven to the aggregator.
+The aggregator receives the five reviewer reports **plus** the three
+inspector reports (`$out_dir/raw-test-inspector.md`,
+`$out_dir/raw-rust-inspector.md`, and
+`$out_dir/raw-contract-inspector.md`). Pass all eight to the aggregator.
 
 Inspector reports use a different format from the five reviewers. The
 aggregator should integrate their findings as follows:
@@ -432,6 +456,14 @@ aggregator should integrate their findings as follows:
   "correctness" for ownership bugs or unsafe misuse. Severity: non-idiomatic
   with correctness impact = high, non-idiomatic style-only = medium,
   suboptimal = low.
+- **External Contract Inspector findings** (unverified assumptions about an
+  external API/contract — wire types, numeric widths, units/decimals, field
+  shapes — not backed by a cited spec or a real-response test): convert each
+  into a standard finding entry. Use category "correctness". Carry over the
+  inspector's risk-weighted severity verbatim (critical for wrong
+  width/unit/encoding at a money or on-chain boundary, down to low for
+  cosmetic shape assumptions). The recommended fix should name how to pin
+  the assumption (cite the spec, or add the real-response test).
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the five reviewer
   findings — merge duplicates as usual.
