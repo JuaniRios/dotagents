@@ -92,15 +92,15 @@ templates. If none exists, use this fallback structure:
 ```markdown
 ## What
 
-<!-- 1-3 sentences. What does this PR do? -->
+<!-- Bullet points only (no prose paragraphs). What does this PR do? -->
 
 ## Why
 
-<!-- The motivation. Link issues. -->
+<!-- Bullet points only. The motivation. Link issues. -->
 
 ## How
 
-<!-- Implementation approach, design decisions, tradeoffs. -->
+<!-- Bullet points only. Implementation approach, design decisions, tradeoffs. -->
 
 ## Testing
 
@@ -144,6 +144,11 @@ Fill every section of the template based on what you read in the diff. Rules:
   to find what changed. Aim for the shortest description that still covers the
   what/why/how/testing — if a sentence doesn't help a context-free reader
   understand or review the change, drop it.
+- **What / Why / How are bullet points, never prose.** Write these three
+  sections (or their template equivalents) as tight bullets only — no paragraph
+  blocks. The bullet form forces you to condense each point to its essence; if a
+  point won't fit a single scannable bullet, it's too long. Testing and
+  "Anything else" may use prose where a bullet would be awkward.
 - **Accurate, not flowery.** Describe what the code actually does, not what
   you wish it did. If the diff is a refactor, say so. Don't overstate impact.
 - **Concrete.** Reference specific functions, files, and symbols — not
