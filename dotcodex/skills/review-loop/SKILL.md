@@ -121,7 +121,8 @@ parent`**, not trunk — reviewing against trunk on a stacked branch would
 include ancestor PRs and drown the reviewers in unrelated changes.
 
 ```bash
-parent=$(gt parent 2>/dev/null || git merge-base origin/main HEAD)
+default_branch=$(git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null || echo origin/master)
+parent=$(gt parent 2>/dev/null || git merge-base "$default_branch" HEAD)
 branch=$(git rev-parse --abbrev-ref HEAD)
 head_sha=$(git rev-parse HEAD)
 parent_sha=$(git rev-parse "$parent")
@@ -163,6 +164,12 @@ Also extract the PR description if a PR exists for this branch:
 ```bash
 pr_body=$(gh pr view --json body --jq '.body' 2>/dev/null || echo "No PR description available.")
 ```
+
+Strip bot-appended footers before embedding the description in prompts:
+cut everything from the first HTML-comment footer marker onward (e.g.
+`<!-- codesmith:footer -->`, CodeRabbit/Codesmith badges, tracking links).
+Reviewers should see only the author-written description — bot HTML wastes
+their context and can mislead the goal-evaluation lane.
 
 ## 4. Build the reviewer prompts
 
@@ -894,6 +901,11 @@ Save all delta outputs to `$out_dir/delta-iter${N}-*.md` (audit trail).
    the sweep reports no findings. The loop has converged. Run the `ci`
    skill to verify all changes compile, pass tests, and satisfy lints.
    Let the ci loop run until it passes or it asks the user for help.
+   The ci skill's own "amend via `gt modify -a` on success" step is
+   overridden by this loop: never amend in single-branch mode (hard rule
+   4 — the user drives version control); in stack mode the stack flow
+   amends once per branch after convergence, so ci must not amend
+   separately there either.
    - If the `ci` skill made **no code changes**: proceed to step 13/14.
    - If it **made code changes** (lint, formatting): run one more delta
      pass over the new delta. This converges quickly since ci changes are
