@@ -386,7 +386,10 @@ const VERDICT_SCHEMA = {
   },
 }
 
-const { repoRoot, docsPaths, lanes, reportHeader, synthesisExtra } = args
+// The harness may deliver args as a JSON-encoded string instead of a
+// parsed object — parse defensively before destructuring.
+const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+const { repoRoot, docsPaths, lanes, reportHeader, synthesisExtra } = parsedArgs
 
 phase('Review')
 

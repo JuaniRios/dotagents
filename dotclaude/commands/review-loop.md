@@ -449,7 +449,10 @@ const VERDICT_SCHEMA = {
   },
 }
 
-const { repoRoot, docsPaths, lanes, reportHeader, synthesisExtra } = args
+// The harness may deliver args as a JSON-encoded string instead of a
+// parsed object — parse defensively before destructuring.
+const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+const { repoRoot, docsPaths, lanes, reportHeader, synthesisExtra } = parsedArgs
 
 phase('Review')
 
@@ -877,7 +880,10 @@ const SWEEP_SCHEMA = {
   },
 }
 
-const { fixedFindings, deltaDiffPath, fullDiffPath, repoRoot, docsPaths } = args
+// The harness may deliver args as a JSON-encoded string instead of a
+// parsed object — parse defensively before destructuring.
+const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+const { fixedFindings, deltaDiffPath, fullDiffPath, repoRoot, docsPaths } = parsedArgs
 
 const [verifications, sweep] = await parallel([
   () => parallel(fixedFindings.map(finding => () =>
