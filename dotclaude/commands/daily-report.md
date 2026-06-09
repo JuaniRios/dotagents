@@ -7,7 +7,8 @@ argument-hint: "[compressed]"
 # Daily Report — end-of-day work summary
 
 Generates a comprehensive daily report by aggregating Claude Code sessions,
-git history, and GitHub activity across all repos in `~/Github/`.
+git history, GitHub activity, and Telegram conversations across all repos
+in `~/Github/`.
 
 ## Compressed mode
 
@@ -63,10 +64,11 @@ echo "Report date: $today"
 echo "Epoch ms start: $today_start_epoch_ms"
 ```
 
-## Step 2 — Collect data (run all five in parallel using Agent sub-agents)
+## Step 2 — Collect data (run all in parallel using Agent sub-agents)
 
-Launch five parallel sub-agents to collect data simultaneously. Each agent
-should return structured findings.
+Launch the collection sub-agents below in parallel. Each agent returns
+structured findings. Agent A additionally fans out one summarizer per
+project — see its section.
 
 ### Agent A — Claude Code session activity
 
@@ -130,13 +132,59 @@ Where `<project-path-with-dashes>` is the project path with `/` replaced by
 `-` (e.g., `/Users/juanrios/Github/st0x.liquidity` becomes
 `-Users-juanrios-Github-st0x-liquidity`).
 
-For each session file, read the first 200 and last 200 lines to capture the
-opening request and final state. Extract:
-- What the user asked for (user messages)
-- What was accomplished (look for tool calls, file edits, commits)
-- Whether the work seems complete or in-progress
+**Fan out one summarizer sub-agent per project** (the history scan above
+shows which projects had sessions). A single agent skimming every session
+produces vague summaries — each summarizer handles only its own project's
+session files and digests them properly.
+
+Session files are mostly tool-call noise; never read them raw. Extract just
+the conversation — user messages and assistant text, skipping tool results,
+system reminders, and sub-agent sidechains:
+
+```bash
+python3 -c "
+import json, sys
+msgs = []
+with open(sys.argv[1]) as fh:
+    for line in fh:
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if e.get('isSidechain'):
+            continue
+        if e.get('type') not in ('user', 'assistant'):
+            continue
+        content = (e.get('message') or {}).get('content')
+        if isinstance(content, str):
+            parts = [content]
+        elif isinstance(content, list):
+            parts = [b.get('text', '') for b in content
+                     if isinstance(b, dict) and b.get('type') == 'text']
+        else:
+            continue
+        txt = ' '.join(p for p in parts if p).strip()
+        if not txt or txt.startswith(('<system-reminder', '<command-name',
+                '<local-command-stdout', '<task-notification', 'Caveat:')):
+            continue
+        msgs.append((e['type'], txt[:300]))
+if len(msgs) > 60:
+    msgs = msgs[:30] + [('...', f'[{len(msgs)-60} messages elided]')] + msgs[-30:]
+for role, txt in msgs:
+    print(f'[{role}] {txt}')
+" "$session_file"
+```
+
+The gist of a session usually lives in the MIDDLE of the conversation —
+direction changes, discoveries, dead ends, fixes. Never summarize from the
+opening request alone; long sessions often end up doing something different
+from what they started with. Each summarizer returns, per session:
+- **Goal**: what the user originally asked for
+- **What actually happened**: the narrative, including pivots and discoveries
+- **Outcome**: shipped / in PR / in progress / abandoned — and where
 - **Any production incidents, outages, or manual interventions**
 - **Root causes identified and whether fixes are shipped or still in PRs**
+- **Unresolved threads** worth following up tomorrow
 
 ### Agent B — Git activity across all repos
 
@@ -442,9 +490,67 @@ produced them. The concrete commits and PRs from Agents B and D already
 capture the shipped work no matter which tool authored it; Codex session
 data is for intent and context.
 
+### Agent F — Telegram conversations
+
+A lot of work coordination happens in Telegram — decisions, requests from
+teammates, incident chatter, commitments. Read today's messages from
+work-related chats via `tdl` (Telegram MTProto CLI logged into the user's
+own account) so the report reflects this context.
+
+The chat list lives in `~/.config/daily-report-telegram-chats.txt` — one
+chat per line (numeric ID or @username), `#` for comments. If the file is
+missing, run `tdl chat ls`, show the user the chats, ask which are
+work-related (AskUserQuestion), and write the config before continuing.
+
+```bash
+today_start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$today 00:00:00" +%s)
+now_epoch=$(date +%s)
+
+grep -v '^#' ~/.config/daily-report-telegram-chats.txt 2>/dev/null | \
+while read -r chat; do
+  [ -n "$chat" ] || continue
+  out="/tmp/tg-export-$(echo "$chat" | tr -c 'A-Za-z0-9' '-').json"
+  tdl chat export -c "$chat" -T time -i "$today_start_epoch,$now_epoch" \
+    --all --with-content -o "$out"
+done
+```
+
+Inspect the first export's schema (`head -c 2000 <file>`) before bulk
+parsing, then extract time, sender (if present), and text per message:
+
+```bash
+python3 -c "
+import json, sys
+from datetime import datetime
+data = json.load(open(sys.argv[1]))
+for m in data.get('messages', []):
+    txt = m.get('text') or m.get('content') or ''
+    if not txt:
+        continue
+    ts = m.get('date')
+    when = datetime.fromtimestamp(ts).strftime('%H:%M') if ts else '--:--'
+    sender = m.get('from') or m.get('sender') or m.get('from_name') or '?'
+    print(f'[{when}] {sender}: {str(txt)[:300]}')
+" "$out"
+```
+
+From the messages, extract:
+- **Decisions made** (and by whom) that explain or redirect today's work
+- **Requests/asks directed at the user** — done, in progress, or still open
+- **Incidents discussed** — corroborate with session/git data for duration
+  and status
+- **Commitments the user made** ("I'll ship X tomorrow") → Action Items
+- Context that explains *why* work happened, which sessions alone miss
+
+Telegram context primarily feeds Status, Action Items, and theme emphasis —
+it's often the source of truth for what the team actually cares about today.
+
+If `tdl` is not installed or not logged in, skip this agent gracefully and
+note it in the Step 2.5 summary (see Failure modes).
+
 ## Step 2.5 — User review before writing
 
-Once all five agents return, compile a short summary of what you found and
+Once all agents return, compile a short summary of what you found and
 present it to the user for review using `AskUserQuestion`. This lets the
 user correct emphasis, flag things you missed, or add context you couldn't
 infer from the data (e.g., "prod is currently down", "this issue is the
@@ -465,6 +571,9 @@ Proposed themes:
 
 Linear: 7 completed, 3 started
 PRs: 4 opened, 4 merged
+
+💬 From Telegram: Josh asked for the redemption fix by EOW; agreed to defer
+the dashboard rework; 14:30 incident discussion matches the crash-loop work.
 
 Are these the main things to talk about? Any corrections on status,
 emphasis, or things I missed?
@@ -691,8 +800,9 @@ Do NOT save the report to a permanent file unless the user asks.
 ## Hard rules
 
 1. Always use the local timezone for "today" — not UTC.
-2. Never read more than 400 lines from any single session JSONL file (read
-   first 200 + last 200). These files can be huge.
+2. Never read session JSONL files raw — they are huge and mostly tool-call
+   noise. Always extract user + assistant text with the message extractor,
+   which caps output per session.
 3. Thematic grouping over flat lists — cluster related work, never dump raw
    commit messages.
 4. If `gh` or `linear` is not authenticated or fails, skip that section
@@ -705,7 +815,8 @@ Do NOT save the report to a permanent file unless the user asks.
 8. Write the entire report in first person ("I fixed...", "I investigated...")
    — this is pasted directly into a team group chat.
 9. Never mention internal tooling or process in the output. This includes:
-   Claude Code sessions, Codex CLI sessions, JSONL files, AI tooling, traces, cross-reviews,
+   Claude Code sessions, Codex CLI sessions, JSONL files, AI tooling,
+   Telegram exports, traces, cross-reviews,
    feedback-reviews, review loops, slash commands, skills, sub-agents, or
    any other implementation detail of how the work was done. These are
    input sources for understanding what was accomplished — the team only
@@ -744,6 +855,10 @@ Do NOT save the report to a permanent file unless the user asks.
     command. The send is irreversible — the bot can't edit or delete prior
     messages, so a premature send means a duplicate the user has to clean up.
     Wait for an explicit "send it" on every run, including compressed mode.
+17. **Telegram is context, not content**: Telegram messages inform the
+    synthesis (decisions, asks, incidents, commitments) but are never quoted
+    verbatim or attributed to teammates in the report. Synthesize outcomes;
+    don't expose the chat log.
 
 ## Failure modes
 
@@ -762,3 +877,11 @@ Do NOT save the report to a permanent file unless the user asks.
 - **history.jsonl missing**: Fall back to scanning session JSONL files by
   modification date (`find ~/.claude/projects -name '*.jsonl' -newer
   <today-sentinel>`).
+- **`tdl` not installed**: Skip the Telegram agent; note in the Step 2.5
+  summary: "Telegram context skipped (tdl not installed — add it via
+  nix-darwin and run `tdl login`)."
+- **`tdl` not logged in / auth error**: Skip Telegram; tell the user to run
+  `! tdl login` in this session, then offer to re-run the Telegram agent.
+- **Telegram chat config missing**: Run `tdl chat ls`, ask the user which
+  chats are work-related, write `~/.config/daily-report-telegram-chats.txt`,
+  then proceed.
