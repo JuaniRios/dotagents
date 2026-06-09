@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(nix:*), Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(cat:*), Bash(grep:*), Bash(tail:*), Bash(wc:*), Bash(test:*), Bash(nixfmt:*), Bash(find:*), Read, Edit, Write, Grep, Glob, TodoWrite, Skill
-description: Fast local CI — check, clippy, fmt, nixfmt. Catches most issues in ~3 min. Use /ci-fix for full GitHub CI failures.
+description: Fast local CI — check, clippy, fmt, nixfmt, pre-commit on changed files. Catches most issues in ~3 min. Use /ci-fix for full GitHub CI failures.
 argument-hint: "[stack]"
 ---
 
@@ -16,6 +16,12 @@ dashboard, DTO codegen). Fix every issue found, loop until clean.
 | 2 | `cargo check --workspace --all-features` | `nix develop .#ci-backend -c` | 600s |
 | 3 | `cargo clippy --workspace --all-targets --all-features` | `nix develop .#ci-backend -c` | 600s |
 | 4 | `cargo fmt -- --check` | `nix develop .#ci-backend -c` | 60s |
+| 5 | `pre-commit run --files <changed files>` | `nix develop .#ci-hooks -c` | 600s |
+
+Step 5 matters most for non-Rust diffs (YAML, shell, TOML, markdown): the
+cargo steps can't see those files at all, but GitHub CI's `hooks` job runs
+`pre-commit run --all-files` (yamlfmt, denofmt, shellcheck, taplo, ...) and
+will fail on them. Scoping to changed files keeps it fast.
 
 **What's intentionally skipped** (real CI catches these):
 - `cargo nextest run` — slowest step (~8 min), run manually or let CI do it
@@ -23,6 +29,8 @@ dashboard, DTO codegen). Fix every issue found, loop until clean.
   when dashboard code changes, and CI catches it
 - Separate `cargo check --workspace` (without `--all-features`) — the
   `--all-features` variant is a superset
+- `pre-commit run --all-files` — the full-repo sweep; step 5 covers the
+  changed files, real CI covers the rest
 
 ## Stack mode
 
@@ -79,9 +87,9 @@ NOT delegate CI to a subagent or Agent tool call.
 commands.** The default 120s timeout causes auto-backgrounding which
 breaks the flow. **NEVER use `run_in_background: true`** for CI steps.
 
-### Launch all 4 steps in parallel
+### Launch all 5 steps in parallel
 
-Fire all steps simultaneously in a **single message with 4 Bash tool
+Fire all steps simultaneously in a **single message with 5 Bash tool
 calls**. This is the fastest approach — total wall-clock time equals the
 slowest step (~2-3 min for clippy) instead of the sum of all steps.
 
@@ -90,11 +98,16 @@ Bash: nixfmt --check $(find . -name '*.nix' -not -path './.tmp/*' -not -path './
 Bash: nix develop .#ci-backend -c cargo check --workspace --all-features 2>&1                  timeout: 600000
 Bash: nix develop .#ci-backend -c cargo clippy --workspace --all-targets --all-features 2>&1   timeout: 600000
 Bash: nix develop .#ci-backend -c cargo fmt -- --check 2>&1                                    timeout: 60000
+Bash: files=$(git diff --name-only --diff-filter=d "$(gt parent 2>/dev/null || git merge-base origin/master HEAD)"); [ -n "$files" ] && nix develop .#ci-hooks -c pre-commit run --files $files || echo "no changed files"   timeout: 600000
 ```
+
+Step 5 diffs against the Graphite parent so it covers both committed and
+uncommitted changes on the branch; `--diff-filter=d` drops deleted files,
+which pre-commit can't take via `--files`.
 
 ### Handle results
 
-When all 4 return, check each result:
+When all 5 return, check each result:
 
 - **All passed**: go to section 4 (On success).
 - **Some failed**: fix the issues (section 3), then re-run **only the
@@ -130,6 +143,9 @@ If a fix would violate any project rule, **stop and ask the user**.
 - **`too_many_lines` clippy**: ask user for permission to `#[allow]`.
 - **`cognitive_complexity` clippy**: extract focused helpers.
 - **`fmt --check` failing**: run `cargo fmt`, done.
+- **pre-commit hook "files were modified by this hook"**: the hook
+  auto-fixed the files (yamlfmt, denofmt, etc.). Re-run step 5 to confirm
+  it passes, and count those files as modified for the amend step.
 - **Feature-gate compile errors**: check if `#[cfg(feature = "...")]` is
   missing.
 
@@ -156,6 +172,7 @@ When all steps pass:
      step 2: cargo check --workspace --all-features
      step 3: cargo clippy --workspace --all-targets --all-features
      step 4: cargo fmt -- --check
+     step 5: pre-commit run --files <changed files>
    ```
 3. **If any files were modified**, use `/graphite` to amend via
    `gt modify -a`.

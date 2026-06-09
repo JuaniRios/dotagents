@@ -256,7 +256,7 @@ The PR is at commit <head_sha>. Read source files via
 
 plus per-inspector structured-output mapping rules:
 
-- **Test Inspector** (`~/Github/dotclaude/commands/test-inspector.md` →
+- **Test Inspector** (`~/.claude/commands/test-inspector.md` →
   `prompt-test-inspector.txt`): "Read the diff to identify test files. Read
   the full test files and the source files they test. If no test files are
   in the diff, return an empty findings list with clean_reason. Return
@@ -264,7 +264,7 @@ plus per-inspector structured-output mapping rules:
   Severity mapping: useless tests = medium, weak tests = low, missing
   coverage for risky logic = high, mock abuse = medium."
 - **Idiomatic Rust Inspector**
-  (`~/Github/dotclaude/commands/idiomatic-rust-inspector.md` →
+  (`~/.claude/commands/idiomatic-rust-inspector.md` →
   `prompt-rust-inspector.txt`): "Read the diff to identify Rust files. Read
   the full files and related type/trait/error definitions. If no Rust files
   are in the diff, return an empty findings list with clean_reason. Return
@@ -273,7 +273,7 @@ plus per-inspector structured-output mapping rules:
   Severity mapping: non-idiomatic with correctness impact = high,
   style-only = medium, suboptimal = low."
 - **Strong Typing Inspector**
-  (`~/Github/dotclaude/commands/strong-typing-inspector.md` →
+  (`~/.claude/commands/strong-typing-inspector.md` →
   `prompt-typing-inspector.txt`): "Build the domain-type inventory from the
   repo first, then scan the diff. If the diff has no source files where
   strong typing is relevant, return an empty findings list with

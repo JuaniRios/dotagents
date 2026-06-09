@@ -287,7 +287,7 @@ of the corresponding command file (everything below the frontmatter, with
 appended context block, plus structured-output mapping rules:
 
 **Test Inspector** — `$out_dir/prompt-test-inspector.txt` from
-`~/Github/dotclaude/commands/test-inspector.md`. Append:
+`~/.claude/commands/test-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
@@ -303,7 +303,7 @@ for risky logic = high, mock abuse = medium.
 ```
 
 **Idiomatic Rust Inspector** — `$out_dir/prompt-rust-inspector.txt` from
-`~/Github/dotclaude/commands/idiomatic-rust-inspector.md`. Append:
+`~/.claude/commands/idiomatic-rust-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
@@ -320,7 +320,7 @@ style-only = medium, suboptimal = low.
 ```
 
 **Strong Typing Inspector** — `$out_dir/prompt-typing-inspector.txt` from
-`~/Github/dotclaude/commands/strong-typing-inspector.md`. Append:
+`~/.claude/commands/strong-typing-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
