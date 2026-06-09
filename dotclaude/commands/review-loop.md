@@ -552,17 +552,18 @@ const { repoRoot, contextPath, lanes, fixedFindings = [] } = parsedArgs
 const codexPrompt = (lane) =>
   `Use Bash to run exactly this command (one call, 10 minute timeout):\n` +
   `cat "${lane.diffPath}" | codex exec --sandbox read-only -m gpt-5.5 ` +
-  `-c model_reasoning_effort="${lane.effort || 'medium'}" -C "${repoRoot}" ` +
-  `"$(cat "${lane.promptPath}")"\n` +
-  `(model_reasoning_effort is turned down from default to cut Codex-lane ` +
-  `latency, which gated the whole review phase. If signed in via ChatGPT ` +
-  `you may also add -c service_tier="fast".) Codex mixes tool-call logs ` +
-  `with the review; the review appears after the last bare 'codex' marker ` +
-  `line in stdout, before any 'tokens used' trailer. If the command fails ` +
-  `with a rate-limit or quota error, retry once with -m o3. Convert the ` +
-  `review into structured findings (parse each ### section into one ` +
-  `finding). If codex is unusable, return an empty findings list and set ` +
-  `reviewer_error.`
+  `-c model_reasoning_effort="${lane.effort || 'medium'}" ` +
+  `-c service_tier="fast" -C "${repoRoot}" "$(cat "${lane.promptPath}")"\n` +
+  `(model_reasoning_effort is turned down from default and service_tier is ` +
+  `pinned to fast — both cut Codex-lane latency, which gated the whole ` +
+  `review phase. service_tier="fast" needs ChatGPT sign-in; if codex errors ` +
+  `that fast/priority tier is unavailable for the auth in use, drop the ` +
+  `service_tier flag and retry.) Codex mixes tool-call logs with the ` +
+  `review; the review appears after the last bare 'codex' marker line in ` +
+  `stdout, before any 'tokens used' trailer. If the command fails with a ` +
+  `rate-limit or quota error, retry once with -m o3. Convert the review ` +
+  `into structured findings (parse each ### section into one finding). If ` +
+  `codex is unusable, return an empty findings list and set reviewer_error.`
 
 const reviewLane = (lane) => {
   const prompt = lane.codex

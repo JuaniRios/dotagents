@@ -401,13 +401,16 @@ const laneResults = await parallel(lanes.map(lane => () => {
   const prompt = lane.codex
     ? `Use Bash to run exactly this command (one call, 10 minute timeout):\n` +
       `cat "${lane.diffPath}" | codex exec --sandbox read-only -m gpt-5.5 ` +
-      `-C "${repoRoot}" "$(cat "${lane.promptPath}")"\n` +
-      `Codex mixes tool-call logs with the review; the review appears after ` +
-      `the last bare 'codex' marker line in stdout, before any 'tokens used' ` +
-      `trailer. If the command fails with a rate-limit or quota error, retry ` +
-      `once with -m o3. Convert the resulting review into structured ` +
-      `findings (parse each ### section into one finding). If codex is ` +
-      `unusable, return an empty findings list and set reviewer_error.`
+      `-c service_tier="fast" -C "${repoRoot}" "$(cat "${lane.promptPath}")"\n` +
+      `(service_tier="fast" cuts latency but needs ChatGPT sign-in; if codex ` +
+      `errors that the fast/priority tier is unavailable for the auth in ` +
+      `use, drop the service_tier flag and retry.) Codex mixes tool-call ` +
+      `logs with the review; the review appears after the last bare 'codex' ` +
+      `marker line in stdout, before any 'tokens used' trailer. If the ` +
+      `command fails with a rate-limit or quota error, retry once with ` +
+      `-m o3. Convert the resulting review into structured findings (parse ` +
+      `each ### section into one finding). If codex is unusable, return an ` +
+      `empty findings list and set reviewer_error.`
     : `Read the review instructions at ${lane.promptPath} and follow them ` +
       `exactly.\n${context}\nRead the diff, the project docs, and any ` +
       `source files referenced by the diff that you need for context.`

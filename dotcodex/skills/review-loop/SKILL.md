@@ -338,9 +338,10 @@ diff to keep each pass affordable. Inspectors are always included (cheap):
 
 Security-sensitive paths force the full panel regardless of size. When in
 doubt, size up. To trim per-reviewer latency on routine diffs, run the Codex
-reviewer subagents at **medium** reasoning effort rather than the default
-(reviewing with a fixed output format does not need maximum deliberation on
-small diffs); reserve higher effort for large or security-sensitive diffs.
+reviewer subagents at **medium** reasoning effort and on the **fast service
+tier** (`service_tier = "fast"`, which needs ChatGPT sign-in — fall back to
+the default tier if the auth in use rejects it) rather than the defaults;
+reserve higher effort for large or security-sensitive diffs.
 
 ### Reviewers 1-5 — Codex Subagents
 
