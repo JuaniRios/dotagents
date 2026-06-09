@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(codex:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Bash(grep:*), Read, Write, Agent, Skill
-description: Cross-review a pull request by number or URL without checking it out. Runs five reviewers in parallel (2x Opus, Sonnet, 2x Codex gpt-5.5), aggregates, and starts a conversation so you can decide which findings (if any) to comment on the PR.
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(codex:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Bash(grep:*), Read, Write, Agent, Workflow, Skill
+description: Cross-review a pull request by number or URL without checking it out. Runs a multi-model Workflow panel (2x Fable, Sonnet, 2x Codex gpt-5.5 + inspectors) with per-finding verification, then starts a conversation so you can decide which findings (if any) to comment on the PR.
 argument-hint: <pr-number | pr-url>
 ---
 
@@ -173,38 +173,29 @@ What NOT to flag:
   suggestions.
 - Pedantic edge cases a senior engineer would not call out in a real PR.
 
-Output format — you MUST follow this exactly:
+Output: return your findings via the structured output tool you have been
+given. Each finding needs: title, severity (critical | high | medium | low |
+nit), file (repo-relative path), line_start, line_end, category (correctness
+| security | convention | maintainability | tests), finding (one-paragraph
+description), why_it_matters (concrete consequence if not fixed),
+recommended_fix (specific and actionable — not "consider doing X"), and
+confidence (0-100; 100 = certain, 50 = plausible but unverified, 25 = hunch).
 
-For each finding, emit a section like:
-
-### <short title>
-
-- **Severity:** critical | high | medium | low | nit
-- **File:** <path>:<start-line>[-<end-line>]
-- **Category:** correctness | security | convention | maintainability | tests
-- **Finding:** <one-paragraph description of the issue>
-- **Why it matters:** <concrete consequence if not fixed>
-- **Recommended fix:** <specific, actionable fix — not "consider doing X">
-- **Confidence:** <0-100> — how confident you are this is a real issue (100 =
-  certain, 50 = plausible but unverified, 25 = hunch)
-
-Order findings by severity (critical first) then by file.
-
-If you find nothing worth raising, output exactly:
-
-### No findings
-
-<one-sentence justification of why you believe the diff is clean>
-
-Do not include preamble, disclaimers, emojis, or summaries. Start directly
-with the first finding (or "### No findings").
+If you find nothing worth raising, return an empty findings list and set
+clean_reason to a one-sentence justification of why the diff is clean.
 ```
+
+(For the two Codex lanes, replace the "Output" paragraph in their prompt
+files with the original markdown output format — `### <title>` sections with
+Severity/File/Category/Finding/Why it matters/Recommended fix/Confidence
+bullets, "### No findings" when clean — since Codex returns text that the
+lane agent converts to structured output.)
 
 ### Per-reviewer focus paragraphs
 
 Append one of these to the base prompt for each reviewer:
 
-**Opus A — Concurrency & async ordering:**
+**Fable A — Concurrency & async ordering:**
 ```
 YOUR FOCUS: Pay special attention to the ordering of async operations
 during setup, teardown, and reconnection. When two async steps happen in
@@ -214,7 +205,7 @@ setup sequences, concurrent writers to shared state, and assumptions about
 which operation completes first.
 ```
 
-**Opus B — Goal evaluation & domain logic:**
+**Fable B — Goal evaluation & domain logic:**
 ```
 YOUR FOCUS: Read the PR description carefully, then evaluate whether the
 implementation actually achieves what it claims. If the PR says "events
@@ -250,243 +241,302 @@ there interactions between components that could produce surprising
 behavior? Are there implicit assumptions that aren't documented?
 ```
 
-## 6a. Spawn reviewers and inspectors in parallel
+### Inspector prompts
 
-Spawn all in a **single message with parallel tool calls**:
-
-1. **Claude Opus A** — via the `Agent` tool (`model: "opus"`)
-2. **Claude Opus B** — via the `Agent` tool (`model: "opus"`)
-3. **Claude Sonnet** — via the `Agent` tool (`model: "sonnet"`)
-4. **Codex gpt-5.5 A** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
-5. **Codex gpt-5.5 B** — via `Bash` (`run_in_background: true`, `timeout: 600000`)
-6. **Test Inspector** — via the `Agent` tool (`model: "sonnet"`)
-7. **Idiomatic Rust Inspector** — via the `Agent` tool (`model: "opus"`)
-8. **Strong Typing Inspector** — via the `Agent` tool (`model: "sonnet"`)
-9. **External Contract Inspector** — via the `Agent` tool (`model: "opus"`)
-
-### Reviewers 1-3 — Claude Opus A, Opus B, Sonnet (Agent tool)
-
-Spawn three `Agent` tool calls: two with `model: "opus"`, one with
-`model: "sonnet"`. Each uses `subagent_type: "general-purpose"`.
-The prompt is the shared reviewer text above, plus:
-
-```
-The diff is at: $out_dir/diff.patch
-Project docs: <list of paths>
-Repo root: $repo_root
-
-Read the diff, read the project docs, and read any source files referenced
-by the diff that you need for context. Return your review in the format
-specified above — nothing else.
-```
-
-Write each Agent's output to `$out_dir/raw-opus-a.md`,
-`$out_dir/raw-opus-b.md`, and `$out_dir/raw-sonnet.md` respectively.
-
-### Reviewers 4-5 — Codex gpt-5.5 A and B (Bash)
-
-Spawn two parallel `Bash` calls (both `run_in_background: true`,
-`timeout: 600000`). Both use `-m gpt-5.5`. Replace `$INSTANCE` with `a` or `b`:
-
-```bash
-cat "$out_dir/diff.patch" | codex exec \
-  --sandbox read-only \
-  -m gpt-5.5 \
-  -C "$repo_root" \
-  "The diff is provided on stdin. Analyze it as a code reviewer.
-
-$(cat "$out_dir/prompt.txt")
-
-Project docs: <list of paths>
-Repo root: $repo_root
-
-Read the project docs and any source files referenced by the diff that you
-need for context. Return your review in the format specified above —
-nothing else." \
-  > "$out_dir/codex-${INSTANCE}-stdout.log" 2>&1
-codex_exit=$?
-
-# Extract review from Codex output.
-# Codex mixes file-read echoes and tool-call logs with the actual review.
-# The review appears after a bare "codex" marker line near the end.
-codex_marker=$(grep -n '^codex$' "$out_dir/codex-${INSTANCE}-stdout.log" | tail -1 | cut -d: -f1)
-if [ -n "$codex_marker" ]; then
-  tail -n +$((codex_marker + 1)) "$out_dir/codex-${INSTANCE}-stdout.log" \
-    | sed '/^tokens used$/,$d' \
-    > "$out_dir/raw-codex-${INSTANCE}.md"
-fi
-```
-
-Notes:
-- `--sandbox read-only` is non-negotiable.
-- Diff is piped via stdin so codex has content without finding the file.
-- **Daily quota fallback**: If Codex fails with a daily limit error (look
-  for `rate_limit` or `quota` with reset in hours), retry once with `-m o3`.
-
-### Inspectors 6-9 — Test, Idiomatic Rust, Strong Typing, and External Contract Inspectors (Agent tool)
-
-Spawn four additional specialized inspector agents alongside the five
-reviewers. These produce structured reports in their own format (not the
-reviewer finding format) and feed into the aggregator as supplementary input.
-
-**Test Inspector** — `model: "sonnet"`, `subagent_type: "general-purpose"`:
-
-Prompt: the full content of the `/test-inspector` command skill
-(`~/Github/dotclaude/commands/test-inspector.md`, everything below the
-frontmatter). Replace `$ARGUMENTS` with the PR reference. Append:
+Write four inspector prompt files the same way. Each contains the full body
+of the corresponding command file (everything below the frontmatter, with
+`$ARGUMENTS` replaced by the PR reference), plus this shared context block:
 
 ```
 The diff is at: {DIFF_PATH}
 Repo root: {REPO_ROOT}
 The PR is at commit <head_sha>. Read source files via
 `git show <head_sha>:<path>` — the working tree does not match the PR.
-
-Read the diff to identify test files. Read the full test files and the
-source files they test. Produce your inspection report. If no test files
-are in the diff, say so and stop.
 ```
 
-Write output to `$out_dir/raw-test-inspector.md`.
+plus per-inspector structured-output mapping rules:
 
-**Idiomatic Rust Inspector** — `model: "opus"`, `subagent_type: "general-purpose"`:
+- **Test Inspector** (`~/Github/dotclaude/commands/test-inspector.md` →
+  `prompt-test-inspector.txt`): "Read the diff to identify test files. Read
+  the full test files and the source files they test. If no test files are
+  in the diff, return an empty findings list with clean_reason. Return
+  findings via the structured output tool. Category is always 'tests'.
+  Severity mapping: useless tests = medium, weak tests = low, missing
+  coverage for risky logic = high, mock abuse = medium."
+- **Idiomatic Rust Inspector**
+  (`~/Github/dotclaude/commands/idiomatic-rust-inspector.md` →
+  `prompt-rust-inspector.txt`): "Read the diff to identify Rust files. Read
+  the full files and related type/trait/error definitions. If no Rust files
+  are in the diff, return an empty findings list with clean_reason. Return
+  findings via the structured output tool. Category: 'maintainability' for
+  style/idiom issues, 'correctness' for ownership bugs or unsafe misuse.
+  Severity mapping: non-idiomatic with correctness impact = high,
+  style-only = medium, suboptimal = low."
+- **Strong Typing Inspector**
+  (`~/Github/dotclaude/commands/strong-typing-inspector.md` →
+  `prompt-typing-inspector.txt`): "Build the domain-type inventory from the
+  repo first, then scan the diff. If the diff has no source files where
+  strong typing is relevant, return an empty findings list with
+  clean_reason. Return findings via the structured output tool. Category is
+  always 'maintainability'. Severity mapping:
+  primitive-where-domain-type-exists = medium (high if it touches financial
+  values or identifiers), missed-newtype opportunity = low."
+- **External Contract Inspector**
+  (`~/.claude/commands/external-contract-inspector.md` →
+  `prompt-contract-inspector.txt`): "Identify external touchpoints in the
+  diff (HTTP/RPC/SDK responses, on-chain ABIs and message formats,
+  units/decimals). For each, check whether the assumed shape is backed by a
+  cited spec or a test encoding a real response. Read the relevant test
+  files and fixtures to decide. If the diff has no external touchpoints,
+  return an empty findings list with clean_reason. Return findings via the
+  structured output tool. Category is always 'correctness'. Severity is
+  risk-weighted: critical for wrong width/unit/encoding at a money or
+  on-chain boundary, down to low for cosmetic shape assumptions. The
+  recommended_fix should name how to pin the assumption (cite the spec, or
+  add the real-response test)."
 
-Prompt: the full content of the `/idiomatic-rust-inspector` command skill
-(`~/Github/dotclaude/commands/idiomatic-rust-inspector.md`, everything
-below the frontmatter). Replace `$ARGUMENTS` with the PR reference. Append:
+## 7. Run the review workflow
 
-```
-The diff is at: {DIFF_PATH}
-Repo root: {REPO_ROOT}
-The PR is at commit <head_sha>. Read source files via
-`git show <head_sha>:<path>` — the working tree does not match the PR.
+The whole review — fan-out, dedup, adversarial verification, synthesis —
+runs as **one `Workflow` invocation** using the same `review-panel` script
+as `/review-loop`. Findings come back schema-validated; no markdown parsing,
+no output-file validation, no separate aggregator agent.
 
-Read the diff to identify Rust files. Read the full files and related
-type/trait/error definitions. Produce your inspection report. If no Rust
-files are in the diff, say so and stop.
-```
+### Lanes
 
-Write output to `$out_dir/raw-rust-inspector.md`.
+Build the lane list (drop the codex lanes if `codex` is not on PATH — check
+`command -v codex`; warn the user and continue with 7 lanes):
 
-**Strong Typing Inspector** — `model: "sonnet"`, `subagent_type: "general-purpose"`:
+| key                | codex | model  | promptPath                              |
+| ------------------ | ----- | ------ | --------------------------------------- |
+| fable-a            | no    | fable  | prompt-fable-a.txt (concurrency)        |
+| fable-b            | no    | fable  | prompt-fable-b.txt (goal evaluation)    |
+| sonnet             | no    | sonnet | prompt-sonnet.txt (error handling)      |
+| codex-a            | yes   | —      | prompt-codex-a.txt (edge cases)         |
+| codex-b            | yes   | —      | prompt-codex-b.txt (broad sweep)        |
+| test-inspector     | no    | sonnet | prompt-test-inspector.txt               |
+| rust-inspector     | no    | fable  | prompt-rust-inspector.txt               |
+| typing-inspector   | no    | sonnet | prompt-typing-inspector.txt             |
+| contract-inspector | no    | fable  | prompt-contract-inspector.txt           |
 
-Prompt: the full content of the `/strong-typing-inspector` command skill
-(`~/Github/dotclaude/commands/strong-typing-inspector.md`, everything
-below the frontmatter). Replace `$ARGUMENTS` with the PR reference. Append:
+Each lane object: `{key, codex, model, promptPath, diffPath}`. All lanes
+share `$out_dir/diff.patch`.
 
-```
-The diff is at: {DIFF_PATH}
-Repo root: {REPO_ROOT}
-The PR is at commit <head_sha>. Read source files via
-`git show <head_sha>:<path>` — the working tree does not match the PR.
+### Workflow invocation
 
-Build the domain-type inventory from the repo first, then scan the diff.
-Produce your inspection report. If the diff has no source files where
-strong typing is relevant, say so and stop.
-```
+Invoke the `Workflow` tool with the script below via `script`, and `args`:
 
-Write output to `$out_dir/raw-typing-inspector.md`.
-
-**External Contract Inspector** — `model: "opus"`, `subagent_type: "general-purpose"`:
-
-Prompt: the full content of the `/external-contract-inspector` command skill
-(`~/.claude/commands/external-contract-inspector.md`, everything below the
-frontmatter). Replace `$ARGUMENTS` with the PR reference. Append:
-
-```
-The diff is at: {DIFF_PATH}
-Repo root: {REPO_ROOT}
-The PR is at commit <head_sha>. Read source files via
-`git show <head_sha>:<path>` — the working tree does not match the PR.
-
-Identify external touchpoints in the diff (HTTP/RPC/SDK responses, on-chain
-ABIs and message formats, units/decimals). For each, check whether the
-assumed shape is backed by a cited spec or a test encoding a real response.
-Read the relevant test files and fixtures to decide. Produce your inspection
-report. If the diff has no external touchpoints, say so and stop.
-```
-
-Write output to `$out_dir/raw-contract-inspector.md`.
-
-**Skip conditions**: If the diff contains no test files, the test inspector
-will self-exit (record "no test files, skipped"). If the diff contains no
-`.rs` files, the Rust inspector will self-exit (same handling). If the
-diff has no source files where strong typing applies, the typing
-inspector will self-exit (same handling). If the diff has no external
-touchpoints, the external contract inspector will self-exit (same
-handling). The aggregator handles missing inspector reports gracefully.
-
-### Output validation
-
-After all five finish, validate each output file:
-
-```bash
-validate_review() {
-  local file="$1" reviewer="$2"
-  [ ! -f "$file" ] && echo "$reviewer: no output" && return 1
-  [ "$(wc -l < "$file")" -lt 5 ] && echo "$reviewer: too short" && return 1
-  grep -q '^### ' "$file" || { echo "$reviewer: no findings headings"; return 1; }
-  return 0
+```json
+{
+  "repoRoot": "<repo_root>",
+  "docsPaths": ["<CLAUDE.md/AGENTS.md paths>"],
+  "lanes": [ ...lane objects... ],
+  "reportHeader": "# Review — PR #<n>: <title>\n**Author:** <author>\n**URL:** <url>\n**Branches:** <head> -> <base>\n**Head SHA:** <head_sha>\n**Files changed:** <N> (+<additions>/-<deletions>)",
+  "synthesisExtra": "CRITICAL ADAPTATIONS FOR THIS REPORT: (1) No AI references anywhere — no agent attribution, no 'Found by' field, no mention of models, reviewers, lanes, or cross-review. The report must read like a single human senior engineer wrote it. (2) Frame the Overall assessment as advice to the REVIEWER reading this report, not to the PR author — e.g. 'This PR looks ready to merge pending X' or 'I'd push back on Y before approving.'"
 }
 ```
 
-If a reviewer errors, record it as "reviewer errored" in the aggregator and
-continue. If all five error, stop.
+```javascript
+export const meta = {
+  name: 'review-panel',
+  description: 'Multi-model review panel: parallel review, dedup, adversarial verify, synthesize',
+  phases: [
+    { title: 'Review', detail: 'reviewers + inspectors in parallel' },
+    { title: 'Verify', detail: 'adversarial refuter per deduped finding' },
+    { title: 'Synthesize', detail: 'canonical report' },
+  ],
+}
 
-### Failure modes
+const FINDING = {
+  type: 'object',
+  required: ['title', 'severity', 'file', 'line_start', 'line_end', 'category',
+    'finding', 'why_it_matters', 'recommended_fix', 'confidence'],
+  properties: {
+    title: { type: 'string' },
+    severity: { enum: ['critical', 'high', 'medium', 'low', 'nit'] },
+    file: { type: 'string' },
+    line_start: { type: 'integer' },
+    line_end: { type: 'integer' },
+    category: { enum: ['correctness', 'security', 'convention', 'maintainability', 'tests'] },
+    finding: { type: 'string' },
+    why_it_matters: { type: 'string' },
+    recommended_fix: { type: 'string' },
+    confidence: { type: 'integer' },
+  },
+}
 
-- **Codex not installed**: Check `command -v codex` before spawning. If
-  missing, warn the user and run with Claude-only reviewers. Three
-  reviewers is still valuable.
+const REVIEW_SCHEMA = {
+  type: 'object',
+  required: ['findings'],
+  properties: {
+    findings: { type: 'array', items: FINDING },
+    clean_reason: { type: 'string' },
+    reviewer_error: { type: 'string' },
+  },
+}
 
-## 7. Aggregate with review-pr-specific output
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'rationale', 'severity', 'confidence'],
+  properties: {
+    verdict: { enum: ['valid', 'likely', 'disputed', 'invalid', 'out-of-scope'] },
+    rationale: { type: 'string' },
+    severity: { enum: ['critical', 'high', 'medium', 'low', 'nit'] },
+    confidence: { type: 'integer' },
+  },
+}
 
-The aggregator receives the five reviewer reports **plus** the four
-inspector reports (`$out_dir/raw-test-inspector.md`,
-`$out_dir/raw-rust-inspector.md`, `$out_dir/raw-typing-inspector.md`, and
-`$out_dir/raw-contract-inspector.md`). Pass all nine to the aggregator.
+const { repoRoot, docsPaths, lanes, reportHeader, synthesisExtra } = args
 
-Inspector reports use a different format from the five reviewers. The
-aggregator should integrate their findings as follows:
+phase('Review')
 
-- **Test Inspector findings** (useless/weak tests, missing coverage, mock
-  abuse): convert each into a standard finding entry. Use category "tests".
-  Severity: useless tests = medium, weak tests = low, missing coverage for
-  risky logic = high, mock abuse = medium.
-- **Idiomatic Rust Inspector findings** (non-idiomatic code, ownership
-  issues, error handling, type design): convert each into a standard
-  finding entry. Use category "maintainability" for style/idiom issues,
-  "correctness" for ownership bugs or unsafe misuse. Severity: non-idiomatic
-  with correctness impact = high, non-idiomatic style-only = medium,
-  suboptimal = low.
-- **Strong Typing Inspector findings** (primitive used where domain type
-  exists, missed newtype opportunity): convert each into a standard finding
-  entry. Use category "maintainability". Severity: primitive-where-domain-
-  type-exists = medium (high if it touches financial values or
-  identifiers), missed-newtype opportunity = low.
-- **External Contract Inspector findings** (unverified assumptions about an
-  external API/contract — wire types, numeric widths, units/decimals, field
-  shapes — not backed by a cited spec or a real-response test): convert each
-  into a standard finding entry. Use category "correctness". Carry over the
-  inspector's risk-weighted severity verbatim (critical for wrong
-  width/unit/encoding at a money or on-chain boundary, down to low for
-  cosmetic shape assumptions). The recommended fix should name how to pin
-  the assumption (cite the spec, or add the real-response test).
-- If an inspector report is empty or says "no files found", ignore it.
-- Inspector findings can corroborate or conflict with the five reviewer
-  findings — merge duplicates as usual.
+const laneResults = await parallel(lanes.map(lane => () => {
+  const context = `The diff is at: ${lane.diffPath}\n` +
+    `Project docs: ${docsPaths.join(', ')}\n` +
+    `Repo root: ${repoRoot}`
 
-The aggregator produces `$out_dir/review.md` with the following
-adaptations for PR review context:
+  const prompt = lane.codex
+    ? `Use Bash to run exactly this command (one call, 10 minute timeout):\n` +
+      `cat "${lane.diffPath}" | codex exec --sandbox read-only -m gpt-5.5 ` +
+      `-C "${repoRoot}" "$(cat "${lane.promptPath}")"\n` +
+      `Codex mixes tool-call logs with the review; the review appears after ` +
+      `the last bare 'codex' marker line in stdout, before any 'tokens used' ` +
+      `trailer. If the command fails with a rate-limit or quota error, retry ` +
+      `once with -m o3. Convert the resulting review into structured ` +
+      `findings (parse each ### section into one finding). If codex is ` +
+      `unusable, return an empty findings list and set reviewer_error.`
+    : `Read the review instructions at ${lane.promptPath} and follow them ` +
+      `exactly.\n${context}\nRead the diff, the project docs, and any ` +
+      `source files referenced by the diff that you need for context.`
 
-- **No AI references anywhere in output.** No agent attribution, no
-  "Found by:", no mention of models, reviewers, or cross-review. The
-  terminal summary and any posted review must read like a normal human
-  code review. Keep attribution only in `raw-*.md` for local audit.
-- **Include the PR metadata at the top**: number, title, author, URL,
-  head/base branches, SHA, files changed, additions/deletions.
-- **Frame the "Overall assessment"** as advice to the *reviewer* (you, the
-  user), not to the PR author — e.g., "This PR looks ready to merge
-  pending X" or "I'd push back on Y before approving."
+  return agent(prompt, {
+    label: `review:${lane.key}`,
+    phase: 'Review',
+    model: lane.model,
+    schema: REVIEW_SCHEMA,
+  }).then(result => result && ({
+    key: lane.key,
+    error: result.reviewer_error || null,
+    findings: (result.findings || []).map(finding => ({
+      ...finding,
+      found_by: [lane.key],
+      diff_path: lane.diffPath,
+    })),
+  }))
+}))
+
+const laneErrors = lanes
+  .map((lane, index) => {
+    const result = laneResults[index]
+    if (!result) return `${lane.key}: lane died or was skipped`
+    if (result.error) return `${lane.key}: ${result.error}`
+    return null
+  })
+  .filter(Boolean)
+
+const raw = laneResults.filter(Boolean).flatMap(result => result.findings)
+
+const merged = []
+for (const finding of raw) {
+  const dup = merged.find(existing =>
+    existing.file === finding.file &&
+    existing.category === finding.category &&
+    finding.line_start <= existing.line_end + 3 &&
+    existing.line_start <= finding.line_end + 3)
+  if (dup) {
+    dup.found_by = [...new Set([...dup.found_by, ...finding.found_by])]
+    if (finding.confidence > dup.confidence) {
+      Object.assign(dup, { ...finding, found_by: dup.found_by })
+    }
+  } else {
+    merged.push({ ...finding })
+  }
+}
+log(`${raw.length} raw findings -> ${merged.length} after dedup; ` +
+  `lane errors: ${laneErrors.length}`)
+
+phase('Verify')
+
+const verified = await parallel(merged.map(finding => () =>
+  agent(
+    `You are adversarially verifying a single code-review finding. Read the ` +
+    `actual code before judging — never judge from the finding text alone.\n\n` +
+    `Finding: ${JSON.stringify(finding)}\n\n` +
+    `The diff is at: ${finding.diff_path}\nRepo root: ${repoRoot}\n\n` +
+    `Classify the finding: valid (real, you verified it against the code), ` +
+    `likely (probably real but needs more context), disputed (evidence is ` +
+    `weak), invalid (false positive — the code contradicts the claim), ` +
+    `out-of-scope (real but on lines the diff did not modify). Refute only ` +
+    `with concrete evidence from the code; do not dismiss ` +
+    `uncertain-but-plausible findings. Re-score severity and confidence ` +
+    `from your own reading (confidence 100 = you verified it yourself).`,
+    { label: `verify:${finding.file}`, phase: 'Verify', model: 'sonnet',
+      schema: VERDICT_SCHEMA },
+  ).then(verdict => verdict && ({ ...finding, ...verdict }))
+))
+
+const judged = verified.filter(Boolean)
+const survivors = judged.filter(finding =>
+  finding.verdict === 'valid' || finding.verdict === 'likely' ||
+  finding.verdict === 'disputed')
+const dismissed = judged.filter(finding =>
+  finding.verdict === 'invalid' || finding.verdict === 'out-of-scope')
+
+const sevRank = { critical: 0, high: 1, medium: 2, low: 3, nit: 4 }
+const verdictRank = { valid: 0, likely: 1, disputed: 2 }
+survivors.sort((first, second) =>
+  sevRank[first.severity] - sevRank[second.severity] ||
+  verdictRank[first.verdict] - verdictRank[second.verdict] ||
+  second.confidence - first.confidence)
+
+phase('Synthesize')
+
+const synthesis = await agent(
+  `You are a senior staff engineer writing the canonical report for a ` +
+  `multi-reviewer code review. The findings below were already deduplicated ` +
+  `and adversarially verified — do not re-litigate verdicts.\n\n` +
+  `Report header (use verbatim at the top):\n${reportHeader}\n\n` +
+  `Reviewer lanes that errored: ${JSON.stringify(laneErrors)}\n\n` +
+  `Verified findings (JSON, pre-sorted): ${JSON.stringify(survivors)}\n\n` +
+  `Dismissed findings (JSON): ${JSON.stringify(dismissed)}\n\n` +
+  `The diff is at: ${lanes[0].diffPath}. Project docs: ` +
+  `${docsPaths.join(', ')}. Read the diff so your overall assessment ` +
+  `reflects the actual change, and call out anything the reviewers ` +
+  `collectively missed.\n\n` +
+  `Produce a markdown report: the header block, "## Summary" (2-3 sentence ` +
+  `verdict with valid-finding counts per severity), "## Findings" (one ` +
+  `"### [SEVERITY] <title>" section per finding with File, Category, ` +
+  `Validity, Confidence, Issue, Why it matters, Recommended fix, and the ` +
+  `verifier's rationale as "Verification"), "## Findings dismissed as ` +
+  `invalid" (bulleted, one-line rationale each), "## Findings dismissed as ` +
+  `out-of-scope", "## Overall assessment" (2-3 paragraphs of your own ` +
+  `senior-engineer judgment). No emojis, no apologies, be decisive.` +
+  (synthesisExtra ? `\n\n${synthesisExtra}` : ''),
+  { label: 'synthesize', phase: 'Synthesize', model: 'fable',
+    schema: {
+      type: 'object',
+      required: ['report_markdown'],
+      properties: { report_markdown: { type: 'string' } },
+    } },
+)
+
+return {
+  findings: survivors,
+  dismissed,
+  laneErrors,
+  report: synthesis ? synthesis.report_markdown : null,
+}
+```
+
+### After the workflow returns
+
+The workflow returns `{findings, dismissed, laneErrors, report}`.
+
+1. Write `report` to `$out_dir/review.md` and the findings JSON to
+   `$out_dir/findings.json`. The structured findings keep `found_by`
+   attribution for local audit; `review.md` has none.
+2. If `laneErrors` is non-empty, tell the user which lanes errored. If **all
+   reviewer lanes** errored, stop. (Inspector lanes erroring is non-fatal.)
 
 ## 8. Print findings to the terminal
 
@@ -505,8 +555,7 @@ PR #<n> — <title>
      <one-line fix>
 ...
 
-▽ Dismissed as invalid: <count>
-▽ Dismissed as out-of-scope: <count>
+▽ Dismissed by verification: <count>
 
 Full report: <absolute path to review.md>
 ```
@@ -650,7 +699,7 @@ itself to be targeted inline feedback, not a wall of text.
 1. Never check out the PR branch. Work off `gh pr diff` and `git show` at
    the head SHA.
 2. `review.md` has no per-finding agent attribution. Keep attribution in
-   `raw-*.md` only.
+   `findings.json` only.
 3. For draft reviews ("post" / "post as draft"), per-comment approval is
    NOT required — the GitHub UI is the approval mechanism. For immediate
    submissions (non-draft), never post without explicit user approval of
@@ -664,7 +713,7 @@ itself to be targeted inline feedback, not a wall of text.
    finding prefixes (`#1`, `**#2 (HIGH)**`). No em dashes. No bold
    severity labels. Use lowercase severity prefixes (`critical:`,
    `should fix:`, `minor:`, `nit:`) to signal importance. Write short,
-   direct comments like a colleague would. The `raw-*.md` and
+   direct comments like a colleague would. The `findings.json` and
    `review.md` on disk can use structured formatting (they're local),
    but anything posted to GitHub must be conversational and concise.
 8. **Maximize inline comments; the draft `body` stays empty.** Never post
@@ -673,3 +722,6 @@ itself to be targeted inline feedback, not a wall of text.
    block for the user to paste at submit time. Every finding should be an
    inline comment on a diff line. When a finding references unchanged
    code, place the comment on the nearest related changed line.
+9. The review runs as a single `Workflow` invocation — never hand-roll the
+   fan-out with individual Agent calls. `--sandbox read-only` for codex is
+   non-negotiable.

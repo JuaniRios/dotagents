@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, AskUserQuestion
-description: Cross-review the current branch, auto-fix findings, and re-review until clean. Loops automatically — only stops for user input on disputed findings or massive changes. Pass `stack` to run the loop across the whole upstack, amending each branch.
+allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(cargo:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, Workflow, AskUserQuestion
+description: Cross-review the current branch with a multi-model Workflow panel (2x Fable, Sonnet, 2x Codex gpt-5.5 + inspectors), auto-fix findings, and re-review until clean. Re-review passes use fast delta verification. Loops automatically — only stops for user input on disputed findings or massive changes. Pass `stack` to run the loop across the whole upstack, amending each branch.
 argument-hint: [stack]
 ---
 
@@ -9,9 +9,16 @@ CI → re-review → repeat until clean. Use this right before you `gt submit`
 something you wrote yourself, to catch issues before reviewers do.
 
 The loop is **automatic by default**. Findings that clearly should be fixed
-are fixed without asking. The loop re-runs the full review after each fix
-pass to catch issues introduced by the fixes themselves. It stops when
-the review returns no new actionable findings.
+are fixed without asking. The loop re-reviews after each fix pass to catch
+issues introduced by the fixes themselves. It stops when a review pass
+returns no new actionable findings.
+
+**Speed design:** the **first pass** runs the full multi-model panel. Each
+finding is adversarially verified **before** triage so false positives never
+cost a fix-and-re-review cycle. A **compile gate** runs after each fix pass
+so a broken fix never burns a review pass. **Re-review passes** run in fast
+delta mode (per-fix verifiers plus one broad sweep of the fix delta) unless
+the fixes were large enough to warrant re-running the full panel.
 
 **Argument:** with no argument, the loop runs on the **current branch only**
 and never touches version control (the safe default). With `stack`, it runs
@@ -84,8 +91,8 @@ Verify prerequisites before doing anything:
    ```bash
    command -v codex gt
    ```
-   If `codex` is missing, warn the user and proceed with Claude-only
-   reviewers (3 instead of 5). Three reviewers is still valuable.
+   If `codex` is missing, warn the user and drop the two Codex lanes from the
+   panel (7 lanes instead of 9). Seven lanes is still valuable.
 
 3. The working tree is clean or stashed. A dirty tree pollutes the diff
    and confuses reviewers:
@@ -112,11 +119,12 @@ out_dir="$repo_root/claude-local-ctx/reviews/${ts}-${safe_branch}"
 mkdir -p "$out_dir"
 ```
 
-Write the diff and file manifest:
+Write the diff and file manifest. Diff against the working tree (no `..HEAD`)
+so re-review iterations automatically include uncommitted fixes:
 
 ```bash
-git diff "$parent"..HEAD > "$out_dir/diff.patch"
-git diff --name-status "$parent"..HEAD > "$out_dir/files.txt"
+git diff "$parent" > "$out_dir/diff.patch"
+git diff --name-status "$parent" > "$out_dir/files.txt"
 wc -l "$out_dir/diff.patch"
 ```
 
@@ -201,38 +209,29 @@ What NOT to flag:
   suggestions.
 - Pedantic edge cases a senior engineer would not call out in a real PR.
 
-Output format — you MUST follow this exactly:
+Output: return your findings via the structured output tool you have been
+given. Each finding needs: title, severity (critical | high | medium | low |
+nit), file (repo-relative path), line_start, line_end, category (correctness
+| security | convention | maintainability | tests), finding (one-paragraph
+description), why_it_matters (concrete consequence if not fixed),
+recommended_fix (specific and actionable — not "consider doing X"), and
+confidence (0-100; 100 = certain, 50 = plausible but unverified, 25 = hunch).
 
-For each finding, emit a section like:
-
-### <short title>
-
-- **Severity:** critical | high | medium | low | nit
-- **File:** <path>:<start-line>[-<end-line>]
-- **Category:** correctness | security | convention | maintainability | tests
-- **Finding:** <one-paragraph description of the issue>
-- **Why it matters:** <concrete consequence if not fixed>
-- **Recommended fix:** <specific, actionable fix — not "consider doing X">
-- **Confidence:** <0-100> — how confident you are this is a real issue (100 =
-  certain, 50 = plausible but unverified, 25 = hunch)
-
-Order findings by severity (critical first) then by file.
-
-If you find nothing worth raising, output exactly:
-
-### No findings
-
-<one-sentence justification of why you believe the diff is clean>
-
-Do not include preamble, disclaimers, emojis, or summaries. Start directly
-with the first finding (or "### No findings").
+If you find nothing worth raising, return an empty findings list and set
+clean_reason to a one-sentence justification of why the diff is clean.
 ```
+
+(For the two Codex lanes, replace the "Output" paragraph in their prompt
+files with the original markdown output format — `### <title>` sections with
+Severity/File/Category/Finding/Why it matters/Recommended fix/Confidence
+bullets, "### No findings" when clean — since Codex returns text that the
+lane agent converts to structured output.)
 
 ### Per-reviewer focus paragraphs
 
 Append one of these to the base prompt for each reviewer:
 
-**Opus A — Concurrency & async ordering:**
+**Fable A — Concurrency & async ordering:**
 ```
 YOUR FOCUS: Pay special attention to the ordering of async operations
 during setup, teardown, and reconnection. When two async steps happen in
@@ -242,7 +241,7 @@ setup sequences, concurrent writers to shared state, and assumptions about
 which operation completes first.
 ```
 
-**Opus B — Goal evaluation & domain logic:**
+**Fable B — Goal evaluation & domain logic:**
 ```
 YOUR FOCUS: Read the PR description carefully, then evaluate whether the
 implementation actually achieves what it claims. If the PR says "events
@@ -280,103 +279,65 @@ behavior? Are there implicit assumptions that aren't documented?
 
 Save each complete prompt (base + focus) to `$out_dir/prompt-{reviewer}.txt`.
 
-## 5. Spawn reviewers and inspectors in parallel
+### Inspector prompts
 
-All reviewers and inspectors must be spawned in a **single message with
-parallel tool calls**. Do not run them sequentially.
+Write four inspector prompt files the same way. Each contains the full body
+of the corresponding command file (everything below the frontmatter, with
+`$ARGUMENTS` replaced by the empty string — use the current branch), plus an
+appended context block, plus structured-output mapping rules:
 
-### Reviewers 1-3 — Claude Opus A, Opus B, Sonnet (Agent tool)
-
-Spawn three `Agent` tool calls: two with `model: "opus"`, one with
-`model: "sonnet"`. Each uses `subagent_type: "general-purpose"`. Each
-gets its own prompt (base + focus paragraph from Step 4):
-
-- **Opus A**: `$out_dir/prompt-opus-a.txt` (concurrency & async ordering)
-- **Opus B**: `$out_dir/prompt-opus-b.txt` (goal evaluation & domain logic)
-- **Sonnet**: `$out_dir/prompt-sonnet.txt` (error handling & failure modes)
-
-Plus the suffix:
-
-```
-The diff is at: {DIFF_PATH}
-Project docs: {PROJECT_DOCS_PATHS}
-Repo root: {REPO_ROOT}
-
-Read the diff, read the project docs, and read any source files referenced by
-the diff that you need for context. Return your review in the format
-specified above — nothing else.
-```
-
-Write each Agent's output to `$out_dir/raw-opus-a.md`,
-`$out_dir/raw-opus-b.md`, and `$out_dir/raw-sonnet.md` respectively.
-
-### Inspector agents — Test, Idiomatic Rust, Strong Typing, and External Contract Inspectors
-
-Alongside the five reviewers, spawn four additional specialized inspector
-agents. These produce structured reports in their own format (not the
-reviewer finding format) and feed into the aggregator as supplementary
-input.
-
-**Test Inspector** — `model: "sonnet"`, `subagent_type: "general-purpose"`:
-
-Prompt: the full content of the `/test-inspector` command skill
-(`~/Github/dotclaude/commands/test-inspector.md`, everything below the
-frontmatter). Replace `$ARGUMENTS` with the empty string (use the current
-branch). Append:
+**Test Inspector** — `$out_dir/prompt-test-inspector.txt` from
+`~/Github/dotclaude/commands/test-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
 Repo root: {REPO_ROOT}
 
 Read the diff to identify test files. Read the full test files and the
-source files they test. Produce your inspection report. If no test files
-are in the diff, say so and stop.
+source files they test. If no test files are in the diff, return an empty
+findings list with clean_reason "no test files in diff".
+
+Return findings via the structured output tool. Category is always "tests".
+Severity mapping: useless tests = medium, weak tests = low, missing coverage
+for risky logic = high, mock abuse = medium.
 ```
 
-Write output to `$out_dir/raw-test-inspector.md`.
-
-**Idiomatic Rust Inspector** — `model: "opus"`, `subagent_type: "general-purpose"`:
-
-Prompt: the full content of the `/idiomatic-rust-inspector` command skill
-(`~/Github/dotclaude/commands/idiomatic-rust-inspector.md`, everything
-below the frontmatter). Replace `$ARGUMENTS` with the empty string (use
-the current branch). Append:
+**Idiomatic Rust Inspector** — `$out_dir/prompt-rust-inspector.txt` from
+`~/Github/dotclaude/commands/idiomatic-rust-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
 Repo root: {REPO_ROOT}
 
 Read the diff to identify Rust files. Read the full files and related
-type/trait/error definitions. Produce your inspection report. If no Rust
-files are in the diff, say so and stop.
+type/trait/error definitions. If no Rust files are in the diff, return an
+empty findings list with clean_reason "no Rust files in diff".
+
+Return findings via the structured output tool. Category: "maintainability"
+for style/idiom issues, "correctness" for ownership bugs or unsafe misuse.
+Severity mapping: non-idiomatic with correctness impact = high, non-idiomatic
+style-only = medium, suboptimal = low.
 ```
 
-Write output to `$out_dir/raw-rust-inspector.md`.
-
-**Strong Typing Inspector** — `model: "sonnet"`, `subagent_type: "general-purpose"`:
-
-Prompt: the full content of the `/strong-typing-inspector` command skill
-(`~/Github/dotclaude/commands/strong-typing-inspector.md`, everything
-below the frontmatter). Replace `$ARGUMENTS` with the empty string (use
-the current branch). Append:
+**Strong Typing Inspector** — `$out_dir/prompt-typing-inspector.txt` from
+`~/Github/dotclaude/commands/strong-typing-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
 Repo root: {REPO_ROOT}
 
 Build the domain-type inventory from the repo first, then scan the diff.
-Produce your inspection report. If the diff has no source files where
-strong typing is relevant, say so and stop.
+If the diff has no source files where strong typing is relevant, return an
+empty findings list with clean_reason.
+
+Return findings via the structured output tool. Category is always
+"maintainability". Severity mapping: primitive-where-domain-type-exists =
+medium (high if it touches financial values or identifiers), missed-newtype
+opportunity = low.
 ```
 
-Write output to `$out_dir/raw-typing-inspector.md`.
-
-**External Contract Inspector** — `model: "opus"`, `subagent_type: "general-purpose"`:
-
-Prompt: the full content of the `/external-contract-inspector` command skill
-(`~/.claude/commands/external-contract-inspector.md`, everything below the
-frontmatter). Replace `$ARGUMENTS` with the empty string (use the current
-branch). Append:
+**External Contract Inspector** — `$out_dir/prompt-contract-inspector.txt`
+from `~/.claude/commands/external-contract-inspector.md`. Append:
 
 ```
 The diff is at: {DIFF_PATH}
@@ -385,66 +346,251 @@ Repo root: {REPO_ROOT}
 Identify external touchpoints in the diff (HTTP/RPC/SDK responses, on-chain
 ABIs and message formats, units/decimals). For each, check whether the
 assumed shape is backed by a cited spec or a test encoding a real response.
-Read the relevant test files and fixtures to decide. Produce your inspection
-report. If the diff has no external touchpoints, say so and stop.
+Read the relevant test files and fixtures to decide. If the diff has no
+external touchpoints, return an empty findings list with clean_reason.
+
+Return findings via the structured output tool. Category is always
+"correctness". Severity is risk-weighted: critical for wrong
+width/unit/encoding at a money or on-chain boundary, down to low for
+cosmetic shape assumptions. The recommended_fix should name how to pin the
+assumption (cite the spec, or add the real-response test).
 ```
 
-Write output to `$out_dir/raw-contract-inspector.md`.
+## 5. Run the review workflow
 
-**Skip conditions**: If the diff contains no test files, the test inspector
-will self-exit (this is fine — record "no test files, skipped"). If the
-diff contains no `.rs` files, the Rust inspector will self-exit (same
-handling). If the diff has no source files where strong typing applies,
-the typing inspector will self-exit (same handling). If the diff has no
-external touchpoints, the external contract inspector will self-exit (same
-handling). The aggregator handles missing inspector reports gracefully.
+The whole review pass — fan-out, dedup, adversarial verification, synthesis —
+runs as **one `Workflow` invocation**. Findings come back schema-validated,
+so there is no markdown parsing, no output-file validation, and no separate
+aggregator agent in the main session.
 
-### Reviewers 4-5 — Codex gpt-5.5 A and B (Bash)
+### Lanes
 
-Spawn two parallel `Bash` calls (both with `run_in_background: true`,
-`timeout: 600000`). Both use `-m gpt-5.5`:
+Build the lane list (drop the codex lanes if `codex` is not on PATH):
 
-```bash
-# Run for each instance: A (edge cases) and B (broad sweep).
-# Replace $INSTANCE accordingly (a or b).
-cat "$out_dir/diff.patch" | codex exec \
-  --sandbox read-only \
-  -m gpt-5.5 \
-  -C "$repo_root" \
-  "The diff is provided on stdin. Analyze it as a code reviewer.
+| key                | codex | model  | promptPath                              |
+| ------------------ | ----- | ------ | --------------------------------------- |
+| fable-a            | no    | fable  | prompt-fable-a.txt (concurrency)        |
+| fable-b            | no    | fable  | prompt-fable-b.txt (goal evaluation)    |
+| sonnet             | no    | sonnet | prompt-sonnet.txt (error handling)      |
+| codex-a            | yes   | —      | prompt-codex-a.txt (edge cases)         |
+| codex-b            | yes   | —      | prompt-codex-b.txt (broad sweep)        |
+| test-inspector     | no    | sonnet | prompt-test-inspector.txt               |
+| rust-inspector     | no    | fable  | prompt-rust-inspector.txt               |
+| typing-inspector   | no    | sonnet | prompt-typing-inspector.txt             |
+| contract-inspector | no    | fable  | prompt-contract-inspector.txt           |
 
-$(cat "$out_dir/prompt-codex-${INSTANCE}.txt")
+Each lane object: `{key, codex, model, promptPath, diffPath}`. Normally all
+lanes share `$out_dir/diff.patch`; chunked runs differ (see below).
 
-Project docs: <list of paths>
-Repo root: $repo_root
+### Workflow invocation
 
-Read the project docs and any source files referenced by the diff that you
-need for context. Return your review in the format specified above —
-nothing else." \
-  > "$out_dir/codex-${INSTANCE}-stdout.log" 2>&1
+Invoke the `Workflow` tool with the script below via `script`, and `args`:
 
-# Extract review from Codex output.
-# Codex mixes file-read echoes and tool-call logs with the actual review.
-# The review appears after a bare "codex" marker line near the end.
-codex_marker=$(grep -n '^codex$' "$out_dir/codex-${INSTANCE}-stdout.log" | tail -1 | cut -d: -f1)
-if [ -n "$codex_marker" ]; then
-  tail -n +$((codex_marker + 1)) "$out_dir/codex-${INSTANCE}-stdout.log" \
-    | sed '/^tokens used$/,$d' \
-    > "$out_dir/raw-codex-${INSTANCE}.md"
-fi
+```json
+{
+  "repoRoot": "<repo_root>",
+  "docsPaths": ["<CLAUDE.md/AGENTS.md paths>"],
+  "lanes": [ ...lane objects... ],
+  "reportHeader": "# Review — <branch>\n**Commit:** <head_sha>\n**Parent:** <parent_sha> (<parent branch>)\n**Files changed:** <N>\n**Diff size:** <LOC> lines\n**Panel:** 2x Fable, Sonnet, 2x Codex gpt-5.5, 4 inspectors; per-finding verification; Fable synthesis",
+  "synthesisExtra": ""
+}
 ```
 
-Notes:
-- `--sandbox read-only` is non-negotiable — codex must not mutate the repo.
-- The diff is piped via stdin so codex has the content without needing to
-  find the file.
-- `-C` sets the working directory so codex can resolve relative paths.
-- **Output extraction**: Codex mixes internal tool-call output with review
-  analysis. The review appears after a bare `codex` marker line near the end.
-- If the `codex` marker is not found, the review file will be empty —
-  recorded as "reviewer errored" in the aggregator.
-- **Daily quota fallback**: If Codex fails with a daily limit error (look
-  for `rate_limit` or `quota` with reset in hours), retry once with `-m o3`.
+The tool result includes a `scriptPath` — reuse it (`{scriptPath, args}`) for
+later full-panel passes instead of resending the script.
+
+```javascript
+export const meta = {
+  name: 'review-panel',
+  description: 'Multi-model review panel: parallel review, dedup, adversarial verify, synthesize',
+  phases: [
+    { title: 'Review', detail: 'reviewers + inspectors in parallel' },
+    { title: 'Verify', detail: 'adversarial refuter per deduped finding' },
+    { title: 'Synthesize', detail: 'canonical report' },
+  ],
+}
+
+const FINDING = {
+  type: 'object',
+  required: ['title', 'severity', 'file', 'line_start', 'line_end', 'category',
+    'finding', 'why_it_matters', 'recommended_fix', 'confidence'],
+  properties: {
+    title: { type: 'string' },
+    severity: { enum: ['critical', 'high', 'medium', 'low', 'nit'] },
+    file: { type: 'string' },
+    line_start: { type: 'integer' },
+    line_end: { type: 'integer' },
+    category: { enum: ['correctness', 'security', 'convention', 'maintainability', 'tests'] },
+    finding: { type: 'string' },
+    why_it_matters: { type: 'string' },
+    recommended_fix: { type: 'string' },
+    confidence: { type: 'integer' },
+  },
+}
+
+const REVIEW_SCHEMA = {
+  type: 'object',
+  required: ['findings'],
+  properties: {
+    findings: { type: 'array', items: FINDING },
+    clean_reason: { type: 'string' },
+    reviewer_error: { type: 'string' },
+  },
+}
+
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'rationale', 'severity', 'confidence'],
+  properties: {
+    verdict: { enum: ['valid', 'likely', 'disputed', 'invalid', 'out-of-scope'] },
+    rationale: { type: 'string' },
+    severity: { enum: ['critical', 'high', 'medium', 'low', 'nit'] },
+    confidence: { type: 'integer' },
+  },
+}
+
+const { repoRoot, docsPaths, lanes, reportHeader, synthesisExtra } = args
+
+phase('Review')
+
+const laneResults = await parallel(lanes.map(lane => () => {
+  const context = `The diff is at: ${lane.diffPath}\n` +
+    `Project docs: ${docsPaths.join(', ')}\n` +
+    `Repo root: ${repoRoot}`
+
+  const prompt = lane.codex
+    ? `Use Bash to run exactly this command (one call, 10 minute timeout):\n` +
+      `cat "${lane.diffPath}" | codex exec --sandbox read-only -m gpt-5.5 ` +
+      `-C "${repoRoot}" "$(cat "${lane.promptPath}")"\n` +
+      `Codex mixes tool-call logs with the review; the review appears after ` +
+      `the last bare 'codex' marker line in stdout, before any 'tokens used' ` +
+      `trailer. If the command fails with a rate-limit or quota error, retry ` +
+      `once with -m o3. Convert the resulting review into structured ` +
+      `findings (parse each ### section into one finding). If codex is ` +
+      `unusable, return an empty findings list and set reviewer_error.`
+    : `Read the review instructions at ${lane.promptPath} and follow them ` +
+      `exactly.\n${context}\nRead the diff, the project docs, and any ` +
+      `source files referenced by the diff that you need for context.`
+
+  return agent(prompt, {
+    label: `review:${lane.key}`,
+    phase: 'Review',
+    model: lane.model,
+    schema: REVIEW_SCHEMA,
+  }).then(result => result && ({
+    key: lane.key,
+    error: result.reviewer_error || null,
+    findings: (result.findings || []).map(finding => ({
+      ...finding,
+      found_by: [lane.key],
+      diff_path: lane.diffPath,
+    })),
+  }))
+}))
+
+const laneErrors = lanes
+  .map((lane, index) => {
+    const result = laneResults[index]
+    if (!result) return `${lane.key}: lane died or was skipped`
+    if (result.error) return `${lane.key}: ${result.error}`
+    return null
+  })
+  .filter(Boolean)
+
+const raw = laneResults.filter(Boolean).flatMap(result => result.findings)
+
+const merged = []
+for (const finding of raw) {
+  const dup = merged.find(existing =>
+    existing.file === finding.file &&
+    existing.category === finding.category &&
+    finding.line_start <= existing.line_end + 3 &&
+    existing.line_start <= finding.line_end + 3)
+  if (dup) {
+    dup.found_by = [...new Set([...dup.found_by, ...finding.found_by])]
+    if (finding.confidence > dup.confidence) {
+      Object.assign(dup, { ...finding, found_by: dup.found_by })
+    }
+  } else {
+    merged.push({ ...finding })
+  }
+}
+log(`${raw.length} raw findings -> ${merged.length} after dedup; ` +
+  `lane errors: ${laneErrors.length}`)
+
+phase('Verify')
+
+const verified = await parallel(merged.map(finding => () =>
+  agent(
+    `You are adversarially verifying a single code-review finding. Read the ` +
+    `actual code before judging — never judge from the finding text alone.\n\n` +
+    `Finding: ${JSON.stringify(finding)}\n\n` +
+    `The diff is at: ${finding.diff_path}\nRepo root: ${repoRoot}\n\n` +
+    `Classify the finding: valid (real, you verified it against the code), ` +
+    `likely (probably real but needs more context), disputed (evidence is ` +
+    `weak), invalid (false positive — the code contradicts the claim), ` +
+    `out-of-scope (real but on lines the diff did not modify). Refute only ` +
+    `with concrete evidence from the code; do not dismiss ` +
+    `uncertain-but-plausible findings. Re-score severity and confidence ` +
+    `from your own reading (confidence 100 = you verified it yourself).`,
+    { label: `verify:${finding.file}`, phase: 'Verify', model: 'sonnet',
+      schema: VERDICT_SCHEMA },
+  ).then(verdict => verdict && ({ ...finding, ...verdict }))
+))
+
+const judged = verified.filter(Boolean)
+const survivors = judged.filter(finding =>
+  finding.verdict === 'valid' || finding.verdict === 'likely' ||
+  finding.verdict === 'disputed')
+const dismissed = judged.filter(finding =>
+  finding.verdict === 'invalid' || finding.verdict === 'out-of-scope')
+
+const sevRank = { critical: 0, high: 1, medium: 2, low: 3, nit: 4 }
+const verdictRank = { valid: 0, likely: 1, disputed: 2 }
+survivors.sort((first, second) =>
+  sevRank[first.severity] - sevRank[second.severity] ||
+  verdictRank[first.verdict] - verdictRank[second.verdict] ||
+  second.confidence - first.confidence)
+
+phase('Synthesize')
+
+const synthesis = await agent(
+  `You are a senior staff engineer writing the canonical report for a ` +
+  `multi-reviewer code review. The findings below were already deduplicated ` +
+  `and adversarially verified — do not re-litigate verdicts.\n\n` +
+  `Report header (use verbatim at the top):\n${reportHeader}\n\n` +
+  `Reviewer lanes that errored: ${JSON.stringify(laneErrors)}\n\n` +
+  `Verified findings (JSON, pre-sorted): ${JSON.stringify(survivors)}\n\n` +
+  `Dismissed findings (JSON): ${JSON.stringify(dismissed)}\n\n` +
+  `The diff is at: ${lanes[0].diffPath}. Project docs: ` +
+  `${docsPaths.join(', ')}. Read the diff so your overall assessment ` +
+  `reflects the actual change, and call out anything the reviewers ` +
+  `collectively missed.\n\n` +
+  `Produce a markdown report: the header block, "## Summary" (2-3 sentence ` +
+  `verdict with valid-finding counts per severity), "## Findings" (one ` +
+  `"### [SEVERITY] <title>" section per finding with File, Category, ` +
+  `Validity, Confidence, Found by, Issue, Why it matters, Recommended fix, ` +
+  `and the verifier's rationale as "Verification"), "## Findings dismissed ` +
+  `as invalid" (bulleted, one-line rationale each), "## Findings dismissed ` +
+  `as out-of-scope", "## Overall assessment" (2-3 paragraphs of your own ` +
+  `senior-engineer judgment on merge readiness). No emojis, no apologies, ` +
+  `be decisive.` +
+  (synthesisExtra ? `\n\n${synthesisExtra}` : ''),
+  { label: 'synthesize', phase: 'Synthesize', model: 'fable',
+    schema: {
+      type: 'object',
+      required: ['report_markdown'],
+      properties: { report_markdown: { type: 'string' } },
+    } },
+)
+
+return {
+  findings: survivors,
+  dismissed,
+  laneErrors,
+  report: synthesis ? synthesis.report_markdown : null,
+}
+```
 
 ### Chunk splitting for large diffs
 
@@ -456,193 +602,36 @@ lines.
 2. Group files by domain/crate/directory into logical chunks.
 3. Generate per-chunk diffs using `git diff` with path filters:
    ```bash
-   git diff "$parent"..HEAD -- 'crates/dto/' 'crates/finance/' > "$out_dir/chunk-a.patch"
+   git diff "$parent" -- 'crates/dto/' 'crates/finance/' > "$out_dir/chunk-a.patch"
    ```
 4. Verify all files are covered.
 5. Report chunk sizes to the user before proceeding.
-6. Spawn **5 x N** reviewers (one per instance per chunk). Output files
-   are named `raw-{model}-chunk-{label}.md`.
-7. The aggregator receives ALL raw reviews across all chunks.
+6. Duplicate the five reviewer lanes per chunk (keys like `fable-a-chunk-b`),
+   each with its chunk's `diffPath`. Inspector lanes run once on the full
+   diff. Pass all lanes to a single workflow invocation — dedup and
+   verification handle the rest.
 
 Skip chunking for diffs under 3,500 lines, single-directory diffs, or if the
 user explicitly asks for a single-pass review.
 
-### Output validation
+### After the workflow returns
 
-After all reviewers finish, verify each output file:
+The workflow returns `{findings, dismissed, laneErrors, report}`.
 
-```bash
-validate_review() {
-  local file="$1" reviewer="$2"
-  [ ! -f "$file" ] && echo "$reviewer: no output" && return 1
-  [ "$(wc -l < "$file")" -lt 5 ] && echo "$reviewer: too short" && return 1
-  grep -q '^### ' "$file" || { echo "$reviewer: no findings headings"; return 1; }
-  return 0
-}
-```
+1. Write `report` to `$out_dir/review.md` and the findings JSON to
+   `$out_dir/findings.json` (audit trail).
+2. If `laneErrors` is non-empty, tell the user which lanes errored. If **all
+   reviewer lanes** errored, stop.
+3. If `findings` is empty, the pass is clean.
 
-If a reviewer errors, record it as "reviewer errored" in the aggregator and
-continue. If all five error, stop.
+## 6. (Reserved)
 
-### Parallelism
-
-In a single Claude message, issue:
-
-1. `Agent` call for Opus A
-2. `Agent` call for Opus B
-3. `Agent` call for Sonnet
-4. `Bash` call for Codex gpt-5.5 A (`run_in_background: true`, `timeout: 600000`)
-5. `Bash` call for Codex gpt-5.5 B (`run_in_background: true`, `timeout: 600000`)
-6. `Agent` call for Test Inspector (`model: "sonnet"`)
-7. `Agent` call for Idiomatic Rust Inspector (`model: "opus"`)
-8. `Agent` call for Strong Typing Inspector (`model: "sonnet"`)
-9. `Agent` call for External Contract Inspector (`model: "opus"`)
-
-## 6. Aggregate
-
-Spawn a fresh Claude Opus `Agent` to aggregate. This must be a new Agent
-so it has no context pollution from the reviewers.
-
-Aggregator prompt:
-
-```
-You are a senior staff engineer aggregating five independent code reviews of
-the same diff. Your job is to produce a single canonical review report that
-is more reliable than any individual reviewer.
-
-You have five raw reviews:
-- {OPUS_A_PATH}    (Claude Opus A)
-- {OPUS_B_PATH}    (Claude Opus B)
-- {SONNET_PATH}    (Claude Sonnet)
-- {CODEX_A_PATH}   (Codex gpt-5.5 A)
-- {CODEX_B_PATH}   (Codex gpt-5.5 B)
-
-You also have four specialized inspector reports (may be empty if no
-relevant files were in the diff):
-- {TEST_INSPECTOR_PATH}      (Test Inspector — test quality assessment)
-- {RUST_INSPECTOR_PATH}      (Idiomatic Rust Inspector — Rust idiom assessment)
-- {TYPING_INSPECTOR_PATH}    (Strong Typing Inspector — primitive-vs-domain-type assessment)
-- {CONTRACT_INSPECTOR_PATH}  (External Contract Inspector — unverified external-API/contract assumptions)
-
-And the diff itself at:
-- {DIFF_PATH}
-
-And the project conventions at:
-- {PROJECT_DOCS_PATHS}
-
-Do this:
-
-1. Read all five reviews.
-2. Read the diff so you can verify claims against the actual code.
-3. For each distinct finding across the five reviews:
-   a. Merge duplicates — findings that describe the same underlying issue
-      should become one entry, even if worded differently.
-   b. Record which reviewer(s) raised it: [opus-a], [opus-b], [sonnet],
-      [codex-a], [codex-b], or a combination like [opus-a, sonnet].
-   c. Verify the finding by reading the relevant code. For each one, form
-      YOUR OWN opinion on whether it is:
-         - valid: a real issue that should be fixed
-         - likely: probably real but needs more context
-         - disputed: reviewers disagree or the evidence is weak
-         - invalid: false positive, not actually a problem
-         - out-of-scope: real but on code not in the diff
-   d. If a reviewer's claim conflicts with the actual code, mark it invalid
-      and say why.
-4. Re-score severity from scratch based on your own reading, using the same
-   scale: critical | high | medium | low | nit.
-5. Re-score confidence: 0-100, where 100 means you verified it yourself.
-
-Output format:
-
-# Review — {BRANCH}
-
-**Commit:** {HEAD_SHA}
-**Parent:** {PARENT_SHA} ({PARENT_BRANCH})
-**Files changed:** {N}
-**Diff size:** {LOC} lines
-**Reviewers:** Claude Opus A, Claude Opus B, Claude Sonnet, Codex gpt-5.5 A, Codex gpt-5.5 B
-**Aggregator:** Claude Opus
-
-## Summary
-
-<2-3 sentence overall verdict. Include the count of valid findings at each
-severity.>
-
-## Findings
-
-<findings sorted by: severity (critical first), then validity (valid first),
-then confidence (high first)>
-
-For each finding:
-
-### [SEVERITY] <short title>
-
-- **File:** <path>:<line-range>
-- **Category:** correctness | security | convention | maintainability | tests
-- **Validity:** valid | likely | disputed | invalid | out-of-scope
-- **Confidence:** <0-100>
-- **Found by:** [opus-a], [opus-b], [sonnet], [codex-a], [codex-b], or a list
-- **Issue:** <one paragraph>
-- **Why it matters:** <concrete consequence>
-- **Recommended fix:** <specific action>
-- **Aggregator opinion:** <your own take — do you agree with the reviewers?
-  Is this worth fixing? Is any reviewer overreaching?>
-
-## Findings dismissed as invalid
-
-<bullet list of findings you rejected, each with one-sentence rationale and
-which reviewer raised it>
-
-## Findings dismissed as out-of-scope
-
-<bullet list — real issues but on code the diff did not touch>
-
-## Overall assessment
-
-<2-3 paragraphs. Your own senior-engineer judgment on whether this PR is
-ready to merge, needs a second pass, or has fundamental issues. Call out
-anything the individual reviewers missed collectively if you spot it.>
-
-Inspector reports use a different format from the five reviewers. Integrate
-their findings as follows:
-
-- **Test Inspector findings** (useless/weak tests, missing coverage, mock
-  abuse): convert each into a standard finding entry. Use category "tests".
-  Severity: useless tests = medium, weak tests = low, missing coverage for
-  risky logic = high, mock abuse = medium.
-- **Idiomatic Rust Inspector findings** (non-idiomatic code, ownership
-  issues, error handling, type design): convert each into a standard
-  finding entry. Use category "maintainability" for style/idiom issues,
-  "correctness" for ownership bugs or unsafe misuse. Severity: non-idiomatic
-  with correctness impact = high, non-idiomatic style-only = medium,
-  suboptimal = low.
-- **Strong Typing Inspector findings** (primitive used where domain type
-  exists, missed newtype opportunity): convert each into a standard finding
-  entry. Use category "maintainability". Severity: primitive-where-domain-
-  type-exists = medium (high if it touches financial values or
-  identifiers), missed-newtype opportunity = low.
-- **External Contract Inspector findings** (unverified assumptions about an
-  external API/contract — wire types, numeric widths, units/decimals, field
-  shapes — not backed by a cited spec or a real-response test): convert each
-  into a standard finding entry. Use category "correctness". Carry over the
-  inspector's risk-weighted severity verbatim (critical for wrong
-  width/unit/encoding at a money or on-chain boundary, down to low for
-  cosmetic shape assumptions). The recommended fix should name how to pin
-  the assumption (cite the spec, or add the real-response test).
-- If an inspector report is empty or says "no files found", ignore it.
-- Inspector findings can corroborate or conflict with the five reviewer
-  findings — merge duplicates as you would between any two reviewers.
-- In the "Found by" field, use [test-inspector], [rust-inspector],
-  [typing-inspector], or [contract-inspector] as the attribution.
-
-Do not include emojis, apologies, or disclaimers. Be decisive.
-```
-
-Write the aggregator's output to `$out_dir/review.md`.
+Aggregation now happens inside the workflow (step 5). There is no separate
+aggregator step.
 
 ## 7. Print findings to the terminal
 
-Print a compact, scannable summary:
+Print a compact, scannable summary from the returned `findings`:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -652,7 +641,7 @@ Review — <branch>
 
 ▲ CRITICAL (count)
   1. <title>
-     <file>:<line>  [opus, codex]  confidence: 95
+     <file>:<line>  [fable-a, codex-b]  confidence: 95
      <one-line fix>
 
 ▲ HIGH (count)
@@ -667,13 +656,12 @@ Review — <branch>
 ▲ NIT (count)
   ...
 
-▽ Dismissed as invalid: <count>
-▽ Dismissed as out-of-scope: <count>
+▽ Dismissed by verification: <count>
 
 Full report: <absolute path to review.md>
 ```
 
-Keep each finding to **two lines**: title line (title + agents + confidence)
+Keep each finding to **two lines**: title line (title + lanes + confidence)
 and fix line (recommended fix). The full details live in `review.md`.
 
 If the review reports **no findings**, print that prominently and exit —
@@ -681,32 +669,25 @@ nothing to loop over.
 
 ---
 
-## 8. Load the report & triage
+## 8. Triage input
 
-Read `$out_dir/review.md`. For each finding in the "Findings" section
-(excluding the "Dismissed as invalid" and "Dismissed as out-of-scope"
-sections), extract:
+Triage works directly on the structured `findings` array returned by the
+workflow (also saved to `findings.json`) — no report parsing. Each finding
+already carries: `title`, `severity` (re-scored by the verifier), `verdict`
+(valid | likely | disputed), `confidence` (re-scored), `category`, `file` +
+`line_start`/`line_end`, `finding`, `recommended_fix`, and the verifier's
+`rationale`.
 
-- `title`
-- `severity` (critical | high | medium | low | nit)
-- `validity` (valid | likely | disputed)
-- `confidence` (0-100)
-- `category` (correctness | security | convention | maintainability | tests)
-- `file` and `line-range`
-- `issue` text
-- `recommended_fix`
-- `aggregator_opinion`
-
-Skip findings already marked `invalid` or `out-of-scope` by the aggregator —
-they've been pre-filtered.
+Findings the verifier judged `invalid` or `out-of-scope` are already in the
+`dismissed` list — never triage those.
 
 ## 9. Build the triage plan
 
 For each remaining finding, compute a **default action** based on severity,
-validity, and confidence. **Bias heavily toward fixing now** — only defer
+verdict, and confidence. **Bias heavily toward fixing now** — only defer
 when the fix is massive enough to warrant its own stacked PR.
 
-| Severity   | Validity | Confidence | Default action |
+| Severity   | Verdict  | Confidence | Default action |
 | ---------- | -------- | ---------- | -------------- |
 | critical   | any      | any        | **Auto-fix**   |
 | high       | valid    | >= 50      | **Auto-fix**   |
@@ -793,77 +774,179 @@ For each "fix now" finding, in severity order:
    the kind of logic being fixed, add tests even if the finding didn't
    mention it.
 6. Print a one-line summary of what changed.
-7. Do **not** run tests, typecheck, or commit yet — batch those at the end.
+7. Do **not** run the full test suite, lints, or commit yet — `/ci` runs
+   only after the review loop converges.
 
 If while implementing a fix you realize it's larger than expected or the
 finding is more nuanced than the report suggests, stop and tell the user.
 Offer to re-triage (defer, dismiss, or adjust the fix).
 
-After all fix-now items are done, proceed directly to step 12 (re-review).
-Do NOT run `/ci` here — it runs only after the review loop converges
-(see step 12).
+### Compile gate
 
-## 12. Re-review loop
+After all fix-now items are done, run the **compile gate** before any
+re-review: the project's fastest typecheck scoped to what was touched (for
+Rust, `cargo check -p <touched crates>`; otherwise the project's equivalent).
+Fix any compile errors immediately — never enter a re-review pass with code
+that doesn't compile; that wastes an entire review pass. The compile gate is
+NOT a substitute for `/ci` — full tests and lints still run only after
+convergence.
 
-Re-run the full review to catch issues introduced by the fixes. This is
-the core of the automatic loop.
+Then proceed directly to step 12 (re-review).
+
+## 12. Re-review loop (delta mode)
+
+Re-review after every fix pass to catch issues introduced by the fixes. This
+is the core of the automatic loop.
 
 **CRITICAL: The re-review is NOT optional.** After fixing findings, you
-MUST re-run the review at least once. Do not skip it because the fixes
-"looked straightforward" or "were simple." The entire point of this loop
-is to catch issues introduced by fixes — you cannot know whether fixes
-introduced new issues without re-reviewing. Only the review determines
-when the loop is done, not your judgment.
+MUST re-review at least once. Do not skip it because the fixes "looked
+straightforward" or "were simple." Only a review pass determines when the
+loop is done, not your judgment.
 
 **CRITICAL: Convergence requires a CLEAN review pass.** The loop is ONLY
 done when a review pass returns no new actionable findings. Fixing the
-last batch of findings is NOT convergence — you must run another review
-to verify those fixes didn't introduce new issues. The pattern is always:
+last batch of findings is NOT convergence. The pattern is always:
 `review → fix → review → fix → review(clean) → /ci → done`. You can
 never end on a fix — you must always end on a clean review. `/ci` runs
 only after convergence, and if it makes changes, you re-enter the loop.
 
-1. Re-run **steps 2 through 7** in full — resolve scope, generate the
-   diff, build prompts, spawn all five reviewers, aggregate, and print
-   findings. The diff will now include the fixes (current state vs
-   `gt parent`), so it reviews the full PR including the new changes.
-   After the review finishes, **copy its `review.md` into the original
-   review directory** as `review-iter{N}.md` so the full audit trail
-   lives in one place:
-   ```bash
-   cp "$new_out_dir/review.md" "$original_out_dir/review-iter${iteration}.md"
-   ```
-2. If the review returns **no findings**: the review loop has converged.
-   Run `/ci` (invoke the `ci` skill) to verify all changes compile, pass
-   tests, and satisfy lints. Let the ci loop run until it passes or it
-   asks the user for help.
-   - If `/ci` made **no code changes** (only verified): proceed to
-     step 13 (defer) or step 14 (summarize).
-   - If `/ci` **made code changes** (fixed lint, formatting, etc.):
-     re-enter the review loop — go back to step 12 from the top (re-run
-     steps 2–7, re-review). This should converge quickly since `/ci`
-     changes are typically mechanical, but let it loop normally if it
-     doesn't.
-3. If the review returns findings:
-   - **Filter out findings already addressed** in a previous iteration.
-     Compare by file + line range + issue description. If a finding is
-     substantively the same as one already fixed or dismissed, skip it.
-   - If **no new findings remain** after filtering: the loop is done.
-   - If **new findings remain**: increment the review iteration counter,
-     loop back to step 8 (triage) with only the new findings.
+### Choose the re-review mode
 
-**Cap at 4 review passes** (initial + up to 3 re-reviews). A re-review
-that finds new issues counts as a pass; fixing those issues and
-re-reviewing to confirm they're clean counts as another pass. If new
-findings keep appearing after 4 passes, stop and tell the user — the
-fixes are likely introducing as many issues as they solve, and a human
-needs to assess the approach.
+Compute the fix delta (everything the loop has changed so far —
+fixes are uncommitted, so this is the working-tree diff against HEAD):
+
+```bash
+git diff HEAD > "$out_dir/delta-iter${N}.patch"
+git diff HEAD --stat | tail -1
+git diff "$parent" > "$out_dir/diff-iter${N}.patch"   # updated full diff
+```
+
+**Escalate to a full panel pass** (re-run steps 4–7 with the updated full
+diff; reuse the workflow `scriptPath`) only when:
+- the fix delta exceeds ~200 changed lines, OR
+- the fixes touched files that no fixed finding implicated (scope grew).
+
+**Otherwise run delta mode** — the default and the fast path. One small
+workflow: a fix-verifier per fixed finding plus one Fable broad sweep of the
+fix delta:
+
+```javascript
+export const meta = {
+  name: 'review-delta',
+  description: 'Verify applied fixes and sweep the fix delta for new issues',
+  phases: [
+    { title: 'Verify fixes', detail: 'one verifier per fixed finding' },
+    { title: 'Sweep', detail: 'broad review of the fix delta' },
+  ],
+}
+
+const FINDING = {
+  type: 'object',
+  required: ['title', 'severity', 'file', 'line_start', 'line_end', 'category',
+    'finding', 'why_it_matters', 'recommended_fix', 'confidence'],
+  properties: {
+    title: { type: 'string' },
+    severity: { enum: ['critical', 'high', 'medium', 'low', 'nit'] },
+    file: { type: 'string' },
+    line_start: { type: 'integer' },
+    line_end: { type: 'integer' },
+    category: { enum: ['correctness', 'security', 'convention', 'maintainability', 'tests'] },
+    finding: { type: 'string' },
+    why_it_matters: { type: 'string' },
+    recommended_fix: { type: 'string' },
+    confidence: { type: 'integer' },
+  },
+}
+
+const VERIFY_FIX_SCHEMA = {
+  type: 'object',
+  required: ['fixed', 'rationale'],
+  properties: {
+    fixed: { type: 'boolean' },
+    rationale: { type: 'string' },
+    new_issues: { type: 'array', items: FINDING },
+  },
+}
+
+const SWEEP_SCHEMA = {
+  type: 'object',
+  required: ['findings'],
+  properties: {
+    findings: { type: 'array', items: FINDING },
+    clean_reason: { type: 'string' },
+  },
+}
+
+const { fixedFindings, deltaDiffPath, fullDiffPath, repoRoot, docsPaths } = args
+
+const [verifications, sweep] = await parallel([
+  () => parallel(fixedFindings.map(finding => () =>
+    agent(
+      `A code review flagged this finding and a fix was applied:\n` +
+      `${JSON.stringify(finding)}\n\n` +
+      `The fix delta (uncommitted changes) is at: ${deltaDiffPath}\n` +
+      `The full PR diff (context) is at: ${fullDiffPath}\n` +
+      `Repo root: ${repoRoot}\n\n` +
+      `Read the current source at the finding's location. Confirm the fix ` +
+      `fully resolves the finding — not partially, not by suppressing the ` +
+      `symptom — and check the surrounding code for issues the fix may ` +
+      `have introduced. Report new_issues only for problems caused by or ` +
+      `directly adjacent to the fix.`,
+      { label: `verify-fix:${finding.title}`, phase: 'Verify fixes',
+        model: 'sonnet', schema: VERIFY_FIX_SCHEMA },
+    ).then(result => result && ({ finding, ...result })))),
+  () => agent(
+    `You are a senior staff engineer reviewing a set of fixes applied in ` +
+    `response to a code review. The fix delta is at: ${deltaDiffPath}. ` +
+    `The full PR diff (context) is at: ${fullDiffPath}. Project docs: ` +
+    `${docsPaths.join(', ')}. Repo root: ${repoRoot}.\n\n` +
+    `Review the fix delta holistically: bugs, broken invariants, ` +
+    `interactions with the rest of the PR, convention violations from the ` +
+    `project docs. Apply the same bar as a full review — correctness ` +
+    `first, no style nits, nothing the compiler or linter would catch. ` +
+    `Return findings, or an empty list with clean_reason if clean.`,
+    { label: 'delta-sweep', phase: 'Sweep', model: 'fable',
+      schema: SWEEP_SCHEMA }),
+])
+
+return {
+  verifications: (verifications || []).filter(Boolean),
+  sweepFindings: sweep ? sweep.findings : [],
+}
+```
+
+Pass `args`: `{fixedFindings: <findings fixed this loop so far>,
+deltaDiffPath, fullDiffPath, repoRoot, docsPaths}`. Reuse the returned
+`scriptPath` on subsequent delta passes.
+
+### Interpret the result
+
+1. Save the result to `$out_dir/delta-iter${N}.json` (audit trail).
+2. **Clean pass** = every verification has `fixed: true` with no
+   `new_issues`, and `sweepFindings` is empty. The loop has converged.
+   Run `/ci` (invoke the `ci` skill) and let it run until it passes or it
+   asks the user for help.
+   - If `/ci` made **no code changes**: proceed to step 13/14.
+   - If `/ci` **made code changes** (lint, formatting): run one more delta
+     pass over the new delta. This converges quickly since `/ci` changes are
+     mechanical.
+3. **Not clean**: collect unresolved findings (`fixed: false` — re-fix),
+   `new_issues`, and `sweepFindings`. Filter out anything substantively
+   identical to a finding already fixed or dismissed (compare file + line
+   range + description). If nothing remains, treat as clean. Otherwise
+   increment the iteration counter and loop back to step 9 (triage) with
+   only the remaining findings.
+
+**Cap at 4 review passes total** (full or delta — initial + up to 3
+re-reviews). If new findings keep appearing after 4 passes, stop and tell
+the user — the fixes are likely introducing as many issues as they solve,
+and a human needs to assess the approach.
 
 Print a status line at the start of each iteration:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Re-review iteration <N> — checking for new issues
+Re-review iteration <N> (<delta|full panel>) — checking for new issues
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -898,9 +981,9 @@ For each "defer" finding, invoke the `linear-cli` skill. For each one:
 
      <recommended_fix from the finding>
 
-     ## Aggregator opinion
+     ## Verification rationale
 
-     <aggregator_opinion from the review>
+     <the verifier's rationale from the finding>
 
      ---
 
@@ -985,7 +1068,7 @@ Deferred to Linear (1):
 Dismissed (1):
   #5  nit       Rename variable for clarity
 
-Reports: <paths to review.md files from each iteration>
+Reports: <paths to review.md and delta-iter*.json>
 ```
 
 Then stop. Do not auto-run `gt modify`, `gt submit`, or any other
@@ -999,22 +1082,25 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 
 ## Failure modes
 
-- **All reviewers error:** stop immediately, tell the user, don't proceed
-  to triage.
+- **All reviewer lanes error:** stop immediately, tell the user, don't
+  proceed to triage. (Inspector lanes erroring is non-fatal.)
 - **Review returns no findings:** print "No findings" and exit the command
   successfully — nothing to loop over.
 - **A fix turns out to be larger than expected:** stop, report progress,
   ask whether to continue, defer to a stacked PR, or dismiss.
-- **Re-review iteration cap hit (3 iterations):** stop and tell the user.
-  Summarize what was fixed in each iteration and what new issues keep
-  appearing. The fixes are likely introducing as many issues as they solve.
+- **Review pass cap hit (4 passes):** stop and tell the user. Summarize
+  what was fixed in each iteration and what new issues keep appearing. The
+  fixes are likely introducing as many issues as they solve.
+- **The workflow itself fails mid-run:** relaunch with
+  `{scriptPath, args, resumeFromRunId}` — completed lanes return cached
+  results instantly; only the failed part re-runs.
 - **A Linear issue fails to create:** report the exact `linear` error,
   leave the draft tempfile in place, and continue with the rest of the
   deferred items. Ask the user whether to retry the failed one at the end.
 - **The user says "stop" mid-loop:** immediately stop, then print the
   summary with what was completed so far. Do not silently abandon the rest.
-- **Codex not installed:** warn the user and run with Claude-only reviewers
-  (3 instead of 5). Three reviewers is still valuable.
+- **Codex not installed:** warn the user and drop the codex lanes
+  (7 lanes instead of 9). Seven lanes is still valuable.
 
 ## Hard rules
 
@@ -1034,16 +1120,23 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 6. Always re-verify findings against the current source before applying
    fixes — the code may have changed since the review.
 7. Keep fixes surgical. No "while I'm here" cleanups.
-8. Run `/ci` only after the review loop converges clean, not after each
-   fix pass. If `/ci` makes code changes, re-enter the review loop.
-9. Cap at 4 review passes. Convergence requires a clean pass — never end on a fix. Stop and ask the user if you don't converge.
-10. Spawn all reviewers in a single message with parallel tool calls.
+8. Run the compile gate after every fix pass; run `/ci` only after the
+   review loop converges clean. If `/ci` makes code changes, run another
+   delta pass.
+9. Cap at 4 review passes (full or delta). Convergence requires a clean
+   pass — never end on a fix. Stop and ask the user if you don't converge.
+10. The review pass runs as a single `Workflow` invocation — never run
+    reviewers sequentially or hand-roll the fan-out with individual Agent
+    calls.
 11. Use `--sandbox read-only` for codex — non-negotiable.
-12. The aggregator is a separate Agent call, never reuse the main session
-    to aggregate (context pollution).
-13. Never fabricate findings when a reviewer errors — record the failure.
-14. Save raw outputs and the aggregated report before printing to terminal.
+12. Verification and synthesis happen inside the workflow, never in the
+    main session (context pollution).
+13. Never fabricate findings when a lane errors — record the failure from
+    `laneErrors`.
+14. Save `review.md`, `findings.json`, and delta results to `$out_dir`
+    before printing to the terminal.
 15. Never silently modify `.gitignore` — ask permission to add
     `claude-local-ctx/` if missing.
-16. Validate reviewer output files before passing to aggregator — reject
-    files that contain dumped file contents instead of review analysis.
+16. Delta mode is only valid when the fix delta is small (~200 lines) and
+    confined to files implicated by fixed findings — otherwise escalate to
+    a full panel pass.

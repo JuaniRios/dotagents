@@ -1,6 +1,6 @@
 ---
 name: review-loop
-description: "Cross-review the current branch with Codex reviewers, optionally add one or two Claude CLI reviewers, auto-fix findings, and re-review until clean. Stops only for disputed findings or large changes. Pass `stack` in $ARGUMENTS to run the loop across the whole upstack, amending each branch."
+description: "Cross-review the current branch with Codex reviewers, optionally add one or two Claude CLI reviewers, adversarially verify findings before fixing, auto-fix, and re-review until clean using fast delta passes. Stops only for disputed findings or large changes. Pass `stack` in $ARGUMENTS to run the loop across the whole upstack, amending each branch."
 ---
 
 # review-loop
@@ -22,9 +22,17 @@ CI → re-review → repeat until clean. Use this right before you `gt submit`
 something you wrote yourself, to catch issues before reviewers do.
 
 The loop is **automatic by default**. Findings that clearly should be fixed
-are fixed without asking. The loop re-runs the full review after each fix
-pass to catch issues introduced by the fixes themselves. It stops when
-the review returns no new actionable findings.
+are fixed without asking. The loop re-reviews after each fix pass to catch
+issues introduced by the fixes themselves. It stops when a review pass
+returns no new actionable findings.
+
+**Speed design:** the **first pass** runs the full reviewer panel. Each
+aggregated finding is adversarially verified **before** triage so false
+positives never cost a fix-and-re-review cycle. A **compile gate** runs
+after each fix pass so a broken fix never burns a review pass. **Re-review
+passes** run in fast delta mode (per-fix verifiers plus one broad sweep of
+the fix delta) unless the fixes were large enough to warrant re-running the
+full panel.
 
 **Argument:** if `$ARGUMENTS` contains `stack`, run across the **entire
 upstack** — current branch and every branch above it — amending each branch as
@@ -124,11 +132,12 @@ out_dir="$repo_root/claude-local-ctx/reviews/${ts}-${safe_branch}"
 mkdir -p "$out_dir"
 ```
 
-Write the diff and file manifest:
+Write the diff and file manifest. Diff against the working tree (no `..HEAD`)
+so re-review iterations automatically include uncommitted fixes:
 
 ```bash
-git diff "$parent"..HEAD > "$out_dir/diff.patch"
-git diff --name-status "$parent"..HEAD > "$out_dir/files.txt"
+git diff "$parent" > "$out_dir/diff.patch"
+git diff --name-status "$parent" > "$out_dir/files.txt"
 wc -l "$out_dir/diff.patch"
 ```
 
@@ -432,7 +441,7 @@ lines.
 2. Group files by domain/crate/directory into logical chunks.
 3. Generate per-chunk diffs using `git diff` with path filters:
    ```bash
-   git diff "$parent"..HEAD -- 'crates/dto/' 'crates/finance/' > "$out_dir/chunk-a.patch"
+   git diff "$parent" -- 'crates/dto/' 'crates/finance/' > "$out_dir/chunk-a.patch"
    ```
 4. Verify all files are covered.
 5. Report chunk sizes to the user before proceeding.
@@ -618,6 +627,32 @@ Do not include emojis, apologies, or disclaimers. Be decisive.
 
 Write the aggregator's output to `$out_dir/review.md`.
 
+### Per-finding adversarial verification (refute-before-fix)
+
+Before triage, adversarially verify every finding the aggregator did NOT
+already dismiss. A false positive that reaches triage costs a fix pass plus
+a re-review pass — killing it here is the cheapest point in the loop.
+
+Spawn one Codex subagent per finding, all in parallel. Each verifier gets
+the finding (title, file, line range, issue text, recommended fix), the
+diff path, and the repo root, with this instruction:
+
+```
+You are adversarially verifying a single code-review finding. Read the
+actual code before judging — never judge from the finding text alone.
+Classify it: valid (real, you verified it against the code), likely
+(probably real but needs more context), disputed (evidence is weak),
+invalid (false positive — the code contradicts the claim), out-of-scope
+(real but on lines the diff did not modify). Refute only with concrete
+evidence from the code; do not dismiss uncertain-but-plausible findings.
+Re-score severity and confidence from your own reading.
+```
+
+Append each verdict to the finding. Findings judged `invalid` or
+`out-of-scope` move to the dismissed lists (record the verifier's
+rationale in `review.md`); the rest proceed to triage with the verifier's
+re-scored severity, validity, and confidence.
+
 ## 7. Print findings to the terminal
 
 Print a compact, scannable summary:
@@ -771,77 +806,115 @@ For each "fix now" finding, in severity order:
    the kind of logic being fixed, add tests even if the finding didn't
    mention it.
 6. Print a one-line summary of what changed.
-7. Do **not** run tests, typecheck, or commit yet — batch those at the end.
+7. Do **not** run the full test suite, lints, or commit yet — the `ci`
+   skill runs only after the review loop converges.
 
 If while implementing a fix you realize it's larger than expected or the
 finding is more nuanced than the report suggests, stop and tell the user.
 Offer to re-triage (defer, dismiss, or adjust the fix).
 
-After all fix-now items are done, proceed directly to step 12 (re-review).
-Do NOT run `the ci skill` here — it runs only after the review loop converges
-(see step 12).
+### Compile gate
 
-## 12. Re-review loop
+After all fix-now items are done, run the **compile gate** before any
+re-review: the project's fastest typecheck scoped to what was touched (for
+Rust, `cargo check -p <touched crates>`; otherwise the project's
+equivalent). Fix any compile errors immediately — never enter a re-review
+pass with code that doesn't compile; that wastes an entire review pass. The
+compile gate is NOT a substitute for the `ci` skill — full tests and lints
+still run only after convergence.
 
-Re-run the full review to catch issues introduced by the fixes. This is
-the core of the automatic loop.
+Then proceed directly to step 12 (re-review).
+
+## 12. Re-review loop (delta mode)
+
+Re-review after every fix pass to catch issues introduced by the fixes.
+This is the core of the automatic loop.
 
 **CRITICAL: The re-review is NOT optional.** After fixing findings, you
-MUST re-run the review at least once. Do not skip it because the fixes
-"looked straightforward" or "were simple." The entire point of this loop
-is to catch issues introduced by fixes — you cannot know whether fixes
-introduced new issues without re-reviewing. Only the review determines
-when the loop is done, not your judgment.
+MUST re-review at least once. Do not skip it because the fixes "looked
+straightforward" or "were simple." Only a review pass determines when the
+loop is done, not your judgment.
 
 **CRITICAL: Convergence requires a CLEAN review pass.** The loop is ONLY
 done when a review pass returns no new actionable findings. Fixing the
-last batch of findings is NOT convergence — you must run another review
-to verify those fixes didn't introduce new issues. The pattern is always:
+last batch of findings is NOT convergence. The pattern is always:
 `review → fix → review → fix → review(clean) → the ci skill → done`. You can
-never end on a fix — you must always end on a clean review. `the ci skill` runs
-only after convergence, and if it makes changes, you re-enter the loop.
+never end on a fix — you must always end on a clean review. The `ci` skill
+runs only after convergence, and if it makes changes, you re-enter the loop.
 
-1. Re-run **steps 2 through 7** in full — resolve scope, generate the
-   diff, build prompts, spawn all five Codex reviewers, aggregate, and print
-   findings. The diff will now include the fixes (current state vs
-   `gt parent`), so it reviews the full PR including the new changes.
-   After the review finishes, **copy its `review.md` into the original
-   review directory** as `review-iter{N}.md` so the full audit trail
-   lives in one place:
-   ```bash
-   cp "$new_out_dir/review.md" "$original_out_dir/review-iter${iteration}.md"
+### Choose the re-review mode
+
+Compute the fix delta (everything the loop has changed so far — fixes are
+uncommitted, so this is the working-tree diff against HEAD):
+
+```bash
+git diff HEAD > "$out_dir/delta-iter${N}.patch"
+git diff HEAD --stat | tail -1
+git diff "$parent" > "$out_dir/diff-iter${N}.patch"   # updated full diff
+```
+
+**Escalate to a full panel pass** (re-run steps 4–7 in full on the updated
+full diff, including aggregation and per-finding verification; save its
+report as `review-iter${N}.md` in the original out_dir) only when:
+- the fix delta exceeds ~200 changed lines, OR
+- the fixes touched files that no fixed finding implicated (scope grew).
+
+**Otherwise run delta mode** — the default and the fast path. Spawn, in one
+parallel batch:
+
+1. **One fix-verifier subagent per fixed finding.** Each gets the finding,
+   the delta diff path, the full diff path, and the repo root:
+
    ```
-2. If the review returns **no findings**: the review loop has converged.
-   Run `the ci skill` (invoke the `ci` skill) to verify all changes compile, pass
-   tests, and satisfy lints. Let the ci loop run until it passes or it
-   asks the user for help.
-   - If `the ci skill` made **no code changes** (only verified): proceed to
-     step 13 (defer) or step 14 (summarize).
-   - If `the ci skill` **made code changes** (fixed lint, formatting, etc.):
-     re-enter the review loop — go back to step 12 from the top (re-run
-     steps 2–7, re-review). This should converge quickly since `the ci skill`
-     changes are typically mechanical, but let it loop normally if it
-     doesn't.
-3. If the review returns findings:
-   - **Filter out findings already addressed** in a previous iteration.
-     Compare by file + line range + issue description. If a finding is
-     substantively the same as one already fixed or dismissed, skip it.
-   - If **no new findings remain** after filtering: the loop is done.
-   - If **new findings remain**: increment the review iteration counter,
-     loop back to step 8 (triage) with only the new findings.
+   A code review flagged this finding and a fix was applied. Read the
+   current source at the finding's location. Confirm the fix fully
+   resolves the finding — not partially, not by suppressing the symptom —
+   and check the surrounding code for issues the fix may have introduced.
+   Report: fixed (yes/no), rationale, and any new issues caused by or
+   directly adjacent to the fix (in the standard finding format).
+   ```
 
-**Cap at 4 review passes** (initial + up to 3 re-reviews). A re-review
-that finds new issues counts as a pass; fixing those issues and
-re-reviewing to confirm they're clean counts as another pass. If new
-findings keep appearing after 4 passes, stop and tell the user — the
-fixes are likely introducing as many issues as they solve, and a human
-needs to assess the approach.
+2. **One broad-sweep subagent** over the fix delta:
+
+   ```
+   You are a senior staff engineer reviewing a set of fixes applied in
+   response to a code review. Review the fix delta holistically: bugs,
+   broken invariants, interactions with the rest of the PR, convention
+   violations from the project docs. Apply the same bar as a full
+   review — correctness first, no style nits, nothing the compiler or
+   linter would catch. Use the standard finding format; output
+   "### No findings" if clean.
+   ```
+
+Save all delta outputs to `$out_dir/delta-iter${N}-*.md` (audit trail).
+
+### Interpret the result
+
+1. **Clean pass** = every verifier reports fixed with no new issues, and
+   the sweep reports no findings. The loop has converged. Run the `ci`
+   skill to verify all changes compile, pass tests, and satisfy lints.
+   Let the ci loop run until it passes or it asks the user for help.
+   - If the `ci` skill made **no code changes**: proceed to step 13/14.
+   - If it **made code changes** (lint, formatting): run one more delta
+     pass over the new delta. This converges quickly since ci changes are
+     typically mechanical.
+2. **Not clean**: collect unresolved findings (not fixed — re-fix), new
+   issues from verifiers, and sweep findings. Filter out anything
+   substantively identical to a finding already fixed or dismissed
+   (compare file + line range + description). If nothing remains, treat
+   as clean. Otherwise increment the iteration counter and loop back to
+   step 9 (triage) with only the remaining findings.
+
+**Cap at 4 review passes total** (full or delta — initial + up to 3
+re-reviews). If new findings keep appearing after 4 passes, stop and tell
+the user — the fixes are likely introducing as many issues as they solve,
+and a human needs to assess the approach.
 
 Print a status line at the start of each iteration:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Re-review iteration <N> — checking for new issues
+Re-review iteration <N> (<delta|full panel>) — checking for new issues
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -1012,9 +1085,11 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 6. Always re-verify findings against the current source before applying
    fixes — the code may have changed since the review.
 7. Keep fixes surgical. No "while I'm here" cleanups.
-8. Run `the ci skill` only after the review loop converges clean, not after each
-   fix pass. If `the ci skill` makes code changes, re-enter the review loop.
-9. Cap at 4 review passes. Convergence requires a clean pass — never end on a fix. Stop and ask the user if you don't converge.
+8. Run the compile gate after every fix pass; run the `ci` skill only after
+   the review loop converges clean. If the `ci` skill makes code changes,
+   run another delta pass.
+9. Cap at 4 review passes (full or delta). Convergence requires a clean
+   pass — never end on a fix. Stop and ask the user if you don't converge.
 10. Spawn all reviewers in a single message with parallel tool calls.
 11. Use `--sandbox read-only` for codex — non-negotiable.
 12. The aggregator is a separate subagent call, never reuse the main session
@@ -1025,3 +1100,6 @@ per-branch summary line, then continue the upstack walk — do not stop here.
     `claude-local-ctx/` if missing.
 16. Validate reviewer output files before passing to aggregator — reject
     files that contain dumped file contents instead of review analysis.
+17. Delta mode is only valid when the fix delta is small (~200 lines) and
+    confined to files implicated by fixed findings — otherwise escalate to
+    a full panel pass.
