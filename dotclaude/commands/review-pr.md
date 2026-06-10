@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(codex:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Bash(grep:*), Read, Write, Agent, Workflow, Skill
-description: Cross-review a pull request by number or URL without checking it out. Runs a multi-model Workflow panel (2x Fable, Sonnet, 2x Codex gpt-5.5 + inspectors) with per-finding verification, then starts a conversation so you can decide which findings (if any) to comment on the PR.
+description: Cross-review a pull request by number or URL without checking it out. Runs a multi-model Workflow panel (Fable, 2x Sonnet, 2x Codex gpt-5.5 + inspectors) with per-finding verification, then starts a conversation so you can decide which findings (if any) to comment on the PR.
 argument-hint: <pr-number | pr-url>
 ---
 
@@ -309,15 +309,23 @@ Build the lane list (drop the codex lanes if `codex` is not on PATH — check
 
 | key                | codex | model  | promptPath                              |
 | ------------------ | ----- | ------ | --------------------------------------- |
-| fable-a            | no    | fable  | prompt-fable-a.txt (concurrency)        |
+| fable-a            | no    | sonnet | prompt-fable-a.txt (concurrency)        |
 | fable-b            | no    | fable  | prompt-fable-b.txt (goal evaluation)    |
 | sonnet             | no    | sonnet | prompt-sonnet.txt (error handling)      |
-| codex-a            | yes   | —      | prompt-codex-a.txt (edge cases)         |
-| codex-b            | yes   | —      | prompt-codex-b.txt (broad sweep)        |
+| codex-a            | yes   | sonnet | prompt-codex-a.txt (edge cases)         |
+| codex-b            | yes   | sonnet | prompt-codex-b.txt (broad sweep)        |
 | test-inspector     | no    | sonnet | prompt-test-inspector.txt               |
-| rust-inspector     | no    | fable  | prompt-rust-inspector.txt               |
+| rust-inspector     | no    | sonnet | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | sonnet | prompt-typing-inspector.txt             |
 | contract-inspector | no    | fable  | prompt-contract-inspector.txt           |
+
+**Fable allocation:** Fable is reserved for `fable-b` (goal evaluation) and
+`contract-inspector` — the lanes where it has demonstrably found unique
+high-severity issues; it burns usage limits ~5x faster per token than
+Sonnet, so everything else runs on Sonnet or Codex. The codex lanes' model
+applies to the WRAPPER agent that shells out to the codex CLI and parses
+its output — pin it to sonnet, or it inherits the (possibly premium)
+session model for trivial wrapper work.
 
 Each lane object: `{key, codex, model, promptPath, diffPath}`. All lanes
 share `$out_dir/diff.patch`.

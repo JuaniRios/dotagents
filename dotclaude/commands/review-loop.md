@@ -404,8 +404,8 @@ Full lane catalogue (drop the codex lanes if `codex` is not on PATH):
 | fable-a            | no    | sonnet | prompt-fable-a.txt (concurrency)        |
 | fable-b            | no    | fable  | prompt-fable-b.txt (goal evaluation)    |
 | sonnet             | no    | sonnet | prompt-sonnet.txt (error handling)      |
-| codex-a            | yes   | —      | prompt-codex-a.txt (edge cases)         |
-| codex-b            | yes   | —      | prompt-codex-b.txt (broad sweep)        |
+| codex-a            | yes   | sonnet | prompt-codex-a.txt (edge cases)         |
+| codex-b            | yes   | sonnet | prompt-codex-b.txt (broad sweep)        |
 | test-inspector     | no    | sonnet | prompt-test-inspector.txt               |
 | rust-inspector     | no    | sonnet | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | sonnet | prompt-typing-inspector.txt             |
@@ -419,7 +419,10 @@ that no Sonnet or Codex lane caught. Fable burns usage limits ~5x faster
 per token than Sonnet, so every other lane runs on Sonnet (or Codex, which
 does not count against Anthropic limits at all). Do not promote lanes back
 to Fable for "thoroughness" — measured runs show repeated Fable generalists
-mostly duplicate what Sonnet/Codex lanes find.
+mostly duplicate what Sonnet/Codex lanes find. The codex lanes' model
+applies to the WRAPPER agent that shells out to the codex CLI and parses
+its output — pin it to sonnet, or it inherits the (possibly premium)
+session model for trivial wrapper work.
 
 Each lane object: `{key, codex, model, promptPath, diffPath, effort?}`.
 `effort` (codex lanes only) defaults to `medium`. Normally all lanes share
