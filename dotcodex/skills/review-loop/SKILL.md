@@ -385,7 +385,7 @@ At most ONE Claude lane (the goal-evaluation one) may run on the premium
 default model: measured runs show the goal-evaluation focus is where the
 premium Claude model finds unique high-severity issues, while additional
 premium lanes mostly duplicate Codex/Sonnet findings and burn the Anthropic
-usage limit ~5x faster per token than Sonnet.
+usage limit ~3x faster per token than Sonnet (2x Opus).
 
 ```bash
 cat "$out_dir/diff.patch" | claude -p \

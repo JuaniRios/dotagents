@@ -289,7 +289,7 @@ Optional external reviewers:
 At most ONE Claude lane (goal evaluation) may run on the premium default
 model — measured runs show that is the only focus where the premium model
 finds unique high-severity issues, and it burns the Anthropic usage limit
-~5x faster per token than Sonnet.
+~3x faster per token than Sonnet (2x Opus).
 
 Skip the Claude lanes if `claude` is not installed, the user asks for
 Codex-only review, or the diff is small enough that five Codex lanes are
