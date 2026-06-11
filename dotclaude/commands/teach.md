@@ -53,7 +53,15 @@ current one. Cover both the high level (e.g. motivation) and the low level
 **Always show progress.** Begin every stage and every question with a
 `Stage N/<total>` header (e.g. `Stage 4/7`) so the user always knows where they
 are and how much remains. The `<total>` is the number of stages on the
-checklist; if the checklist grows, update the total and say so.
+checklist; if the checklist grows, update the total and say so. Also tag each
+question with its position within the stage, e.g. `Q8/10`, so the user sees how
+many questions remain in the current stage.
+
+**Never reveal the plan file in chat.** Maintain and edit it silently — do not
+print its contents, do not narrate your edits to it, and do not show diffs of
+it. It contains upcoming questions, correct answers, and grades; surfacing any
+of that leaks the answers. Keep all grading/feedback as freshly written chat
+prose, not an echo of the file.
 
 To gauge where they're at, proactively have them restate their understanding
 first. Then help them fill in the gaps from there — they might ask you
