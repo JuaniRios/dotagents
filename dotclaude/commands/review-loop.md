@@ -113,6 +113,17 @@ cap. The Defer-to-Linear step (13) still applies per branch.
 
 Verify prerequisites before doing anything:
 
+0. **Model economics check.** Orchestrating this loop gains nothing from a
+   premium main model — every panel lane pins its own model (the two Fable
+   lanes run as Fable regardless of what the main session is). If this
+   session is Fable or Opus, tell the user a fresh Sonnet session runs the
+   identical panel at roughly 1/3 the limit burn — and that the longer this
+   session's history already is, the more every loop turn pays to re-read
+   it — then ask (one `AskUserQuestion`) whether to continue here anyway or
+   stop so they can relaunch from `/model sonnet`. When invoked from an
+   autonomous flow (night-shift, issue-stack, implement-issue), do not ask —
+   apply the premium-session delegations and continue.
+
 1. You are in a git repo with a graphite-tracked branch:
    ```bash
    git rev-parse --show-toplevel
