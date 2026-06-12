@@ -19,26 +19,57 @@ nor an argument provides a host, tell the user:
 "No host configured. Either pass it as an argument or add `ISSUANCE_HOST=root@<ip>` to `~/Github/dotagents/.env`."
 and stop.
 
-Set `HOST=<resolved_host>` and `DB=/mnt/volume_nyc3_02/issuance.db` for all
-commands below.
+Set `DB=/mnt/volume_nyc3_02/issuance.db` for all commands below, then set up a
+**multiplexed SSH connection** (next section) before running anything remote.
+
+## SSH connection reuse (CRITICAL — set up first)
+
+The server rate-limits new SSH connections. Opening a fresh `ssh` per command —
+as the steps below appear to do — trips sshd throttling and you get
+`ssh: connect to host ... port 22: Connection refused` partway through. Open
+**one** master connection and route every later `ssh` through it.
+
+Each tool call is a fresh shell, so env vars don't persist — but the master
+socket file does. Hardcode a fixed `ControlPath` and open the master once:
+
+```bash
+ssh -fN -o ControlMaster=auto -o ControlPersist=15m \
+    -o ControlPath=/tmp/issuance-cm.sock <resolved_host>
+```
+
+Then set `HOST` to **include the control option** so every existing `ssh $HOST`
+call below transparently reuses the one connection:
+
+```text
+HOST="-o ControlPath=/tmp/issuance-cm.sock <resolved_host>"
+```
+
+So `ssh $HOST '...'` expands to
+`ssh -o ControlPath=/tmp/issuance-cm.sock <resolved_host> '...'` — no new TCP
+handshake. **Every** `ssh` (and `sqlite3`/`curl`-over-ssh) in the steps below
+MUST go through `$HOST`.
+
+**Also batch remote work:** when you need several queries/curls, combine them
+into ONE `ssh` invocation (heredoc or `&&`-joined), and loop over aggregate IDs
+*inside* the remote shell — never `ssh` once per iteration.
+
+When finished, close the master:
+`ssh -O exit -o ControlPath=/tmp/issuance-cm.sock <resolved_host>`.
 
 ## 0. Check deployed version
 
-Note the deployed commit and which admin endpoints are available:
+The deployed image is always the latest commit on `master` for the issuance
+repo. Confirm the running tag and note it for the report:
 
 ```bash
 ssh $HOST 'docker inspect issuance-bot --format "{{.Config.Image}}"'
 ```
 
-Compare the tag against local git log:
-
-```bash
-git -C ~/Github/st0x.issuance log --oneline | head -15
-```
-
-Key milestone: `force-complete/redemption` and `close/redemption` were added
-in commit `260a89b`. If the deployed tag is an ancestor of that commit, those
-endpoints will 404. Note `FORCE_COMPLETE_DEPLOYED=true/false` for later steps.
+`force-complete/redemption` and `close/redemption` have long been on `master`,
+so they are available on the deployed build — no commit-ancestry check needed.
+Only if the deployed tag is conspicuously old (image tag does not match the
+latest `master` commit) should you verify the endpoint exists before relying on
+it. Otherwise treat `FORCE_COMPLETE_DEPLOYED=true`.
 
 ## 1. Fetch stuck transactions
 
@@ -54,12 +85,17 @@ Build a working list from the response. Each item has:
 
 ## 2. Attempt /admin/recover for each stuck redemption
 
-For each stuck **redemption**, capture the HTTP status code and response body:
+For each stuck **redemption**, capture the HTTP status code and response body.
+Batch all redemptions into ONE `ssh` call (loop in the remote shell, read the
+key once) rather than one `ssh` per aggregate:
 
 ```bash
 ssh $HOST "KEY=\$(grep ISSUER_API_KEY /mnt/volume_nyc3_02/.env | cut -d= -f2) && \
-  curl -s -w '\n%{http_code}' -X POST -H 'X-API-KEY: '\$KEY \
-  http://localhost:8000/admin/recover/redemption/<aggregate_id>"
+  for AGG in <agg_id_1> <agg_id_2> <agg_id_3>; do \
+    echo \"== \$AGG ==\"; \
+    curl -s -w '\n%{http_code}\n' -X POST -H \"X-API-KEY: \$KEY\" \
+      http://localhost:8000/admin/recover/redemption/\$AGG; \
+  done"
 ```
 
 Interpret the HTTP status:
@@ -184,8 +220,9 @@ tx hashes as "possible batch burn — needs manual verification".
 - Burn tx: `<tx_hash>` (verified on-chain)
 - Endpoint: `POST /admin/force-complete/redemption/<aggregate_id>`
 
-If `FORCE_COMPLETE_DEPLOYED=false` (from Step 0): do NOT attempt. Tell the
-user the first commit that adds it (`260a89b`) and stop.
+If `FORCE_COMPLETE_DEPLOYED=false` (deployed tag is older than `master` and
+lacks the endpoint): do NOT attempt. Tell the user the deploy needs to catch up
+to the latest `master` commit, and stop.
 
 If confirmed and the endpoint is deployed:
 
@@ -202,7 +239,8 @@ Interpret response:
 - **200**: ✅ Force-completed
 - **422**: On-chain verification failed — the tx hash didn't prove a burn for
   this redemption. Do NOT retry. Report to user.
-- **404**: Endpoint not present in deployed build — report commit `260a89b` and stop.
+- **404**: Endpoint not present in deployed build — the deploy is behind
+  `master`; report that a redeploy of the latest `master` is needed, and stop.
 
 ## 5. Findings table
 
@@ -230,12 +268,19 @@ After the table, list any items needing follow-up as a numbered action list.
    only on the remote server within a single SSH command.
 5. Never run destructive DB operations (DROP, DELETE, UPDATE) on the remote
    SQLite database.
-6. If the deployed image tag predates `260a89b`, note that `force-complete`
-   and `close` require a deployment before use.
+6. The deployed image is the latest `master` commit, which already includes
+   `force-complete` and `close`. Only if the running tag is visibly behind
+   `master` should you flag that a redeploy is needed before using them.
 
 ## Failure modes
 
 - **SSH permission denied**: check SSH key access to the server.
+- **`ssh: connect to host ... port 22: Connection refused`**: you opened too
+  many separate SSH connections and tripped the server's rate limit. Ensure the
+  multiplexed master from "SSH connection reuse" is up and that every `ssh` goes
+  through `$HOST` (the `ControlPath` option). Wait ~30s for the throttle to
+  clear, re-open the master, and batch remaining commands into fewer `ssh`
+  calls.
 - **`cast` not found**: `cast` is from the Foundry toolchain — run `nix develop`
   in the issuance repo first.
 - **RPC rate limit or timeout**: retry `cast logs` once. If it fails again,

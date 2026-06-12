@@ -21,13 +21,34 @@ Only read the host key needed for this workflow. Do not print secrets. Remote
 API keys, RPC URLs, and database URLs must be read only inside the remote SSH
 command that needs them, and must not be echoed.
 
+## SSH Connection Reuse (do this first)
+
+The server rate-limits new SSH connections. Opening a fresh `ssh` per command
+trips sshd throttling and produces `Connection refused` partway through. Before
+running any remote command, open ONE multiplexed master connection and route
+every later `ssh` through it:
+
+- Open the master once with `ControlMaster=auto`, `ControlPersist`, and a fixed
+  `ControlPath` (e.g. `/tmp/issuance-cm.sock`).
+- Pass that same `-o ControlPath=...` on every subsequent `ssh` so they reuse
+  the single TCP connection instead of opening a new one.
+- Batch remote work: combine multiple queries/curls into ONE `ssh` invocation
+  and loop over aggregate IDs inside the remote shell — never one `ssh` per
+  item.
+- Close the master with `ssh -O exit -o ControlPath=...` when done.
+
+If you still hit `Connection refused`, wait for the throttle to clear, re-open
+the master, and reduce the number of separate `ssh` calls.
+
 ## Workflow
 
 1. Identify deployed version.
-   - SSH to the host.
+   - SSH to the host (through the multiplexed master).
    - Inspect the running Docker image tag or service metadata.
-   - Compare with local git history when available so findings reference the
-     deployed code, not an unrelated local branch.
+   - The deployed image is the latest commit on `master` for the issuance repo,
+     so `force-complete`/`close` are available unless the running tag is visibly
+     behind `master`. Reference the deployed tag in findings, not an unrelated
+     local branch.
 
 2. Fetch stuck issuance records.
    - Query the admin stuck endpoint using the remote `ISSUER_API_KEY`.
@@ -84,3 +105,5 @@ command that needs them, and must not be echoed.
 - Never print API keys, RPC URLs, database URLs, private keys, or bearer tokens.
 - Never mutate production state while inspecting a different deployed version
   than the one you described.
+- Never open a fresh SSH connection per command; reuse one multiplexed master
+  connection and batch remote work to avoid the server's connection rate limit.
