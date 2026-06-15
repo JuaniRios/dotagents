@@ -87,9 +87,17 @@ Once the interrupted operation completes with no remaining conflicts:
 2. Run `gt sync` to fetch trunk and rebase the stack on top.
    - `gt sync` may prompt to delete merged branches — deleting a branch is a
      human decision, so do not blindly confirm; surface the prompt to the user.
-3. **If `gt restack` or `gt sync` surfaces new conflicts:** go back to Step 2
-   and resolve them (the full Step 7 loop applies again).
-4. **If both complete with no conflicts and no changes:** the stack is clean —
+3. **If `gt restack`/`gt sync` surfaces conflicts on a branch in the CURRENT
+   stack** (the branch the user asked you to fix, plus its ancestors and
+   descendants): go back to Step 2 and resolve them (the full Step 7 loop
+   applies again).
+4. **If `gt sync` reports branches OUTSIDE the current stack could not be
+   restacked cleanly** (other sub-stacks that share no parent/child link with
+   the branch you were fixing — `gt sync` restacks every stack in the repo,
+   not just yours): do NOT check them out or resolve their conflicts. Surface
+   them to the user by name and ask whether to extend conflict resolution to
+   those stacks. Only proceed after explicit confirmation.
+5. **If both complete with no conflicts and no changes:** the stack is clean —
    go to Step 9.
 
 ## Step 9 — Final report
@@ -103,9 +111,10 @@ When the stack is fully resolved, restacked, and synced clean, tell the user:
 ### Stopping conditions (when the loop ends)
 
 - **Clean:** `gt restack` and `gt sync` produce no conflicts and no changes.
-- **Human decision needed:** a true semantic conflict (hard rule #2), or a
-  `gt sync` branch-deletion prompt — stop and ask, then resume after they
-  decide.
+- **Human decision needed:** a true semantic conflict (hard rule #2), a
+  `gt sync` branch-deletion prompt, or `gt sync` warning that branches outside
+  the current stack could not be restacked cleanly (hard rule #6) — stop and
+  ask, then resume after they decide.
 - **No progress:** if the same conflict reappears or you loop without
   advancing, stop and ask rather than looping forever.
 
@@ -125,3 +134,10 @@ When the stack is fully resolved, restacked, and synced clean, tell the user:
    continue) until the whole stack is applied, then `gt restack` + `gt sync`,
    re-looping until clean. Only stop for a human decision (a semantic conflict
    or a `gt sync` prompt) or when you stop making progress.
+6. **Stay within the current stack.** `gt sync` restacks every stack in the
+   repo, not just the one you were fixing. Only resolve conflicts on the
+   current branch and its ancestors/descendants. If `gt sync` warns that
+   branches in unrelated sub-stacks could not be restacked cleanly, do NOT
+   check them out, run `gt restack` on them, or touch them — surface them by
+   name and get explicit user confirmation before resolving anything outside
+   the current stack.
