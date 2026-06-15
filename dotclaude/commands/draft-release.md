@@ -150,8 +150,9 @@ Rules for the technical section:
 ## 6. Surface it
 
 After writing the file:
-- Print the **Summary** section verbatim in chat so the user can read it
-  without opening the file.
+- Print the **entire file contents** verbatim in chat so the user can read the
+  full release notes -- Summary, the flat Pull requests list, and the technical
+  changelog -- without opening the file.
 - Print the file path.
 - Print the counts (PRs, commits) and the baseline/head it covered.
 
