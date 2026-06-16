@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, Workflow, AskUserQuestion
-description: Cross-review the current branch with a multi-model Workflow panel (Fable, 2x Sonnet, 2x Codex gpt-5.5 + inspectors), auto-fix findings, and re-review until clean. Each re-review is a fresh independent panel pass (AI review is stochastic — every pass finds different issues) with fix-verification folded in; on chunked runs only changed chunks get the full panel. Adaptive panel sizing + pipelined verify keep it fast. Loops automatically — only stops for disputed findings or massive changes. Pass `stack` to run across the whole upstack, amending each branch.
+description: Cross-review the current branch with a multi-model Workflow panel (3x Sonnet, 2x Codex gpt-5.5 + inspectors), auto-fix findings, and re-review until clean. Each re-review is a fresh independent panel pass (AI review is stochastic — every pass finds different issues) with fix-verification folded in; on chunked runs only changed chunks get the full panel. Adaptive panel sizing + pipelined verify keep it fast. Loops automatically — only stops for disputed findings or massive changes. Pass `stack` to run across the whole upstack, amending each branch.
 argument-hint: [stack]
 ---
 
@@ -36,7 +36,7 @@ the main session — subagents cannot invoke it (and ToolSearch cannot load it
 there), so this command always runs in the main session. **Never wrap the
 loop in an orchestrator subagent** — the panel engine would be lost, and
 hand-rolling the fan-out with Agent calls is forbidden (hard rule 10). What
-keeps a premium (Fable/Opus) session cheap instead is delegation of the
+keeps a premium (Opus) session cheap instead is delegation of the
 remaining context-heavy steps to closing `sonnet` subagents, so source
 files, prompt text, and report prose never enter the expensive main context:
 
@@ -114,10 +114,9 @@ cap. The Defer-to-Linear step (13) still applies per branch.
 Verify prerequisites before doing anything:
 
 0. **Model economics check.** Orchestrating this loop gains nothing from a
-   premium main model — every panel lane pins its own model (the two Fable
-   lanes run as Fable regardless of what the main session is). If this
-   session is Fable or Opus, tell the user a fresh Sonnet session runs the
-   identical panel at roughly 1/3 the limit burn — and that the longer this
+   premium main model — every panel lane pins its own model. If this
+   session is Opus, tell the user a fresh Sonnet session runs the
+   identical panel at roughly 1/2 the limit burn — and that the longer this
    session's history already is, the more every loop turn pays to re-read
    it — then ask (one `AskUserQuestion`) whether to continue here anyway or
    stop so they can relaunch from `/model sonnet`. When invoked from an
@@ -213,7 +212,7 @@ their context and can mislead the goal-evaluation lane.
 Every reviewer gets a **shared base prompt** plus a **per-reviewer focus
 paragraph** that biases each toward a different class of bugs.
 
-**Premium-session delegation:** on Fable/Opus (or when the caller asked for
+**Premium-session delegation:** on Opus (or when the caller asked for
 delegation), do not author these files in the main session. Spawn one
 **setup subagent** (`Agent`, `model: sonnet`) with this command file's path,
 `$out_dir`, the chosen lane keys, the project-docs paths, and the stripped
@@ -298,7 +297,7 @@ lane agent converts to structured output.)
 
 Append one of these to the base prompt for each reviewer:
 
-**Fable A — Concurrency & async ordering:**
+**Sonnet A — Concurrency & async ordering:**
 ```
 YOUR FOCUS: Pay special attention to the ordering of async operations
 during setup, teardown, and reconnection. When two async steps happen in
@@ -308,7 +307,7 @@ setup sequences, concurrent writers to shared state, and assumptions about
 which operation completes first.
 ```
 
-**Fable B — Goal evaluation & domain logic:**
+**Sonnet B — Goal evaluation & domain logic:**
 ```
 YOUR FOCUS: Read the PR description carefully, then evaluate whether the
 implementation actually achieves what it claims. If the PR says "events
@@ -442,32 +441,24 @@ Full lane catalogue (drop the codex lanes if `codex` is not on PATH):
 
 | key                | codex | model  | promptPath                              |
 | ------------------ | ----- | ------ | --------------------------------------- |
-| fable-a            | no    | sonnet | prompt-fable-a.txt (concurrency)        |
-| fable-b            | no    | fable  | prompt-fable-b.txt (goal evaluation)    |
+| sonnet-a           | no    | sonnet | prompt-sonnet-a.txt (concurrency)       |
+| sonnet-b           | no    | sonnet | prompt-sonnet-b.txt (goal evaluation)   |
 | sonnet             | no    | sonnet | prompt-sonnet.txt (error handling)      |
 | codex-a            | yes   | sonnet | prompt-codex-a.txt (edge cases)         |
 | codex-b            | yes   | sonnet | prompt-codex-b.txt (broad sweep)        |
 | test-inspector     | no    | sonnet | prompt-test-inspector.txt               |
 | rust-inspector     | no    | sonnet | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | sonnet | prompt-typing-inspector.txt             |
-| contract-inspector | no    | fable  | prompt-contract-inspector.txt           |
+| contract-inspector | no    | sonnet | prompt-contract-inspector.txt           |
 
-**Fable allocation:** Fable is reserved for exactly two lanes — `fable-b`
-(goal evaluation) and `contract-inspector` — because those are the lanes
-where it has demonstrably found unique high-severity issues (intent-vs-
-implementation gaps, unpinned external assumptions at money boundaries)
-that no Sonnet or Codex lane caught. Fable burns usage limits ~3x faster
-per token than Sonnet (2x Opus), so every other lane runs on Sonnet (or Codex, which
-does not count against Anthropic limits at all). Do not promote lanes back
-to Fable for "thoroughness" — measured runs show repeated Fable generalists
-mostly duplicate what Sonnet/Codex lanes find. The codex lanes' model
-applies to the WRAPPER agent that shells out to the codex CLI and parses
-its output — pin it to sonnet, or it inherits the (possibly premium)
+**Model allocation:** All non-Codex lanes run on Sonnet. The codex lanes'
+model applies to the WRAPPER agent that shells out to the codex CLI and
+parses its output — pin it to sonnet, or it inherits the (possibly premium)
 session model for trivial wrapper work.
 
 **Pass lanes compactly.** Don't hand-spell the full lane objects in `args` —
 the script expands them. The caller sends just `outDir`, `diffPath`, and
-`laneKeys` (e.g. `["fable-a","fable-b","sonnet","codex-a","codex-b",
+`laneKeys` (e.g. `["sonnet-a","sonnet-b","sonnet","codex-a","codex-b",
 "test-inspector","rust-inspector","typing-inspector","contract-inspector"]`);
 the script's `LANE_CATALOGUE` turns each key into the full
 `{key, codex, model, promptPath, diffPath, effort?}` (promptPath =
@@ -475,7 +466,7 @@ the script's `LANE_CATALOGUE` turns each key into the full
 This keeps the per-pass `args` the main session inlines tiny — re-spelling 9
 objects with absolute paths every pass just burns main-session tokens for zero
 review value. Normally all lanes share `$out_dir/diff.patch`. **Chunked runs**
-(per-chunk keys like `fable-a-chunk-b`, per-chunk paths) are the exception:
+(per-chunk keys like `sonnet-a-chunk-b`, per-chunk paths) are the exception:
 pass an explicit `lanes` array, which the script uses verbatim.
 
 ### Adaptive panel sizing (by diff size)
@@ -485,7 +476,7 @@ coverage, not just fix-checking — see step 12), so size the panel to the
 diff to keep each pass affordable. Inspectors are always included (9–18s
 each, negligible):
 
-- **< 50 changed lines:** `fable-b` (goal eval) + one codex broad lane +
+- **< 50 changed lines:** `sonnet-b` (goal eval) + one codex broad lane +
   all four inspectors. ~5 lanes.
 - **50–500 lines:** the full catalogue minus one codex lane (`codex-a` and
   `codex-b` overlap heavily). ~8 lanes.
@@ -531,7 +522,7 @@ Invoke the `Workflow` tool with the script below via `script`, and `args`
   "contextPath": "<out_dir>/context.txt",
   "outDir": "<out_dir>",
   "diffPath": "<out_dir>/diff.patch",
-  "laneKeys": [ "fable-a", "fable-b", "sonnet", ... ],
+  "laneKeys": [ "sonnet-a", "sonnet-b", "sonnet", ... ],
   "fixedFindings": []
 }
 ```
@@ -620,18 +611,18 @@ const { repoRoot, contextPath, outDir, diffPath, laneKeys,
 // args the main session must inline stay tiny (the lanes are identical every
 // pass except diffPath, so re-spelling 9 objects with absolute paths each pass
 // just burns main-session tokens). Chunked runs (lane keys like
-// `fable-a-chunk-b`, per-chunk promptPath/diffPath) pass an explicit `lanes`
+// `sonnet-a-chunk-b`, per-chunk promptPath/diffPath) pass an explicit `lanes`
 // array instead, which takes precedence.
 const LANE_CATALOGUE = {
-  'fable-a':            { codex: false, model: 'sonnet' },
-  'fable-b':            { codex: false, model: 'fable'  },
+  'sonnet-a':           { codex: false, model: 'sonnet' },
+  'sonnet-b':           { codex: false, model: 'sonnet' },
   'sonnet':             { codex: false, model: 'sonnet' },
   'codex-a':            { codex: true,  model: 'sonnet', effort: 'medium' },
   'codex-b':            { codex: true,  model: 'sonnet', effort: 'medium' },
   'test-inspector':     { codex: false, model: 'sonnet' },
   'rust-inspector':     { codex: false, model: 'sonnet' },
   'typing-inspector':   { codex: false, model: 'sonnet' },
-  'contract-inspector': { codex: false, model: 'fable'  },
+  'contract-inspector': { codex: false, model: 'sonnet' },
 }
 const lanes = explicitLanes || (laneKeys || []).map(key => ({
   key, ...LANE_CATALOGUE[key],
@@ -780,7 +771,7 @@ lines.
    ```
 4. Verify all files are covered.
 5. Report chunk sizes to the user before proceeding.
-6. Duplicate the five reviewer lanes per chunk (keys like `fable-a-chunk-b`),
+6. Duplicate the five reviewer lanes per chunk (keys like `sonnet-a-chunk-b`),
    each with its chunk's `diffPath`. Inspector lanes run once on the full
    diff. Pass all lanes to a single workflow invocation — dedup and
    verification handle the rest.
@@ -794,14 +785,13 @@ compare each chunk's regenerated patch against the previous iteration's
 (`cmp -s chunk-X-iter${N}.patch chunk-X-iter$((N-1)).patch`):
 
 - **Changed chunks** get the full five-lane panel — fix regressions live
-  here, and this is where repeated Fable/Sonnet generalists keep earning.
+  here, and this is where repeated Sonnet generalists keep earning.
 - **Unchanged chunks** get the two codex lanes only. Measured runs show the
   late-pass stochastic discoveries on untouched code come almost entirely
   from the diverse-model lanes (codex + contract-inspector), while re-run
-  Fable/Sonnet generalists just re-find what they already found.
-- Inspector lanes (including the Fable contract-inspector) still run once
-  per pass on the full diff, so unchanged chunks keep their
-  external-contract sweep.
+  Sonnet generalists just re-find what they already found.
+- Inspector lanes still run once per pass on the full diff, so unchanged
+  chunks keep their external-contract sweep.
 
 ### After the workflow returns
 
@@ -814,7 +804,7 @@ The workflow returns `{findings, dismissed, laneErrors, fixVerifications}`.
    Confidence, Found by, Issue, Why it matters, Recommended fix, and the
    verifier's rationale as "Verification"; append "## Dismissed as invalid"
    and "## Dismissed as out-of-scope" bullets from `dismissed`. (Optional:
-   on the **final clean pass only**, you MAY spawn one `fable` agent for a
+   on the **final clean pass only**, you MAY spawn one `sonnet` agent for a
    2–3 paragraph "Overall assessment" / "what did reviewers collectively
    miss" meta-check — it is off the loop's critical path there.) On premium
    sessions, delegate the rendering: write `findings.json` yourself (the
@@ -844,7 +834,7 @@ Review — <branch>
 
 ▲ CRITICAL (count)
   1. <title>
-     <file>:<line>  [fable-a, codex-b]  confidence: 95
+     <file>:<line>  [sonnet-a, codex-b]  confidence: 95
      <one-line fix>
 
 ▲ HIGH (count)
@@ -971,7 +961,7 @@ Plan:
 
 ## 11. Fix-now loop
 
-**Premium-session delegation:** on Fable/Opus (or when the caller asked for
+**Premium-session delegation:** on Opus (or when the caller asked for
 delegation), do not apply fixes in the main session. Spawn one **fixer
 subagent** (`Agent`, `model: sonnet`) per fix pass with the full JSON of the
 fix-now findings, the repo root, and the project-docs paths, instructed to
