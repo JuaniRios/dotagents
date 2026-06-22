@@ -77,6 +77,23 @@ If a PR exists:
 If no PR exists yet, note it — the final step will need to call
 `gt submit` rather than `gh pr edit`.
 
+**Persist screenshots before regenerating.** Screenshots vanish when the
+body is rewritten, so capture them before drafting:
+
+- **Already-hosted images** (`![...](https://...)` or `<img src="https://...">`
+  in the existing body — GitHub `user-attachments`, release assets, etc.): the
+  URLs are durable. Copy the exact markdown verbatim and re-insert it in step 6;
+  never drop it on regen.
+- **Local or in-session screenshots the user referenced** (a pasted image, a
+  `./shot.png` or `/tmp/...` path): these are NOT hosted yet, so they won't
+  survive a rewrite and a local path renders broken on GitHub. `gh` cannot
+  upload images into the body's CDN — copy the file to a scratch location
+  (`mktemp`) so it persists, then ask the user to drag-drop it onto the PR for a
+  durable URL and offer to splice that URL into the body. Never invent a URL.
+
+Carry every preserved screenshot back into the section it came from (usually
+"Anything else").
+
 ## 5. Load the PR template
 
 ```bash
@@ -338,3 +355,6 @@ And a one-line confirmation per PR updated.
    body — always render it as a markdown hyperlink to the Linear issue.
 9. Never hard-wrap PR body text — write each paragraph/bullet as one long
    line and let the UI soft-wrap it. Newlines only between semantic blocks.
+10. Preserve screenshots across regeneration — re-insert already-hosted image
+    markdown verbatim, and never replace a real screenshot with a local path or
+    an invented URL.
