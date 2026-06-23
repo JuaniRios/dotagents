@@ -73,6 +73,10 @@ issue identifier and stop until they provide it.
    - Follow the repository's docs, naming, and formatting conventions.
    - Use multi-agent tools for independent research or review only when they
      are available and useful; otherwise do the work locally.
+   - Pre-split big plans up front: when the plan has more than ~6 tasks or
+     splits into clearly separable task groups, run two parallel implementation
+     passes by task group instead of one long pass. This parallelizes the work
+     and avoids exhausting a single agent's context on a large plan.
 
 8. Verify locally at the narrowest useful scope first. Run the repo's required
    final checks unless the user enabled a remote-checks policy for this session.
@@ -82,6 +86,20 @@ issue identifier and stop until they provide it.
    - Use `review-loop` for substantive code changes.
    - Address actionable findings.
    - Re-run targeted verification after fixes.
+   - Scale the number of review passes to the diff size
+     (`git diff --shortstat $(gt parent)..HEAD`): small diffs (< ~150 changed
+     lines, or mostly mechanical churn) get one pass plus a lean verify; medium
+     diffs (~150-500) up to two; large diffs (> ~500 lines, or any diff touching
+     migrations / financial / on-chain / security paths) loop up to the cap.
+   - On large diffs, keep the full review panel on every re-review. AI review is
+     stochastic, so a big diff hides findings a shrunk re-pass would miss; do not
+     let the panel shrink on re-reviews for large diffs.
+   - Resolve each finding completely in the first fix pass (fix the real thing,
+     not just a doc note); a half-fix that a later pass re-flags costs a whole
+     extra review/fix/re-review cycle.
+   - Verify once, at the end: trust each fix pass's own compile check during
+     iteration, and run the one full lint+test verification after the loop
+     converges rather than after every fix pass.
 
 10. Update the PR.
     - Use `pr-description` to draft or refresh the PR title/body.

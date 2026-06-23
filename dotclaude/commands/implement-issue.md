@@ -148,6 +148,13 @@ multi-task plan. It returns a **tight** summary: one line per file touched,
 test results, and any deviations (with rationale) — not full diffs. The
 subagent then closes — its research and diff context dies with it.
 
+**Pre-split big plans up front.** When the approved plan has more than ~6
+tasks, or spans clearly separable task groups, spawn **two implementer
+subagents by task group from the start** instead of one. This parallelizes
+the work and avoids the context overflow below entirely. Give each its own
+task subset and scoped checks; their edits reconcile on disk. Splitting up
+front is the default for large plans — do not wait for an overflow to do it.
+
 **If the implementer overflows its context** ("Prompt is too long") or dies
 mid-run on a large plan, do not panic and do not re-feed it everything. Its
 edits are already on disk — verify completion **independently from the main
@@ -177,6 +184,31 @@ this session):
    finding that genuinely has no clear answer, do not ask mid-loop — collect
    it for the end. Use your premium-session delegations (steps 4, 5, 11)
    regardless of session model.*
+
+   **Scale the loop to the diff size** (`git diff --shortstat $(gt parent)..HEAD`):
+   - **Small (< ~150 changed lines, or mostly mechanical churn — field
+     threading, renames, doc/config edits):** one review pass; add a second
+     only if the first surfaced medium+ findings to fix. After fixing, a single
+     lean verify pass converges it.
+   - **Medium (~150–500 lines):** up to 2 passes.
+   - **Large (> ~500 lines, or any diff touching migrations / financial /
+     on-chain / security paths):** loop up to review-loop's cap, and **keep the
+     full panel on every re-review.** AI review is stochastic — a big diff hides
+     findings a shrunk re-pass would miss — so do NOT let the panel shrink on
+     re-reviews here; pass review-loop the explicit instruction to keep all
+     lanes each pass. The convergence guarantee (end on a clean pass) still holds.
+
+   **Resolve each finding completely in the first fix pass** — fix the real
+   thing (e.g. observability, not just a doc note). A half-fix that a later pass
+   re-flags costs a whole extra review→fix→re-review cycle, the single most
+   expensive thing in this loop.
+
+   **Verify once, at the end — not after every fix pass.** Trust the fixer
+   subagent's own compile-gate during iteration; do the one full independent
+   `cargo clippy --all-targets` + `nextest` verification at the very end. Do NOT
+   re-run `clippy --all-targets` mid-loop (it costs minutes each time) — scope
+   intermediate checks to `-p <crate>` + targeted test filters, and run clippy
+   exactly once after the loop converges.
 2. After the loop converges, amend the fixes: `gt modify -a`. **This must
    happen before the description** — `/pr-description` reads the committed
    `parent..HEAD` diff, so unamended fixes would be invisible to it.
