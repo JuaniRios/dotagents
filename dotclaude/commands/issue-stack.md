@@ -68,7 +68,8 @@ Run `/implement-issue` steps 1–4 yourself — they are cheap one-liners:
 description (write the body directly — Why from the issue with its markdown
 hyperlink, What/How literally `WIP`; `gh pr edit --body-file`), the
 `linear issue link`, and assignee `JuaniRios` + reviewers `0xgleb` and
-`findolor`. Do not invoke `/pr-description` for the skeleton — a hand-written
+`findolor` (in the `st0x.liquidity` repo, request only `0xgleb`). Do not invoke
+`/pr-description` for the skeleton — a hand-written
 WIP body is enough here and cheaper.
 
 ### Step 2 — Plan, then implement (two sequential subagents)

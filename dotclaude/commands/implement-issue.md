@@ -95,6 +95,8 @@ final description) so the flow isn't blocked, then let `pr-description` push it.
      --add-reviewer 0xgleb \
      --add-reviewer findolor
    ```
+   In the `st0x.liquidity` repo, request only `0xgleb` — drop the
+   `--add-reviewer findolor` line.
 
 Confirm both directions are linked before continuing.
 
@@ -267,7 +269,8 @@ Tell the user implementation is finished. Print:
 2. Never implement before the user approves the plan in step 5.
 3. The Linear issue must be a markdown hyperlink in the PR body, and the PR URL
    must be attached to the Linear issue — both directions, every time.
-4. Assignee is `JuaniRios`; reviewers are `0xgleb` and `findolor`.
+4. Assignee is `JuaniRios`; reviewers are `0xgleb` and `findolor` — except in
+   the `st0x.liquidity` repo, where the only reviewer is `0xgleb`.
 5. Heavy work (research, planning, implementation, fix application) runs in
    subagents that close when done — never in the main session. `/review-loop`
    and `/pr-description` run in the main session (the `Workflow` tool is
