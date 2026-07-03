@@ -256,18 +256,26 @@ Use an appropriate commit prefix:
 - `fix:` for correcting broken behavior
 - `docs:` for documentation-only changes
 
-## Step 7 — Offer to push
+## Step 7 — Push
+
+Immediately push the commit to origin — no confirmation needed:
+
+```bash
+cd ~/Github/dotagents
+git push
+```
+
+Then report:
 
 ```
-Updated <type> "<name>" — committed.
+Updated <type> "<name>" — committed and pushed.
 
   File: <path>
   Commit: <sha>
-
-Want me to push?
 ```
 
-Wait for confirmation. If yes, run `git push`. If no, stop.
+If the push fails (e.g. no network, or the remote rejected it), report the error
+and the local commit sha so the user can retry `git push` manually.
 
 ## Hard rules
 
@@ -283,3 +291,5 @@ Wait for confirmation. If yes, run `git push`. If no, stop.
 7. If a skill or command has a paired counterpart (same name in both
    `dotclaude` and `dotcodex`), edit both files in the same operation
    unless the user explicitly scopes the change to one side.
+8. After committing, always push to origin automatically — never wait for
+   confirmation.

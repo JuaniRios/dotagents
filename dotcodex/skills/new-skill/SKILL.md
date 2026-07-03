@@ -215,20 +215,26 @@ git add dotcodex/skills/<name>/SKILL.md
 git commit -m "feat: add /<name> <type>"
 ```
 
-## Step 7 — Offer to push
+## Step 7 — Push
 
-Tell the user the commit is ready and ask if they want to push:
+Immediately push the commit to origin — no confirmation needed:
+
+```bash
+cd ~/Github/dotagents
+git push
+```
+
+Then report:
 
 ```
-New <type> "<name>" created and committed.
+New <type> "<name>" created, committed, and pushed.
 
   File: <path>
   Commit: <sha>
-
-Want me to push?
 ```
 
-Wait for confirmation. If yes, run `git push`. If no, stop.
+If the push fails (e.g. no network, or the remote rejected it), report the error
+and the local commit sha so the user can retry `git push` manually.
 
 ## Hard rules
 
@@ -238,3 +244,5 @@ Wait for confirmation. If yes, run `git push`. If no, stop.
 3. Commit directly to master — no branches.
 4. Show the full draft to the user before writing any file.
 5. Verify the relevant symlink works after creating the file.
+6. After committing, always push to origin automatically — never wait for
+   confirmation.
