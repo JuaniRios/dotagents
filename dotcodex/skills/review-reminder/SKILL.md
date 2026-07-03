@@ -51,10 +51,51 @@ Include a PR only when it is **open, not a draft, and not already APPROVED**
 (`reviewDecision` of `REVIEW_REQUIRED`, `CHANGES_REQUESTED`, or empty). Drop
 drafts and approved PRs — those don't need a review nudge.
 
+`CHANGES_REQUESTED` PRs are awaiting *my* changes, not a fresh review — Step 3
+handles them specially (they may need a re-review).
+
 If nothing qualifies, tell the user there's nothing awaiting review and stop.
 Never send an empty reminder.
 
-## Step 3 — Group and describe
+## Step 3 — Flag PRs awaiting my changes (re-reviews)
+
+Split the qualifying PRs into two buckets by `reviewDecision`:
+
+- **Fresh review** — `REVIEW_REQUIRED` or empty. Awaiting a first look (or all
+  prior reviews were dismissed). Straightforward review requests.
+- **Re-review** — `CHANGES_REQUESTED`. A reviewer already looked and requested
+  changes, so the PR is awaiting *my* fixes. It only belongs in a reminder once
+  I've pushed those fixes and want another look.
+
+If there are any re-review PRs, **before drafting** list them and ask the user
+(a concise question) whether to include them, e.g. "These have changes requested
+and are awaiting your fixes: #978, #981. Include them as re-review requests?"
+
+- If the user says **no**, drop them and draft with the fresh-review PRs only.
+  If that leaves nothing to send, tell the user and stop — never send an empty
+  reminder.
+- If the user says **yes**, for each included re-review PR:
+  1. **Re-request review** from the reviewer(s) who requested changes, so the
+     nudge actually re-triggers their GitHub review request:
+
+     ```bash
+     # logins whose latest review is CHANGES_REQUESTED
+     gh pr view <number> --json latestReviews \
+       -q '.latestReviews[] | select(.state == "CHANGES_REQUESTED") | .author.login'
+
+     # re-request each returned login
+     gh api --method POST \
+       repos/<owner>/<repo>/pulls/<number>/requested_reviewers \
+       -f 'reviewers[]=<login>'
+     ```
+
+  2. **Tag the line as a re-review** in the composed message so the reviewer
+     knows changes were addressed (see Step 5).
+
+If a re-request call fails (e.g. the login can't be re-requested), note it to
+the user and still include the PR with its re-review tag.
+
+## Step 4 — Group and describe
 
 Sort the PRs into a few themed sections (e.g. "Infra / CI", "Transfer &
 rebalancing fixes", "Extended-hours stack"). Signals for grouping:
@@ -71,7 +112,7 @@ workflow"). Order PRs within a section in the order that reads best (stack
 base-first, or by logical dependency); this is a judgment call, so pick a
 sensible order rather than raw PR-number order.
 
-## Step 4 — Compose the message
+## Step 5 — Compose the message
 
 Match this format exactly:
 
@@ -97,13 +138,17 @@ Notes:
 - Blank line between the title, the intro line, each section, and "Thanks!".
 - Section headers may be wrapped in `<b>...</b>` for Telegram scannability; the
   Graphite URLs auto-link, so no `<a>` tags are needed.
+- A PR the user opted to include as a re-review (Step 3) is tagged on its line
+  so the reviewer knows changes were addressed — append `— re-review (changes
+  addressed)` to that PR's description, e.g. `- #978 (…link…) show per-asset
+  config flags — re-review (changes addressed)`.
 
-## Step 5 — Show the draft and confirm
+## Step 6 — Show the draft and confirm
 
 Print the composed message and the proposed grouping to the terminal. Ask the
 user to approve, re-group, or edit descriptions. Iterate until they approve.
 
-## Step 6 — Send via Telegram
+## Step 7 — Send via Telegram
 
 Credentials live in `~/.config/telegram-bot.env`
 (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
@@ -148,6 +193,8 @@ else:
 5. Never invent PR numbers or links — every entry comes from `gh pr list`.
 6. If `telegram-bot.env` is missing or the send fails, print the message and
    tell the user to copy-paste it manually.
+7. Only re-request review for PRs the user explicitly opts to include as
+   re-reviews — never re-request reviewers silently or for fresh-review PRs.
 
 ## Failure modes
 
