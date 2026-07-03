@@ -108,7 +108,7 @@ Review reminder: <repo>
 Could you please review these Graphite PRs when you have a chance?
 
 <Section>
-- #<number> (https://app.graphite.com/github/pr/<owner>/<repo>/<number>) <description>
+- <a href="https://app.graphite.com/github/pr/<owner>/<repo>/<number>">#<number></a> <description>
 - ...
 
 <Section>
@@ -122,12 +122,15 @@ Notes:
 - If a reviewer handle was passed in the argument, prepend it on its own line
   above the title (e.g. `@highonhopium_josh`).
 - Blank line between the title, the intro line, each section, and "Thanks!".
-- Section headers may be wrapped in `<b>...</b>` for Telegram scannability; the
-  Graphite URLs auto-link, so no `<a>` tags are needed.
+- Hyperlink each PR number with a Telegram HTML `<a>` tag —
+  `<a href="…/<number>">#<number></a>` — so the reader sees a clickable `#978`,
+  never a raw URL. Do not paste the bare Graphite URL into the visible text; the
+  link belongs in the `href`. Section headers may also be wrapped in `<b>...</b>`
+  for scannability.
 - A PR the user opted to include as a re-review (Step 3) is tagged on its line
   so the reviewer knows changes were addressed — append `— re-review (changes
-  addressed)` to that PR's description, e.g. `- #978 (…link…) show per-asset
-  config flags — re-review (changes addressed)`.
+  addressed)` to that PR's description, e.g. `- <a href="…/978">#978</a> show
+  per-asset config flags — re-review (changes addressed)`.
 
 ## Step 6 — Show the draft and confirm
 
@@ -141,7 +144,8 @@ Credentials live in `~/.config/telegram-bot.env`
 (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 
 1. Write the approved message to `/tmp/telegram-message.txt`. Escape `&`, `<`,
-   `>` inside descriptions (not inside `<b>` tags).
+   `>` inside descriptions (not inside `<b>`/`<a>` tags), and escape any `&` in
+   an `href` URL as `&amp;`.
 2. Send with HTML parse mode:
 
 ```bash
