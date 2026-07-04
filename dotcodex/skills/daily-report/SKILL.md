@@ -194,7 +194,9 @@ Git: `{"repos": [{"repo", "branches": [...], "commits": [{"hash",
 "latest"}]}`.
 Linear: `{"issues": [{"id", "title", "state"}], "note": "..."}`.
 GitHub: `{"opened"/"merged"/"reviewed": [{"repo", "number", "title",
-"url", "created_at", "merged_at"}], "issues_closed": [...]}`.
+"url", "created_at", "merged_at"}], "issues_closed": [...], "deploys":
+[{"repo", "workflow", "env", "head_sha", "conclusion", "created_at",
+"title"}]}`.
 Telegram: `{"decisions": [...], "asks": [{"ask", "from",
 "addressed_guess"}], "incidents": [...], "commitments": [...],
 "context": [...]}`.
@@ -372,11 +374,40 @@ gh search prs --reviewed-by="$gh_user" --updated=">=PREV_DATE" \
 echo "### Issues closed"
 gh search issues --author="$gh_user" --closed=">=PREV_DATE" --json title,url,repository,closedAt \
   --jq '.[] | select(.closedAt >= "START_UTC") | "\(.repository.nameWithOwner)|\(.title)|\(.url)"' 2>/dev/null
+
+echo "### Deploy runs (what actually LANDED vs merely merged)"
+# A merged PR is only in prod if it merged BEFORE the latest successful prod
+# deploy. Query each repo's deploy workflow(s) — never trust a session's
+# "deployed" claim, they are frequently wrong. The deploy run's headSha +
+# createdAt is the source of truth. Common names: deploy-prod.yaml,
+# deploy-staging.yaml (liquidity), deploy.yaml (issuance).
+for repo in ~/Github/*/; do
+  if [[ "$repo" == *-worktrees* ]]; then continue; fi
+  if [ ! -d "$repo/.git" ] && [ ! -f "$repo/.git" ]; then continue; fi
+  remote_url=$(git -C "$repo" remote get-url origin 2>/dev/null) || continue
+  nwo=$(echo "$remote_url" | sed 's|\.git$||' | sed 's|.*[:/]\([^/]*/[^/]*\)$|\1|')
+  [ -n "$nwo" ] || continue
+  for wf in $(gh workflow list --repo "$nwo" --json name,path 2>/dev/null \
+      | jq -r '.[] | select(.name|test("[Dd]eploy")) | .path' | xargs -n1 basename 2>/dev/null); do
+    runs=$(gh run list --repo "$nwo" --workflow "$wf" --limit 15 \
+      --json headSha,conclusion,createdAt,displayTitle \
+      --jq '.[] | select(.createdAt >= "START_UTC") | "\(.createdAt)|\(.conclusion)|\(.headSha[0:9])|\(.displayTitle)"' 2>/dev/null)
+    [ -n "$runs" ] && { echo "-- $nwo / $wf --"; echo "$runs"; }
+  done
+done
 ```
 
 The reviewed-by query is approximate (updated-by-anyone window) — when in
 doubt whether the review actually happened today, check the PR's review
 timestamps before including it.
+
+**Deploy runs are the source of truth for ship status.** For every merged
+PR, compare its `merged_at` to the latest *successful* deploy run's
+`createdAt` for that repo/environment: merged-before-deploy = deployed,
+merged-after = **merged-undeployed**. A repo with zero deploy runs in the
+window shipped nothing to that environment this period, no matter how many
+PRs merged. Session summaries routinely misreport "deployed X" — always
+override them with the deploy-run evidence.
 
 ### Collector — Codex CLI sessions
 
@@ -550,12 +581,18 @@ Before writing, answer from the collected data (and Step 4 corrections):
    deployed) or only manually patched (fix still in PR)?
 2. **Impact & duration**: How long did an outage or blind spot last?
    Business impact (assets not hedged, funds stuck, users affected)?
-3. **Ship status** per piece of work:
-   - ✅ Merged and deployed to prod
-   - 🟡 Merged to main (not yet deployed)
+3. **Ship status** per piece of work — decide "deployed" from the deploy-run
+   evidence in the GitHub collector's `deploys`, NOT from session claims.
+   A merged PR is only ✅ if its `merged_at` precedes the latest successful
+   prod deploy run for that repo; otherwise it is 🟡 merged-undeployed. If a
+   repo had zero deploy runs in the window, nothing merged this period is in
+   that environment — say so explicitly (it's a common blind spot).
+   - ✅ Merged and deployed to prod (a successful prod deploy run post-dates the merge)
+   - 🟡 Merged to main (no prod deploy run since it merged)
    - 🟠 PR open, in review
    - 🔴 PR open, blocked (CI failing, review requested changes)
-   - 🩹 Manually patched in prod (code fix not yet merged)
+   - 🩹 Manually patched in prod (code fix not yet merged) — remember live
+     config edits revert on the next deploy; flag any that will
 4. **Completeness**: Cross-reference Linear issues against commits and
    PRs. Completed issues must appear as work; commit-referenced issue IDs
    missing from Linear data still get included.
