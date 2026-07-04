@@ -98,7 +98,7 @@ instead of as silently-empty report sections:
 
 ```bash
 gh auth status >/dev/null 2>&1 && echo "gh: ok" || echo "gh: NOT AUTHENTICATED"
-linear issue mine --no-pager >/dev/null 2>&1 && echo "linear: ok" || echo "linear: FAILED"
+linear issue mine --sort priority --no-pager >/dev/null 2>&1 && echo "linear: ok" || echo "linear: FAILED"
 if ! command -v tdl >/dev/null; then echo "tdl: NOT INSTALLED"
 elif ! tdl chat ls >/dev/null 2>&1; then echo "tdl: NOT LOGGED IN"
 else echo "tdl: ok"; fi

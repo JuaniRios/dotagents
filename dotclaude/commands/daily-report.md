@@ -84,7 +84,7 @@ instead of as silently-empty report sections:
 
 ```bash
 gh auth status >/dev/null 2>&1 && echo "gh: ok" || echo "gh: NOT AUTHENTICATED"
-linear issue mine --no-pager >/dev/null 2>&1 && echo "linear: ok" || echo "linear: FAILED"
+linear issue mine --sort priority --no-pager >/dev/null 2>&1 && echo "linear: ok" || echo "linear: FAILED"
 if ! command -v tdl >/dev/null; then echo "tdl: NOT INSTALLED"
 elif ! tdl chat ls >/dev/null 2>&1; then echo "tdl: NOT LOGGED IN"
 else echo "tdl: ok"; fi
@@ -165,7 +165,15 @@ forcing the story into rigid enums is how the gist gets lost.
 
 Build each agent prompt from the matching "Collector" section below with
 the Step 1 literals substituted, plus: "Return only the structured output;
-your final text is data, not prose." Pass the prompts via `args`.
+your final text is data, not prose."
+
+**Define the prompts as `const` strings INSIDE the script body** (template
+literals with the Step 1 literals already interpolated) — do NOT thread
+them through Workflow's `args`. Passing a large prompt payload via `args`
+has proven unreliable (it can arrive `undefined`, so the script dies on
+the first `args.prompts.…` access). Inline constants are self-contained and
+always work. `args` remains available only as an optional override for
+small values.
 
 ```js
 export const meta = {
@@ -173,8 +181,14 @@ export const meta = {
   description: 'Collect daily activity: sessions, git, Linear, GitHub, Codex, Telegram',
   phases: [{ title: 'Collect' }],
 }
-// args: { prompts: {git, linear, github, codex, telegram|null,
-//                   sessions: [{key, prompt}]} }
+// Build these as inline const strings (Step 1 literals already substituted).
+// Do NOT read them from `args` — a large args payload can arrive undefined.
+const gitPrompt = `...`      // from the Git collector section
+const linearPrompt = `...`   // from the Linear collector section
+const githubPrompt = `...`   // from the GitHub collector section
+const codexPrompt = `...`    // from the Codex collector section
+const telegramPrompt = null  // or the Telegram collector prompt if tdl is ok
+const sessionGroups = [/* { key, prompt } per project group from Step 2 */]
 const STR = { type: 'string' }
 const ARR = (items) => ({ type: 'array', items })
 const SUMMARY = { type: 'object', required: ['project', 'goal', 'narrative', 'outcome', 'ship_status'], properties: {
@@ -197,15 +211,15 @@ const TELEGRAM = { type: 'object', properties: { decisions: ARR(STR),
   incidents: ARR(STR), commitments: ARR(STR), context: ARR(STR) } }
 
 const tasks = [
-  () => agent(args.prompts.git, { label: 'git', phase: 'Collect', schema: GIT }),
-  () => agent(args.prompts.linear, { label: 'linear', phase: 'Collect', schema: LINEAR }),
-  () => agent(args.prompts.github, { label: 'github', phase: 'Collect', schema: GITHUB }),
-  () => agent(args.prompts.codex, { label: 'codex', phase: 'Collect', schema: SESSIONS }),
+  () => agent(gitPrompt, { label: 'git', phase: 'Collect', schema: GIT }),
+  () => agent(linearPrompt, { label: 'linear', phase: 'Collect', schema: LINEAR }),
+  () => agent(githubPrompt, { label: 'github', phase: 'Collect', schema: GITHUB }),
+  () => agent(codexPrompt, { label: 'codex', phase: 'Collect', schema: SESSIONS }),
 ]
-if (args.prompts.telegram) {
-  tasks.push(() => agent(args.prompts.telegram, { label: 'telegram', phase: 'Collect', schema: TELEGRAM }))
+if (telegramPrompt) {
+  tasks.push(() => agent(telegramPrompt, { label: 'telegram', phase: 'Collect', schema: TELEGRAM }))
 }
-for (const s of args.prompts.sessions) {
+for (const s of sessionGroups) {
   tasks.push(() => agent(s.prompt, { label: `sessions:${s.key}`, phase: 'Collect', schema: SESSIONS }))
 }
 return await parallel(tasks)
