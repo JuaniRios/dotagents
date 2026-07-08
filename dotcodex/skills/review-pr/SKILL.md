@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: "Cross-review a pull request by number or URL without checking it out. Runs Codex reviewers first, optionally adds one or two Claude CLI reviewers for model diversity, aggregates findings, and starts a conversation about what to post."
+description: "Cross-review a pull request by number or URL without checking it out. Opens with a plain-language TL;DR of what the PR is trying to achieve and why, runs Codex reviewers first, optionally adds one or two Claude CLI reviewers for model diversity, aggregates findings, closes with a summary of what changed, and starts a conversation about what to post."
 ---
 
 # review-pr
@@ -263,7 +263,34 @@ there interactions between components that could produce surprising
 behavior? Are there implicit assumptions that aren't documented?
 ```
 
-## 6a. Spawn reviewers and inspectors in parallel
+## 6a. Present a plain-language overview (sanity check)
+
+Before kicking off the review, give the user a fast, non-technical TL;DR so
+they can sanity-check what the PR is doing and whether it makes sense. Read the
+PR description (the `body` in `pr.json`) and skim `diff.patch` to understand
+what the change actually does, then print a short paragraph or a few bullets
+answering:
+
+- **What** is this PR trying to achieve?
+- **Why** — what problem does it solve or what does it enable?
+
+Rules for the overview:
+
+- Plain language a non-engineer could follow. Do NOT mention internal API
+  names, function names, variable names, type names, file paths, endpoints, or
+  any code identifiers.
+- Describe behavior and intent, not implementation.
+- Keep it short — this is a gut-check, not a writeup.
+- Do not wait for confirmation. Print it, then proceed straight into the
+  review.
+
+Print it like:
+
+> **What this PR does:** <1-2 plain-language sentences>
+>
+> **Why:** <1-2 plain-language sentences>
+
+## 6b. Spawn reviewers and inspectors in parallel
 
 Spawn all reviewer lanes in parallel. In Codex, the primary reviewers are
 Codex subagents. Use `claude -p` only as an optional external lane if the
@@ -512,8 +539,15 @@ Full report: <absolute path to review.md>
 
 ## 9. Enter the review conversation
 
-After printing, **stay in the session**. Do not end the turn with a summary
-— the user wants to have a conversation about the findings.
+After printing the findings, first give the user a brief **summary of what
+changed** in this PR — a few sentences or a short bulleted list recapping the
+concrete changes now that the review has read the code. This closes the loop
+on the overview from Step 6a: the overview stated the intent, this states what
+the PR actually does. Keep it readable; light jargon is fine here since the
+review is done.
+
+Then **stay in the session**. Do not end the turn — the user wants to have a
+conversation about the findings.
 
 Say something like:
 
