@@ -115,6 +115,13 @@ unsure, aim between 2 and 3.
 - Don't invent certainty, test results, or numbers you don't have — say it's
   untested / unknown, the way he does.
 
+## Mechanics (always)
+
+- **Never use em dashes (—).** Rewrite the sentence, or use a comma, parentheses,
+  "so"/"cause", or just split into two sentences. This is non-negotiable in every
+  register.
+- **Always use the Oxford comma** ("X, Y, and Z" — never "X, Y and Z").
+
 ## Litmus test
 
 Read it back. If it sounds like a competent stranger being professional, it's
