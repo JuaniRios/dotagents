@@ -38,8 +38,6 @@ the output to ~10-15 lines max:
 Compressed format example:
 
 ```
-Logging off for the day. @highonhopium_josh @dcatki
-
 📋 <b>Daily Report — {date}</b>
 
 🟡 <b>Status:</b> Prod manually patched but code fix still in PR #642 — will crash on next non-USDC TakeOrder.
@@ -619,8 +617,6 @@ changes), judge from session context.
 ### Report structure
 
 ```
-Logging off for the day. @highonhopium_josh @dcatki
-
 📋 <b>Daily Report — {date}</b>
 
 🚦 <b>Status</b>
