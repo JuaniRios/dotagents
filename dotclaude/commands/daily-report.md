@@ -598,6 +598,21 @@ user confirms. In compressed mode, still review but keep it shorter.
 This is the most important step — you are not just listing outputs, you
 are **connecting dots across data sources** to tell a coherent story.
 
+### Load the voice skill first
+
+Before writing a single line, load the `write-as-juani` skill. The report is
+pasted into a team group chat under Juani's name, so every sentence a human
+reads must sound like he wrote it. Without this the default voice drifts to
+generic-professional (em dashes, "Result:", bolded emphasis) and reads like
+a machine wrote it.
+
+Apply the voice to the **prose**: the Status line, theme headers, every
+bullet, and the Action Items. Leave the Stats block and the structured
+section headers alone — those are data, not voice, and the skill should not
+reflow them into sentences.
+
+This applies in compressed mode too. Fewer lines, same voice.
+
 ### Synthesis rules
 
 Before writing, answer from the collected data (and Step 4 corrections):
@@ -834,8 +849,11 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
    `<repo>-worktrees/<name>` into `<repo>` everywhere. No separate
    worktree git scan (worktrees share refs with the main checkout).
 7. Keep the report concise: aim for one screen (40-60 lines).
-8. Write the entire report in first person ("I fixed...",
-   "I investigated...") — it's pasted directly into a team group chat.
+8. Always load the `write-as-juani` skill before composing the report (both
+   full and compressed modes), and write the entire report in first person
+   ("I fixed...", "I investigated...") — it's pasted directly into a team
+   group chat under Juani's name. Apply the voice to the prose (Status,
+   themes, bullets, Action Items); leave the Stats block mechanical.
 9. Never mention internal tooling or process in the output: Claude Code
    sessions, Codex CLI sessions, JSONL files, AI tooling, Workflows,
    Telegram exports, traces, cross-reviews, feedback-reviews, review
