@@ -22,9 +22,19 @@ prose.
 
 Follow these steps precisely.
 
-## 1. Load the graphite skill
+## 1. Load the required skills
 
-Invoke the `graphite` skill. You will be using `gt` for all version-control
+Read **both** the `graphite` skill and the `write-as-juani` skill before doing
+anything else.
+
+- `graphite` — version-control mechanics for the rest of this workflow.
+- `write-as-juani` — the PR body is prose the user ships under his own name, so
+  it MUST be in his voice, not yours. Read it now, before the diff, so the first
+  draft is already in-voice. "Match the repo's tone" in step 6 is about
+  *structure* (bullets vs prose); this is about *voice*. Do not skip it just
+  because the diff is small.
+
+You will be using `gt` for all version-control
 reads in this command; raw `git` is only acceptable for read-only inspection
 (`git diff`, `git log`, `git rev-parse`). Do **not** run `git commit`,
 `gt modify`, `gt submit`, or any other mutating command until you have drafted
@@ -165,6 +175,12 @@ Draft a concise PR title (under 70 characters). Rules:
 
 Fill every section of the template based on what you read in the diff. Rules:
 
+- **Write it in the user's voice, per the `write-as-juani` skill read in step
+  1.** Register 3-4. Terse, why-first, honest about what's untested or fragile,
+  concrete identifiers in backticks. **Never use em dashes** — use a comma,
+  parentheses, "so"/"cause", or split the sentence. No corporate boilerplate
+  ("Key changes include", "In summary", "It's worth noting"), no adjective
+  inflation ("comprehensive", "seamless", "robust"). Always use the Oxford comma.
 - **Concise and scannable above all.** Someone with zero context should grasp
   the PR in under 30 seconds. Prefer tight bullets over paragraphs, lead with
   the point, and cut filler. A reviewer should never have to wade through prose
@@ -239,6 +255,11 @@ skeptical eyes and check three things:
    prose into bullets, lead with the point.
 3. **Complete** — is anything important missing? A breaking change, migration,
    schema/config change, or risky change that isn't called out?
+4. **In voice** — terse and direct, no em dashes anywhere, no corporate
+   boilerplate ("Key changes include", "In summary", "It's worth noting"), no
+   adjective inflation ("comprehensive", "seamless", "robust"), no closing
+   summary paragraph? Rewrite anything that reads as a competent stranger being
+   professional.
 
 If you want an independent second opinion and `codex` is available on PATH
 (`command -v codex`), you may shell out for one — pipe the diff and draft to
@@ -340,3 +361,5 @@ And a one-line confirmation per PR updated.
 10. Preserve screenshots across regeneration — re-insert already-hosted image
     markdown verbatim, and never replace a real screenshot with a local path or
     an invented URL.
+11. Always draft the body in the user's voice via the `write-as-juani` skill,
+    read in step 1. Never ship a PR description containing an em dash.
