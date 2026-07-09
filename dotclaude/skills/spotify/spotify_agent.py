@@ -241,7 +241,9 @@ COVERAGE_FLOOR = 0.6  # a contained phrase must cover this much of the containin
 
 
 def _norm(s):
-    return re.sub(r"[^a-z0-9 ]", " ", s.lower()).split()
+    """Tokenize on Unicode word chars, so CJK titles survive. An ASCII-only
+    filter here erases Japanese titles entirely and scores them 0.0."""
+    return re.sub(r"[\W_]+", " ", s.lower(), flags=re.UNICODE).split()
 
 
 def _sim(asked, got):
@@ -270,6 +272,8 @@ def _title_variants(title):
     seen.append(re.split(r"\s+-\s+", title)[0])  # drop "- 2004 Remaster"
     seen.extend(p.strip() for p in re.split(r"\s*/\s*", title))
     seen.extend(re.sub(r"\(.*?\)", "", t).strip() for t in list(seen))
+    # drop "feat. X" / "ft X" tails, which otherwise sink token coverage
+    seen.extend(re.split(r"\bfe?a?t\.?\b", t, flags=re.I)[0].strip() for t in list(seen))
     return [t for t in dict.fromkeys(seen) if t]
 
 

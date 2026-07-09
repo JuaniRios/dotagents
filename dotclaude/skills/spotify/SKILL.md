@@ -100,6 +100,27 @@ delta disagrees with the number of URIs requested, it warns on stderr. Trust the
   February 2026. It resolves one known track at a time; that's expected.
 - **Empty `show` output** — a response-shape regression. The Feb 2026 API renamed
   the playlist item wrapper's `track` field to `item` (and `track` is now a bool).
+- **`list` count disagrees with `show`** — the `/me/playlists` aggregate total is
+  eventually consistent and lags right after a write. `show` (which reads
+  `/playlists/{id}/items`) is authoritative. Not a bug; wait and re-run `list`.
+
+## Covers, remasters, and originals
+
+Searching a famous city-pop track by its English title often surfaces a **cover**
+rather than the original, because the original is catalogued under its Japanese
+name. Two that bite:
+
+- `Miki Matsubara - Stay With Me` -> a cover. The original is
+  `Miki Matsubara - Mayonaka no Door~stay with me`.
+- `Junko Ohashi - Telephone Number` -> a JiLL-Decoy association cover. The original
+  is `Junko Ohashi - テレフォン・ナンバー`.
+
+When adding classic city pop, check the `+` line for an unexpected extra artist —
+that is the tell for a cover or a remix. Prefer the Japanese title.
+
+Some artists are simply absent from Spotify (Tatsuro Yamashita withholds his
+catalogue; only covers appear). Report these as unavailable rather than adding
+a cover in their place.
 
 ## API notes for future maintainers
 
