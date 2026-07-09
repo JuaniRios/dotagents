@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(prod-remote:*), Bash(staging-remote:*), Bash(jq:*), Bash(date:*), Read
+allowed-tools: Bash(curl:*), Bash(jq:*), Bash(date:*), Bash(tailscale:*), Read
 description: Summarize the liquidity bot's realized, cost-inclusive PnL over a timeframe via the backend /pnl endpoint. Default last 24h; supports natural-language ranges (last week, yesterday, this month), market-session and symbol filters, and prod/staging.
 argument-hint: [timeframe e.g. "last week"] [SYMBOL] [pre|rth|post|overnight|weekend] [staging]
 ---
@@ -8,10 +8,15 @@ argument-hint: [timeframe e.g. "last week"] [SYMBOL] [pre|rth|post|overnight|wee
 
 Summarize the liquidity bot's **net realized PnL** (gross spread minus costs plus
 revenue) over a timeframe, by calling the backend `/pnl` HTTP endpoint and
-presenting a scannable report. This endpoint (added in `feat/pnl-dash-v1`) is the
-same source the dashboard's PnL tab uses -- it is cost-inclusive (Alpaca broker &
-regulatory fees, margin interest, bot gas, CCTP fees, tokenization fees,
-conversion slippage, oracle writes, dividends), FIFO lot attribution.
+presenting a scannable report. This endpoint (shipped in PR #926, merged to
+master) is the same source the dashboard's PnL tab uses -- it is cost-inclusive
+(Alpaca broker & regulatory fees, margin interest, bot gas, CCTP fees,
+tokenization fees, conversion slippage, oracle writes, dividends), FIFO lot
+attribution.
+
+`/pnl` is proxied by nginx on each host's Tailscale MagicDNS vhost (`os.nix`:
+`"/pnl" = apiProxy "/pnl"`), so **query it directly over HTTPS -- no SSH.** Any
+tailnet member can run this command; a root SSH key is not required.
 
 The argument is `$ARGUMENTS`. Parse it into a timeframe, optional filters, and
 environment, then query and summarize. **Default timeframe: last 24h.**
@@ -20,9 +25,10 @@ environment, then query and summarize. **Default timeframe: last 24h.**
 
 `$ARGUMENTS` is free text. Extract, in any order (all parts optional):
 
-- **Environment**: `staging` -> use `staging-remote`. Anything else / omitted ->
-  `prod` via `prod-remote`. (These shims SSH into the box; the endpoint listens
-  on `localhost:8001`.)
+- **Environment**: `staging` -> base URL
+  `https://st0x-liquidity-staging.tail6094d7.ts.net`. Anything else / omitted ->
+  `prod` -> `https://st0x-liquidity-nixos.taile5cf8a.ts.net`. (MagicDNS names
+  from `flake.nix` `tailscaleMagicDnsName`; reachable only over the tailnet.)
 - **Timeframe** (natural language, ET calendar days -- see step 2):
   - empty / `last 24h` / `24h` -> **default**: yesterday..today (ET)
   - `today` -> today..today
@@ -54,44 +60,61 @@ State the resolved interpretation in one line before querying (env, resolved
 ## 2. Compute ET dates
 
 The endpoint interprets `fromDate`/`toDate` as **America/New_York calendar
-days**. Compute with macOS `date` (BSD flags):
+days**.
+
+**`date` may be GNU or BSD here.** Even on macOS, a nix dev shell often puts GNU
+coreutils `date` ahead of `/bin/date`, and BSD `-v` flags then fail with
+`date: invalid option -- 'v'`. Use GNU `-d` first and fall back to BSD `-v`:
 
 ```bash
-TZ=America/New_York date +%Y-%m-%d            # today ET
-TZ=America/New_York date -v-1d +%Y-%m-%d      # yesterday ET
-TZ=America/New_York date -v-6d +%Y-%m-%d      # 7 days ago (for "last week")
-TZ=America/New_York date -v-29d +%Y-%m-%d     # 30 days ago
+et() {  # et <offset-days>  ->  YYYY-MM-DD in ET
+  TZ=America/New_York date -d "$1 days ago" +%Y-%m-%d 2>/dev/null \
+    || TZ=America/New_York date -v-"$1"d +%Y-%m-%d
+}
+et 0    # today ET
+et 1    # yesterday ET
+et 6    # 7 days ago (for "last week")
+et 29   # 30 days ago
 ```
 
 `toDate` is inclusive. For "all time" omit both params.
 
 ## 3. Query the endpoint
 
-Build the request with `curl -G --data-urlencode` (never string-interpolate
-user input into the URL). `limit` only bounds the per-fill `entries[]` array;
-`summary`, `costs`, `symbols`, and `windows` always cover the **full** range, so
-a modest limit is fine. Save the JSON to the scratchpad and check the HTTP code:
+Curl the vhost directly. Build the request with `curl -G --data-urlencode`
+(never string-interpolate user input into the URL). `limit` only bounds the
+per-fill `entries[]` array; `summary`, `costs`, `symbols`, and `windows` always
+cover the **full** range, so a modest limit is fine. Save the JSON to the
+scratchpad and check the HTTP code:
 
 ```bash
-<env>-remote "curl -s -m 25 -w '\n%{http_code}' -G http://localhost:8001/pnl \
+curl -s -m 90 -w '\n%{http_code}' -G "https://st0x-liquidity-nixos.taile5cf8a.ts.net/pnl" \
   --data-urlencode 'fromDate=2026-07-08' \
   --data-urlencode 'toDate=2026-07-09' \
   --data-urlencode 'marketSessionFilter=post' \
   --data-urlencode 'symbol=COIN,QQQM' \
-  --data-urlencode 'limit=500'" > "$SCRATCH/pnl.json"
+  --data-urlencode 'limit=500' > "$SCRATCH/pnl.json"
 ```
+
+**Use `-m 90`, not a short timeout.** Each `/pnl` request replays the full FIFO
+lot ledger *and* makes a live Alpaca `fetch_account_activities` call, so it is
+genuinely slow; `-m 25` produces spurious `000` (curl-level) failures on
+multi-day ranges. A `000` is a timeout or transport error, **not** a response --
+retry once with the same timeout before concluding anything.
 
 Only include `--data-urlencode` lines for filters that were actually requested.
 The last line of output is the HTTP status; split it off before parsing the body
 with `jq`.
 
 - `200` -> parse and report (step 4).
-- `404` -> the `/pnl` endpoint is **not deployed yet** (branch `feat/pnl-dash-v1`
-  not merged/deployed to this env). Say so plainly and stop.
+- `404` -> nginx on this host isn't proxying `/pnl` (the vhost `locations` block
+  in `os.nix` is missing `"/pnl"`, or the host is running an older closure).
+  Say so plainly and stop.
 - `400` -> bad date/symbol filter; show the body (it explains which field) and
   fix the parse.
-- empty / connection error -> Tailscale/SSH issue; tell the user to check
+- `000` / empty -> timeout or tailnet transport error. Retry once, then check
   `tailscale status`.
+- `502` -> nginx is up but the bot's listener on `:8001` is down.
 
 ## 4. Report
 
@@ -149,16 +172,24 @@ window is empty (no fills), say so instead of printing a wall of zeros.
    absent, say so; do not estimate.
 5. **ET days, inclusive `toDate`.** State the resolved range so the user can
    verify the window.
-6. Default env is **prod**; only use `staging-remote` when the user says
+6. Default env is **prod**; only use the staging host when the user says
    `staging`.
+7. **Query over HTTPS, never over SSH.** Do not shell into the box with
+   `prod-remote`/`staging-remote` to reach `localhost:8001` -- `/pnl` is proxied
+   on the tailnet vhost, and SSHing in as root to read a report is needless
+   privilege.
 
 ## Failure modes
 
-- **404**: endpoint not deployed on this env yet (`feat/pnl-dash-v1` unmerged).
-  State it and stop -- do not fall back to hand-rolled SQL PnL.
+- **404**: nginx isn't proxying `/pnl` on this host. State it and stop -- do not
+  fall back to hand-rolled SQL PnL, and do not SSH in to reach `:8001` directly.
 - **400**: invalid `fromDate`/`toDate`/`symbol`; the body names the field. Re-parse.
-- **Timeout / connection refused**: Tailscale or SSH down -- point the user to
-  `tailscale status`; do not retry blindly.
+- **`000` / timeout**: the request exceeded `-m 90`, or the tailnet is down.
+  Retry **once**; if it fails again check `tailscale status`. Do not retry blindly
+  in a loop -- each attempt costs a live Alpaca API call.
+- **`502`**: nginx up, bot listener down. Say so; don't retry.
+- **DNS / no route to host**: not on the tailnet (or the host is offline --
+  staging is frequently down). Check `tailscale status`.
 - **`summary` present but all zeros / `total: 0`**: no fills matched the window
   or filters. Report "no activity in <range>" rather than a zero-filled table.
-- **`staging-remote` unreachable**: staging may be down; say so and offer prod.
+- **Staging unreachable**: staging is often offline; say so and offer prod.
