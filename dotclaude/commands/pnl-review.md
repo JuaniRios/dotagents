@@ -1,7 +1,7 @@
 ---
 allowed-tools: Bash(curl:*), Bash(jq:*), Bash(date:*), Bash(tailscale:*), Read
-description: Summarize the liquidity bot's realized, cost-adjusted PnL (net of observed costs; an upper bound) over a timeframe via the backend /pnl endpoint. Default last 24h; supports natural-language ranges (last week, yesterday, this month), market-session and symbol filters, and prod/staging.
-argument-hint: [timeframe e.g. "last week"] [SYMBOL] [pre|rth|post|overnight|weekend] [staging]
+description: Query the liquidity bot's realized, cost-adjusted PnL (net of observed costs; an upper bound) via the backend /pnl endpoint -- answer a targeted question directly, or summarize a full timeframe. Default last 24h; supports natural-language ranges (last week, yesterday, this month), market-session and symbol filters, per-fill drill-down, and prod/staging.
+argument-hint: [question or timeframe e.g. "last week"] [SYMBOL] [pre|rth|post|overnight|weekend] [staging]
 ---
 
 # /pnl-review — realized PnL summary from the bot's `/pnl` endpoint
@@ -84,9 +84,11 @@ TZ=America/New_York date -d '29 days ago' +%F || TZ=America/New_York date -v-29d
 
 Curl the vhost directly. Build the request with `curl -G --data-urlencode`
 (never string-interpolate user input into the URL). `limit` only bounds the
-per-fill `entries[]` array; `summary`, `costs`, `symbols`, and `windows` always
-cover the **full** range, so a modest limit is fine. Save the JSON to the
-scratchpad and check the HTTP code:
+per-fill `entries[]` array (the fill-level drill-down -- see **Response
+schema**); `summary`, `costs`, `symbols`, and `windows` always cover the
+**full** range, so a modest limit is fine for report runs. For a fill-level
+question, raise `limit` and check `hasMore`/`total` to confirm you pulled every
+matching lot. Save the JSON to the scratchpad and check the HTTP code:
 
 Write the body to a file with `-o` and let `-w` print the status as the *only*
 stdout. Do not append the status to the body -- splitting it back off needs
@@ -130,16 +132,31 @@ fetch is **not** snapshotted. Quote the `asOfRowid` in the report footer.
   `tailscale status`.
 - `502` -> nginx is up but the bot's listener on `:8001` is down.
 
-## 4. Report
+## 4. Answer the ask
+
+First decide the response shape from `$ARGUMENTS`:
+
+- **Targeted question** -- the argument asks for a specific quantity or a
+  yes/no (e.g. "did COIN make money yesterday", "what were our CCTP fees last
+  week", "worst single trade this month", "how many post-market fills did MSTR
+  do"). Answer *that*: lead with the one figure or verdict, read from the exact
+  field that holds it (see **Response schema** at the end for the field map),
+  and include only the sections below that bear on the answer. Still label gross
+  vs net, and still state the upper-bound caveat whenever you quote a net. Do
+  not emit the full 8-section report for a one-figure question.
+- **Open-ended ask** -- empty argument, or "how did we do", "summarize",
+  "pnl for last week". Produce the full report below.
 
 Extract with `jq` from `summary`, `costs`, `symbols`, `windows`, `warnings`,
-`availableRange`, `sampleStats`. All money fields are decimal strings -- print to
-cents.
+`availableRange`, `sampleStats`, and -- for fill-level questions -- `entries`.
+All money fields are decimal strings -- print to cents.
 
 **Gross vs net is the single easiest thing to get wrong here.** `summary` and
 `costs` are net-capable; `symbols[]` carries only *directly attributable* costs;
 `windows[]` carries **no costs at all**. Never place a number from one of those
 tiers next to a number from another without labeling which is which.
+
+### Full report
 
 Structure the report:
 
@@ -266,3 +283,60 @@ window is empty (no fills), say so instead of printing a wall of zeros.
 - **`summary` present but all zeros / `total: 0`**: no fills matched the window
   or filters. Report "no activity in <range>" rather than a zero-filled table.
 - **Staging unreachable**: staging is often offline; say so and offer prod.
+
+## Response schema
+
+Field map for targeted queries. Money fields are decimal strings (print to
+cents); share fields are high-precision decimals. Fields already covered by the
+step-4 report are not re-explained here -- this section exists so an ad-hoc
+question about a field the report ignores has a map instead of a guess.
+
+**Top-level keys**: `asOfRowid` (persisted-event high-water mark; pin it across
+multi-call runs), `attributionMethod` (always FIFO replay), `availableRange`
+{`firstAt`,`lastAt`,`firstDate`,`lastDate`}, `summary`, `costs`, `symbols[]`,
+`windows[]`, `entries[]`, `costEntries[]`, `sampleStats`, `warnings[]`,
+`symbolUniverse[]` (every symbol the backend knows, not just the active ones),
+`total` (matched-lot count in range), `hasMore` (true if `entries[]` was
+truncated by `limit`).
+
+**`summary`** (session-wide, net-capable) adds, beyond the fields step 4 uses:
+`realizedPnlUsd` (= gross), `directionalInventoryBaselinePnlUsd` /
+`directionalImbalanceExcessPnlUsd` (the two halves of
+`directionalExposurePnlUsd`), `openLongShares` / `openShortShares` (the gross
+open legs behind net `inventoryDriftShares`), `unmatchedOffchainShares` /
+`unmatchedOffchainNotionalUsd` / `unmatchedOffchainFillCount` (offchain fills
+with no onchain parent), `openLotCount` (open FIFO lots carried out).
+
+**`costEntries[]`** (one row per cost/revenue ledger entry -- use for "which
+events drove the CCTP/tokenization line"): `category`, `accountingBucket`,
+`effect` (cost|revenue|none), `amountUsd`, `occurredAt`, `aggregateType`,
+`aggregateId`, `eventRowid`, `symbol` (null if unsymboled), `detail`.
+
+**`symbols[]`** (per-symbol; carries only Alpaca-attributed costs, so the nets
+do NOT sum to `summary.netRealizedPnlUsd`) adds, beyond step 4:
+`realizedPnlUsd`, the two `directional*` halves, `trackedCostsUsd` /
+`trackedRevenueUsd`, `matchedLotCount`, `onchainFillCount` / `offchainFillCount`,
+`openLongShares` / `openShortShares`, `unmatchedOffchainShares` /
+`unmatchedOffchainFillCount`.
+
+**`windows[]`** (one per `granularity` bucket -- `day` here): `windowId`,
+`label` (the ET day), `startAt`, `endAt`, `granularity`, `isWeekend`,
+`marketSession` (`mixed` when a day spans sessions), `counterTradingSession`,
+and `symbols[]` {`symbol`, `totalPnlUsd`, the PnL buckets}. No cost fields --
+window PnL is GROSS.
+
+**`entries[]`** (per-closed-lot drill-down, bounded by `limit` -- the fill-level
+query surface): `symbol`, `pnlBucket` (the lot's bucket, e.g. `counter_trade`),
+`openedAt` / `closedAt` / `matchedAt`, `shares`, `openingVenue` /
+`closingVenue` (onchain|offchain), `openingDirection` / `closingDirection`,
+`onchainPriceUsdc` / `offchainPriceUsd`, `spreadUsd`, `realizedPnlUsd`,
+`elapsedSeconds` + `counterTradeThresholdSeconds` + `delayedCounterTrade`
+(whether the hedge beat the counter-trade window), `onchainTradeId` /
+`offchainOrderId`, `openingFillId` / `closingFillId`, `openingRowid` /
+`closingRowid`. Sort by `realizedPnlUsd` for best/worst trade. For a
+session-scoped fill question, re-query with `marketSessionFilter` rather than
+bucketing `entries[]` by timestamp locally.
+
+**`sampleStats`** (fill census, always full-range): `firstAt`, `lastAt`,
+`symbolCount`, `onchainFillCount`, `offchainFillCount`, `totalFillCount`, and
+`symbols[]` {per-symbol `firstAt` / `lastAt` / fill counts}.
