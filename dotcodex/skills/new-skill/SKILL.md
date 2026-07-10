@@ -203,10 +203,14 @@ Write the file using the `Write` tool.
 
 ## Step 6 — Commit
 
-Stage and commit directly on master:
+`dotagents` is a personal repo: **all changes go on `main` -- never create or
+switch to a feature branch.** The repo may already be sitting on some other
+branch, so switch to `main` before staging (a newly written file follows the
+switch):
 
 ```bash
 cd ~/Github/dotagents
+git checkout main
 git add dotclaude/commands/<name>.md
 # or
 git add dotclaude/skills/<name>/SKILL.md
@@ -241,7 +245,9 @@ and the local commit sha so the user can retry `git push` manually.
 1. Always create files in `~/Github/dotagents/`, never directly in
    `~/.claude/` or `~/.codex/`.
 2. Never overwrite an existing skill or command without explicit confirmation.
-3. Commit directly to master — no branches.
+3. Personal repo: all work lands on `main`. Never create or switch to a feature
+   branch; if the repo is on another branch, `git checkout main` before staging
+   (Step 6).
 4. Show the full draft to the user before writing any file.
 5. Verify the relevant symlink works after creating the file.
 6. After committing, always push to origin automatically — never wait for

@@ -239,13 +239,20 @@ until they approve.
 
 ## Step 6 — Commit
 
-Stage and commit directly on master:
+`dotagents` is a personal repo: **all changes go on `main` -- never create or
+switch to a feature branch.** The repo may already be sitting on some other
+branch, so switch to `main` before staging (uncommitted edits follow the
+switch):
 
 ```bash
 cd ~/Github/dotagents
+git checkout main
 git add <path(s)>
 git commit -m "refactor: update /<name> <type>"
 ```
+
+If `git checkout main` is blocked because the edited file differs between
+branches, `git stash`, `git checkout main`, `git stash pop`, then stage.
 
 When editing a paired Claude/Codex skill, stage **both** files in the same
 commit so the two sides never drift.
@@ -283,7 +290,9 @@ and the local commit sha so the user can retry `git push` manually.
    or `~/.codex/`.
 2. Never delete a skill or command file without explicit confirmation —
    editing means modifying, not removing.
-3. Commit directly to master — no branches.
+3. Personal repo: all work lands on `main`. Never create or switch to a feature
+   branch; if the repo is on another branch, `git checkout main` before staging
+   (Step 6).
 4. Show the user what changed before committing.
 5. Keep frontmatter in sync with content — if behavior changes, update
    the `description` field.
