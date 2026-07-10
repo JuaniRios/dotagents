@@ -174,6 +174,22 @@ Classify each issue as:
 
 ## Step 6 — Compile the report
 
+### Load the voice skill first
+
+Before writing any prose, read the `write-as-juani` skill
+(`~/.codex/skills/write-as-juani/SKILL.md`) and follow it. This report goes out
+under Juani's name, so the narrative has to sound like he wrote it. Without it
+the default voice drifts to generic-professional and reads like a machine wrote
+it.
+
+Apply the voice to the **prose**: the executive summary, the narrative, and any
+commentary. Leave the structured parts alone (issue tables, PR lists, git
+activity, excluded-issues appendix) — those are data, not voice.
+
+Note especially the honesty rule: never oversell maturity or certainty, state
+what is fragile or unfinished out loud. That is not in tension with an
+investor-facing report, it is what makes one credible. See the Tone note below.
+
 Structure the report as markdown, ready to copy-paste.
 
 The report has two distinct audiences and sections:
@@ -185,11 +201,19 @@ investors to communicate progress, justify timelines, and build
 confidence. Write it as a standalone narrative — someone should be able
 to read only this section and fully understand what happened.
 
-**Tone**: professional, confident, specific. Not overly technical but not
+**Tone**: Juani's voice (see the `write-as-juani` skill read above), at its
+report register: clear, specific, warm, no fluff. Not overly technical but not
 dumbed down. Use domain terms investors would know (hedging, rebalancing,
 deployment infrastructure) but explain system internals in plain English.
 Avoid jargon like "projection views", "optimistic lock conflicts", or
 "apalis jobs" — translate these into what they mean for the product.
+
+"Confident" means *concrete and honest*, never inflated. Lead with the real
+status including what is fragile or unfinished, and frame progress against
+actual completion (shipped vs planned, real Linear ratios), not aspiration.
+Do not claim a thing is done, stable, or deployed when it is merged, patched,
+or in review — say which. An investor who later discovers the gap trusts
+nothing else in the report.
 
 **Before writing the summary**, fetch Linear project milestones to
 understand the planned roadmap:
@@ -342,13 +366,18 @@ single one.
 ## Hard rules
 
 1. **Never modify the repo or Linear issues** — this is read-only.
-2. **Always show excluded issues** — the user needs to verify filtering.
-3. **Always save the report to disk** before finishing.
-4. **Always update last_run** after a successful run.
-5. **Use `--json` for Linear queries** — parse structured data, don't
+2. **Always read and follow the `write-as-juani` skill before writing the
+   report.** The prose (executive summary, narrative, commentary) is in Juani's
+   voice; the structured sections (tables, PR lists, git activity, excluded
+   issues) stay mechanical. Never oversell — frame progress against real
+   completion ratios and name what is unfinished.
+3. **Always show excluded issues** — the user needs to verify filtering.
+4. **Always save the report to disk** before finishing.
+5. **Always update last_run** after a successful run.
+6. **Use `--json` for Linear queries** — parse structured data, don't
    scrape human-readable output.
-6. **Expand `~` in repo paths** before passing to git commands.
-7. If Linear or git commands fail, report what you could gather and note
+7. **Expand `~` in repo paths** before passing to git commands.
+8. If Linear or git commands fail, report what you could gather and note
    what was unavailable — don't fail silently.
 
 ## Failure modes

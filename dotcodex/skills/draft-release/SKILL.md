@@ -107,6 +107,21 @@ conventional-commit prefix (`feat`, `fix`, `chore`, `refactor`, etc.).
 
 ## 5. Write the release notes
 
+Before writing, read the `write-as-juani` skill
+(`~/.codex/skills/write-as-juani/SKILL.md`) and follow it. These notes are
+published under Juani's name, so the prose has to sound like him: terse,
+concrete, honest about what is and isn't stable. Without it the summary drifts
+into release-marketing voice ("comprehensive", "seamless", "significantly
+improved"), which he never uses.
+
+Apply the voice to the **prose**: the Summary bullets, the Highlights, and each
+theme's explanation in the technical changelog. Leave the structured parts
+mechanical — the "Pull requests" list (numbers, titles, authors) and the commit
+mapping are data, not voice.
+
+If a release contains work that is merged but not deployed, or a fix that was
+applied by hand in prod, say so plainly rather than letting it read as shipped.
+
 Write to:
 
 ```bash
@@ -187,6 +202,11 @@ This workflow only drafts notes for human review.
    request list second, technical breakdown third.
 5. Write to `.tmp/` only. Never write release notes to a tracked path, create a
    GitHub release, or push a tag.
+6. Always read and follow the `write-as-juani` skill before writing. The
+   summary, highlights, and theme explanations are in Juani's voice; the pull
+   request list and commit mapping stay mechanical. Never inflate
+   ("comprehensive", "seamless"), and never let merged-but-undeployed or
+   hand-patched work read as shipped.
 
 ## Failure modes
 

@@ -79,6 +79,19 @@ commit prefix (`feat`/`fix`/`chore`/`refactor`).
 
 ## 5. Write the release notes
 
+Before writing, load the `write-as-juani` skill. These notes are published under
+Juani's name, so the prose has to sound like him: terse, concrete, honest about
+what is and isn't stable. Without it the summary drifts into release-marketing
+voice ("comprehensive", "seamless", "significantly improved"), which he never uses.
+
+Apply the voice to the **prose**: the Summary bullets, the Highlights, and each
+theme's explanation in the technical changelog. Leave the structured parts
+mechanical — the "Pull requests" list (numbers, titles, authors) and the commit
+mapping are data, not voice.
+
+If a release contains work that is merged but not deployed, or a fix that was
+applied by hand in prod, say so plainly rather than letting it read as shipped.
+
 Write to `"$repo_root"/.tmp/release-notes-<last_tag>-to-<head_short_sha>.md`
 (create `.tmp/` if missing — it's gitignored). Structure:
 
@@ -161,6 +174,11 @@ This command only drafts notes for human review.
    and must still be listed.
 5. Write to `.tmp/` only — never to a tracked path, and never create a GitHub
    release.
+6. **Always load the `write-as-juani` skill before writing.** The summary,
+   highlights, and theme explanations are in Juani's voice; the "Pull requests"
+   list and commit mapping stay mechanical. Never inflate ("comprehensive",
+   "seamless"), and never let merged-but-undeployed or hand-patched work read
+   as shipped.
 
 ## Failure modes
 
