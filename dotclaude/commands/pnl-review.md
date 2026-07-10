@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(curl:*), Bash(jq:*), Bash(date:*), Bash(tailscale:*), Read
-description: Query the liquidity bot's realized, cost-adjusted PnL (net of observed costs; an upper bound) via the backend /pnl endpoint -- answer a targeted question directly, or summarize a full timeframe. Default last 24h; supports natural-language ranges (last week, yesterday, this month), market-session and symbol filters, per-fill drill-down, and prod/staging.
+description: Answer any question about the liquidity bot's profitability -- from a vague "are we making money?" to a per-fill drill-down -- via the backend /pnl endpoint (realized PnL net of observed costs; an upper bound). Written for a mixed audience; answers are plain business language, no internal jargon. Default last 24h; supports natural-language ranges (last week, yesterday, this month), market-session and symbol filters, and prod/staging.
 argument-hint: [question or timeframe e.g. "last week"] [SYMBOL] [pre|rth|post|overnight|weekend] [staging]
 ---
 
@@ -45,6 +45,10 @@ environment, then query and summarize. **Default timeframe: last 24h.**
   - explicit `YYYY-MM-DD` -> that single day; `YYYY-MM-DD to YYYY-MM-DD` -> that
     range
   - `all` / `all time` -> omit `fromDate`/`toDate` (full history)
+  - **Evaluative question with no timeframe** ("are we making money", "is this
+    profitable", "how's the bot doing") -> trailing 7 days, not the 24h
+    default -- one day is too thin a basis for a profitability verdict. State
+    the chosen window in the verdict so the reader knows the basis.
 - **Market session** (maps to `marketSessionFilter`): `pre`/`pre-market`/`premarket`
   -> `pre`; `rth`/`regular`/`market hours` -> `rth`; `post`/`after-hours`/`afterhours`
   -> `post`; `overnight` -> `overnight`; `weekend` -> `weekend`. Omitted -> no
@@ -145,7 +149,55 @@ First decide the response shape from `$ARGUMENTS`:
   vs net, and still state the upper-bound caveat whenever you quote a net. Do
   not emit the full 8-section report for a one-figure question.
 - **Open-ended ask** -- empty argument, or "how did we do", "summarize",
-  "pnl for last week". Produce the full report below.
+  "pnl for last week", "are we making money", "is this thing profitable",
+  "how's the bot doing". Evaluative/vague questions are open-ended asks:
+  produce the full report below, opening with a one-sentence verdict that
+  answers the question as literally asked ("Yes -- the bot made $X net over
+  the last week on $Y of volume").
+- **Unanswerable ask** -- the question needs data this endpoint doesn't have:
+  unrealized/open-position gains, return on invested capital (there is no
+  capital base in the response), forecasts, or benchmark comparisons. Say
+  plainly what the report does and doesn't cover, then give the nearest
+  answerable figure (e.g. for "what's our ROI" give net PnL as a % of volume
+  traded and say it is a per-dollar-traded margin, not return on capital).
+  Never guess or extrapolate.
+
+### Audience: finance-literate, not technical
+
+Assume the reader understands P&L, gross vs net, volume, margins, fees, and
+basis points -- but knows **nothing** about this codebase, the bot's
+internals, or crypto plumbing. This command is used by non-engineers; write
+every answer accordingly:
+
+- **No internal jargon or field names in the answer.** JSON keys, `jq`, curl,
+  HTTP codes, nginx, tailnet, FIFO internals -- all invisible. The parenthetical
+  resolved-interpretation line (step 1) may stay technical; the report may not.
+- **Translate the PnL buckets** every time they appear:
+  - counter-trade PnL -> "hedged spread capture" -- profit from an onchain
+    trade plus its offsetting broker hedge. This is the core strategy, so
+    call it that: a loss here is a real leak worth flagging.
+  - directional exposure PnL -> "market-move P&L" -- gain/loss from prices
+    moving while the bot held unhedged inventory. Market luck, not edge.
+  - onchain netting PnL -> "onchain buys matched directly against onchain
+    sells" (no broker hedge involved).
+  - inventory drift -> "open (unhedged) position carried out of the period";
+    its gains/losses are not in the net figure.
+  - onchain notional -> "volume traded onchain"; offchain notional -> "hedge
+    volume at the broker".
+  - matched lots/shares -> "completed round-trips".
+  - FIFO attribution -> omit, or at most "profits matched trade-by-trade,
+    oldest first".
+- **The upper-bound caveat in business language**: "true net profit is
+  slightly lower than shown -- a few costs (blockchain gas fees, wallet
+  transfer fees, margin interest) aren't tracked automatically yet." Never
+  present the raw `not_ingested` vocabulary.
+- **Contextualize magnitudes.** A bare dollar figure means little: pair net
+  PnL with the volume that produced it and the % / bps margin, and say the
+  denominator is volume traded, not capital invested.
+- **Failures get one plain sentence** ("the reporting service is unreachable
+  right now; nothing is wrong with the trading itself") plus one short
+  technical line for whoever fixes it. Never dump curl or nginx detail on a
+  non-technical reader.
 
 Extract with `jq` from `summary`, `costs`, `symbols`, `windows`, `warnings`,
 `availableRange`, `sampleStats`, and -- for fill-level questions -- `entries`.
@@ -160,7 +212,7 @@ tiers next to a number from another without labeling which is which.
 
 Structure the report:
 
-1. **Headline** -- one line:
+1. **Headline** -- a verdict sentence answering the ask, then one line:
    `Net realized PnL: $<net> over <from>..<to> ET (<env><, filters>)`
    using `summary.netRealizedPnlUsd`. Include any `marketSessionFilter` /
    `counterTradingFilter` / `symbol` filter in the `<, filters>` slot -- a
@@ -174,9 +226,12 @@ Structure the report:
    `summary.matchedLotCount`. Compute **return = net / onchain notional** as a
    percentage and in bps. State the denominator (onchain notional = the volume
    quoted; the round-trip is ~2x because it counts the hedge leg too).
-3. **PnL buckets** -- `counterTradePnlUsd` (clean hedged counter-trades),
-   `onchainNettingPnlUsd` (onchain-vs-onchain), `directionalExposurePnlUsd`
-   (delayed/inventory). These are gross-of-cost building blocks.
+3. **PnL buckets** -- `counterTradePnlUsd` (hedged spread capture),
+   `onchainNettingPnlUsd` (onchain-vs-onchain netting),
+   `directionalExposurePnlUsd` (market-move P&L on unhedged inventory). Use
+   the plain-language names from the audience glossary, and say which bucket
+   is the strategy working vs market luck. These are gross-of-cost building
+   blocks.
 4. **Costs** -- from `costs`: list only non-zero lines among
    `brokerFeesUsd`, `regulatoryFeesUsd`, `marginInterestUsd`, `botGasUsd`,
    `cctpFeesUsd`, `tokenizationFeesUsd`, `conversionSlippageUsd`,
@@ -216,14 +271,16 @@ Structure the report:
    its PnL is unrealized and NOT in the net figure. Add the one-line fill census
    from `sampleStats` (`onchainFillCount` / `offchainFillCount` /
    `totalFillCount`) -- it distinguishes an empty window from a thin one.
-8. **Warnings & caveats** -- surface `warnings[]` verbatim (dedup). Always note:
-   realized PnL only (open inventory excluded), FIFO-by-timestamp attribution
-   (not exact hedge parentage), ET-day granularity, and any missing cost
-   observations.
+8. **Warnings & caveats** -- surface `warnings[]` (dedup), rephrased in plain
+   language if the raw string is jargon. Always note, in business terms:
+   realized profit only (gains/losses on open positions excluded), profits
+   matched trade-by-trade oldest-first (not exact hedge parentage), ET-day
+   granularity, and the untracked-costs caveat from the audience section.
 
-Lead with the number. Keep it scannable -- tables for per-symbol and daily,
-prose only where it adds insight (e.g. "SPYM dragged; COIN carried it"). If the
-window is empty (no fills), say so instead of printing a wall of zeros.
+Lead with the verdict and the number. Keep it scannable -- tables for
+per-symbol and daily, prose only where it adds insight (e.g. "SPYM dragged;
+COIN carried it"). If the window is empty (no fills), say so instead of
+printing a wall of zeros.
 
 ## Hard rules
 
@@ -259,8 +316,18 @@ window is empty (no fills), say so instead of printing a wall of zeros.
    `prod-remote`/`staging-remote` to reach `localhost:8001` -- `/pnl` is proxied
    on the tailnet vhost, and SSHing in as root to read a report is needless
    privilege.
+10. **Plain business language in every answer.** The reader may be a
+    non-technical stakeholder: no JSON field names, no internal bucket names
+    unglossed, no infrastructure vocabulary. Precision lives in the numbers
+    and their labeled windows, not in jargon. See the audience section in
+    step 4.
 
 ## Failure modes
+
+When any of these hits, report it to the reader as one plain sentence (what it
+means for them: "the reporting service is unreachable; the trading itself is
+unaffected") plus one short technical line for whoever will fix it. Details
+below are for diagnosis, not for pasting into the answer.
 
 - **404**: nginx isn't proxying `/pnl` on this host. State it and stop -- do not
   fall back to hand-rolled SQL PnL, and do not SSH in to reach `:8001` directly.
