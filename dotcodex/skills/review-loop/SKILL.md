@@ -35,14 +35,30 @@ no new actionable findings.
 
 **Speed design:** every aggregated finding is adversarially verified
 **before** triage, so false positives never cost a fix-and-re-review cycle.
-Each lane's findings are verified as that lane finishes (no barrier waiting
-on the slowest reviewer), and the report is assembled deterministically (no
-synthesis pass on the critical path). The panel is **adaptively sized to the
-diff** (small diffs run fewer lanes) so a genuine full re-pass stays
-affordable. A **compile gate** runs after each fix pass so a broken fix never
-burns a review pass; a **formatter-only delta** is treated as verified by
-construction and never burns a pass. CI runs **concurrently** with the
-re-review.
+Each reviewer lane should be launched in the same parallel batch, and
+verification should start as soon as a lane finishes rather than waiting on
+the slowest reviewer. The report is assembled deterministically from
+structured findings; do not put a prose synthesis pass on the critical path.
+The panel is **adaptively sized to the diff** (small diffs run fewer lanes)
+so a genuine full re-pass stays affordable. A **compile gate** runs after
+each fix pass so a broken fix never burns a review pass; a **formatter-only
+delta** is treated as verified by construction and never burns a pass. CI
+runs **concurrently** with the re-review.
+
+**Where it runs & context discipline:** keep the main Codex session focused
+on glue commands, parallel subagent launches, triage over structured
+findings, and user checkpoints. Do not wrap the entire loop in another
+orchestrator/subagent; nested orchestration makes tool availability and state
+tracking brittle. On a premium model, or when the caller asks for delegation,
+push context-heavy work into closing cheaper subagents:
+
+- **Prompt building (step 4)** — a setup subagent authors the prompt files.
+- **Report assembly (step 5)** — a subagent renders `review.md` from
+  `findings.json`.
+- **Fix application (step 11)** — a fixer subagent reads sources and applies
+  each pass's fixes; the main session avoids reading source files.
+
+On cheaper models, inlining these steps is fine when the diff is small.
 
 **Argument:** if `$ARGUMENTS` contains `stack`, run across the **entire
 upstack** — current branch and every branch above it — amending each branch as
@@ -124,6 +140,13 @@ Verify prerequisites before doing anything:
    ```
    If dirty, tell the user and stop.
 
+4. Confirm spawned reviewers can use the commands they need. A blocked shell
+   call from one lane stalls the whole fan-out. Before launching, make sure
+   `codex`, `git`, `gh`, `cat`, and the project's check command are available
+   to reviewer subagents. If external browsing is required by a reviewer, make
+   sure the relevant browser/web capability is available before the panel
+   starts.
+
 ## 2. Resolve scope & prepare workspace
 
 Determine what to review. On a graphite stack, **always diff against `gt
@@ -139,7 +162,7 @@ parent_sha=$(git rev-parse "$parent")
 repo_root=$(git rev-parse --show-toplevel)
 ts=$(date +%Y-%m-%d_%H-%M-%S)
 safe_branch=$(echo "$branch" | tr '/' '_')
-out_dir="$repo_root/claude-local-ctx/reviews/${ts}-${safe_branch}"
+out_dir="$repo_root/.tmp/reviews/${ts}-${safe_branch}"
 mkdir -p "$out_dir"
 ```
 
@@ -155,10 +178,10 @@ wc -l "$out_dir/diff.patch"
 Refuse to proceed if the diff is empty. If it exceeds 5000 lines, warn the
 user and ask whether to proceed — reviewer quality degrades on huge diffs.
 
-**Ensure the local-ctx folder is gitignored.** If `claude-local-ctx/` is not
-in `.gitignore` (check with `grep -q claude-local-ctx "$repo_root/.gitignore"`),
-ask the user directly for permission to add it. Do not silently modify
-`.gitignore`.
+**Ensure the artifacts folder is gitignored.** Review artifacts live under
+`.tmp/`, the conventional gitignored scratch dir. If `.tmp/` is not in
+`.gitignore` (check with `grep -q '\.tmp/' "$repo_root/.gitignore"`), ask the
+user directly for permission to add it. Do not silently modify `.gitignore`.
 
 ## 3. Load project context
 
@@ -185,6 +208,13 @@ their context and can mislead the goal-evaluation lane.
 
 Every reviewer gets a **shared base prompt** plus a **per-reviewer focus
 paragraph** that biases each toward a different class of bugs.
+
+On premium models, or when the caller asked for delegation, do not author
+these files in the main session. Spawn one setup subagent with this skill's
+path, `$out_dir`, the chosen lane keys, the project-doc paths, and the
+stripped PR description; it writes `prompt-base.txt`, every
+`prompt-{reviewer}.txt`, the inspector prompts, and the step-5 `context.txt`
+exactly per this step, then returns only the list of paths written.
 
 ### Base prompt
 
@@ -319,6 +349,20 @@ behavior? Are there implicit assumptions that aren't documented?
 
 Save each complete prompt (base + focus) to `$out_dir/prompt-{reviewer}.txt`.
 
+### Shared context file
+
+Write one small context file that reviewer lanes can read, instead of
+duplicating diff/docs/PR text into every prompt:
+
+```bash
+cat > "$out_dir/context.txt" <<EOF
+Diff: $out_dir/diff.patch
+Project docs: <CLAUDE.md/AGENTS.md paths, comma-separated>
+PR description (author-written, bot footers stripped):
+<pr_body>
+EOF
+```
+
 ## 5. Spawn reviewers and inspectors in parallel
 
 All reviewers and inspectors must be spawned in a **single message with
@@ -406,9 +450,9 @@ If a Claude lane exits non-zero, record it as "reviewer errored" and
 continue. Skip Claude entirely when the CLI is unavailable or the user asks
 for Codex-only review.
 
-### Inspector agents — Test, Idiomatic Rust, and External Contract Inspectors
+### Inspector agents — Test, Idiomatic Rust, Strong Typing, and External Contract Inspectors
 
-Alongside the five reviewers, spawn three additional specialized inspector
+Alongside the five reviewers, spawn four additional specialized inspector
 agents. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary
 input.
@@ -448,6 +492,24 @@ files are in the diff, say so and stop.
 
 Write output to `$out_dir/raw-rust-inspector.md`.
 
+**Strong Typing Inspector**:
+
+Prompt: the full content of the Codex `strong-typing-inspector` skill
+(`~/Github/dotagents/dotcodex/skills/strong-typing-inspector/SKILL.md`,
+everything below the frontmatter). Treat the current branch as the user
+request. Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+
+Build the domain-type inventory from the repo first, then scan the diff.
+If the diff has no source files where strong typing is relevant, say so and
+stop. Produce your inspection report.
+```
+
+Write output to `$out_dir/raw-typing-inspector.md`.
+
 **External Contract Inspector**:
 
 Prompt: the full content of the Codex `external-contract-inspector` skill
@@ -468,11 +530,11 @@ report. If the diff has no external touchpoints, say so and stop.
 Write output to `$out_dir/raw-contract-inspector.md`.
 
 **Skip conditions**: If the diff contains no test files, the test inspector
-will self-exit (this is fine — record "no test files, skipped"). If the
-diff contains no `.rs` files, the Rust inspector will self-exit (same
-handling). If the diff has no external touchpoints, the external contract
-inspector will self-exit (same handling). The aggregator handles missing
-inspector reports gracefully.
+will self-exit (this is fine — record "no test files, skipped"). If the diff
+contains no `.rs` files, the Rust inspector will self-exit (same handling).
+If the diff has no strong-typing surface or external touchpoints, those
+inspectors will self-exit. The aggregator handles missing inspector reports
+gracefully.
 
 ### Chunk splitting for large diffs
 
@@ -537,14 +599,27 @@ In one parallel batch, issue:
 5. Codex subagent call for Codex E
 6. Codex subagent call for Test Inspector
 7. Codex subagent call for Idiomatic Rust Inspector
-8. Codex subagent call for External Contract Inspector
-9. Optional `claude -p` process for Claude A
-10. Optional `claude -p` process for Claude B
+8. Codex subagent call for Strong Typing Inspector
+9. Codex subagent call for External Contract Inspector
+10. Optional `claude -p` process for Claude A
+11. Optional `claude -p` process for Claude B
 
-## 6. Aggregate
+## 6. Normalize, verify, and aggregate
 
-Spawn a fresh Codex subagent to aggregate. This must be a new subagent so it
-has no context pollution from the reviewers.
+Normalize every reviewer and inspector output into one structured findings
+array before triage. Prefer JSON objects with these fields: `title`,
+`severity`, `file`, `line_start`, `line_end`, `category`, `finding`,
+`why_it_matters`, `recommended_fix`, `confidence`, and `found_by`. If a lane
+returned markdown, spawn a fresh Codex subagent only to convert that lane's
+markdown into this schema; do not ask it to add opinions or new findings.
+
+Merge duplicates deterministically by file, category, overlapping/nearby line
+ranges, and materially identical issue text. Save the merged, pre-verification
+array to `$out_dir/findings-preverify.json` as an audit trail.
+
+If you need a prose aggregator because a reviewer emitted ambiguous markdown,
+use this prompt as a fallback. Its output must still be converted to
+structured findings before triage.
 
 Aggregator prompt:
 
@@ -564,10 +639,11 @@ You may also have optional external raw reviews:
 - {CLAUDE_A_PATH}  (Claude A)
 - {CLAUDE_B_PATH}  (Claude B)
 
-You also have three specialized inspector reports (may be empty if no
+You also have four specialized inspector reports (may be empty if no
 relevant files were in the diff):
 - {TEST_INSPECTOR_PATH}      (Test Inspector — test quality assessment)
 - {RUST_INSPECTOR_PATH}      (Idiomatic Rust Inspector — Rust idiom assessment)
+- {TYPING_INSPECTOR_PATH}    (Strong Typing Inspector — primitive obsession and type-boundary leaks)
 - {CONTRACT_INSPECTOR_PATH}  (External Contract Inspector — unverified external-API/contract assumptions)
 
 And the diff itself at:
@@ -617,7 +693,7 @@ severity.>
 
 ## Findings
 
-<findings sorted by: severity (critical first), then validity (valid first),
+<findings sorted by: severity (critical first), then verdict (valid first),
 then confidence (high first)>
 
 For each finding:
@@ -626,7 +702,7 @@ For each finding:
 
 - **File:** <path>:<line-range>
 - **Category:** correctness | security | convention | maintainability | tests
-- **Validity:** valid | likely | disputed | invalid | out-of-scope
+- **Verdict:** valid | likely | disputed | invalid | out-of-scope
 - **Confidence:** <0-100>
 - **Found by:** [codex-a], [codex-b], [codex-c], [codex-d], [codex-e],
   [claude-a], [claude-b], [test-inspector], [rust-inspector],
@@ -634,8 +710,8 @@ For each finding:
 - **Issue:** <one paragraph>
 - **Why it matters:** <concrete consequence>
 - **Recommended fix:** <specific action>
-- **Aggregator opinion:** <your own take — do you agree with the reviewers?
-  Is this worth fixing? Is any reviewer overreaching?>
+- **Verification rationale:** <your own take — do you agree with the
+  reviewers? Is this worth fixing? Is any reviewer overreaching?>
 
 ## Findings dismissed as invalid
 
@@ -665,6 +741,13 @@ their findings as follows:
   "correctness" for ownership bugs or unsafe misuse. Severity: non-idiomatic
   with correctness impact = high, non-idiomatic style-only = medium,
   suboptimal = low.
+- **Strong Typing Inspector findings** (raw primitives where domain types
+  exist, missed newtypes, stringly typed IDs, unit confusion, and type-boundary
+  leaks): convert each into a standard finding entry. Use category
+  "maintainability", or "correctness" when unit/identifier confusion can cause
+  wrong behavior. Severity: high for financial values or identifiers that can
+  corrupt state, medium for primitive-where-domain-type-exists, low for
+  missed-newtype opportunities.
 - **External Contract Inspector findings** (unverified assumptions about an
   external API/contract — wire types, numeric widths, units/decimals, field
   shapes — not backed by a cited spec or a real-response test): convert each
@@ -676,13 +759,15 @@ their findings as follows:
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the reviewer
   findings — merge duplicates as you would between any two reviewers.
-- In the "Found by" field, use [test-inspector], [rust-inspector], or
-  [contract-inspector] as the attribution.
+- In the "Found by" field, use [test-inspector], [rust-inspector],
+  [typing-inspector], or [contract-inspector] as the attribution.
 
 Do not include emojis, apologies, or disclaimers. Be decisive.
 ```
 
-Write the aggregator's output to `$out_dir/review.md`.
+If you used the fallback prose aggregator, write its raw output to
+`$out_dir/review-aggregate-raw.md`, convert it to the structured schema, and
+continue with the same verification flow below.
 
 ### Per-finding adversarial verification (refute-before-fix)
 
@@ -706,9 +791,25 @@ Re-score severity and confidence from your own reading.
 ```
 
 Append each verdict to the finding. Findings judged `invalid` or
-`out-of-scope` move to the dismissed lists (record the verifier's
-rationale in `review.md`); the rest proceed to triage with the verifier's
-re-scored severity, validity, and confidence.
+`out-of-scope` move to the dismissed lists (record the verifier's rationale
+in `review.md`); the rest proceed to triage with the verifier's re-scored
+severity, verdict, and confidence.
+
+After verification, write `$out_dir/findings.json` with:
+
+```json
+{
+  "findings": [ /* verified valid | likely | disputed findings */ ],
+  "dismissed": [ /* invalid | out-of-scope findings */ ],
+  "laneErrors": [ /* lane error strings */ ],
+  "fixVerifications": []
+}
+```
+
+Assemble `$out_dir/review.md` deterministically from `findings.json`; do not
+use a synthesis agent on the critical path. On premium sessions, a subagent
+may render the markdown from `findings.json`, but it must not invent or
+reinterpret findings.
 
 ## 7. Print findings to the terminal
 
@@ -751,32 +852,32 @@ nothing to loop over.
 
 ---
 
-## 8. Load the report & triage
+## 8. Triage input
 
-Read `$out_dir/review.md`. For each finding in the "Findings" section
-(excluding the "Dismissed as invalid" and "Dismissed as out-of-scope"
-sections), extract:
+Read `$out_dir/findings.json`, not `review.md`, for triage. The markdown
+report is for humans; the loop acts on structured findings so it does not
+depend on prose parsing. Each finding already carries:
 
 - `title`
 - `severity` (critical | high | medium | low | nit)
-- `validity` (valid | likely | disputed)
-- `confidence` (0-100)
+- `verdict` (valid | likely | disputed)
+- `confidence` (re-scored by the verifier)
 - `category` (correctness | security | convention | maintainability | tests)
-- `file` and `line-range`
-- `issue` text
+- `file` + `line_start`/`line_end`
+- `finding`
 - `recommended_fix`
-- `aggregator_opinion`
+- verifier `rationale`
 
-Skip findings already marked `invalid` or `out-of-scope` by the aggregator —
-they've been pre-filtered.
+Findings the verifier judged `invalid` or `out-of-scope` are already in the
+`dismissed` list — never triage those.
 
 ## 9. Build the triage plan
 
 For each remaining finding, compute a **default action** based on severity,
-validity, and confidence. **Bias heavily toward fixing now** — only defer
+verdict, and confidence. **Bias heavily toward fixing now** — only defer
 when the fix is massive enough to warrant its own stacked PR.
 
-| Severity   | Validity | Confidence | Default action |
+| Severity   | Verdict  | Confidence | Default action |
 | ---------- | -------- | ---------- | -------------- |
 | critical   | any      | any        | **Auto-fix**   |
 | high       | valid    | >= 50      | **Auto-fix**   |
@@ -1014,9 +1115,9 @@ For each "defer" finding, invoke the `linear-cli` skill. For each one:
 
      <recommended_fix from the finding>
 
-     ## Aggregator opinion
+     ## Verification rationale
 
-     <aggregator_opinion from the review>
+     <the verifier's rationale from the finding>
 
      ---
 
@@ -1101,7 +1202,7 @@ Deferred to Linear (1):
 Dismissed (1):
   #5  nit       Rename variable for clarity
 
-Reports: <paths to review.md files from each iteration>
+Reports: <paths to review.md, findings.json, review-iter*.json>
 ```
 
 Below the summary block, add two prose sections:
@@ -1177,14 +1278,17 @@ per-branch summary line, then continue the upstack walk — do not stop here.
    never end on a fix. Stop and ask the user if you don't converge.
 10. Spawn all reviewers in a single message with parallel tool calls.
 11. Use `--sandbox read-only` for codex — non-negotiable.
-12. The aggregator is a separate subagent call, never reuse the main session
-    to aggregate (context pollution).
+12. Normalize reviewer output to structured findings, verify findings in
+    parallel, and assemble `review.md` deterministically from `findings.json`.
+    A subagent may render markdown from JSON, but must not synthesize new
+    findings on the critical path.
 13. Never fabricate findings when a reviewer errors — record the failure.
-14. Save raw outputs and the aggregated report before printing to terminal.
-15. Never silently modify `.gitignore` — ask permission to add
-    `claude-local-ctx/` if missing.
-16. Validate reviewer output files before passing to aggregator — reject
-    files that contain dumped file contents instead of review analysis.
+14. Save raw outputs, `findings.json`, `review.md`, and each
+    `review-iter${N}.json` before printing to terminal.
+15. Never silently modify `.gitignore` — ask permission to add `.tmp/` if
+    missing.
+16. Validate reviewer output files before normalization — reject files that
+    contain dumped file contents instead of review analysis.
 17. Re-review is always a fresh INDEPENDENT panel pass over the full updated
     diff (stochastic coverage), adaptively sized per step 5 — never a narrow
     fix-delta sweep. The only thing that skips a pass is a verified

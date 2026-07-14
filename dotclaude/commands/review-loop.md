@@ -156,7 +156,7 @@ parent_sha=$(git rev-parse "$parent")
 repo_root=$(git rev-parse --show-toplevel)
 ts=$(date +%Y-%m-%d_%H-%M-%S)
 safe_branch=$(echo "$branch" | tr '/' '_')
-out_dir="$repo_root/claude-local-ctx/reviews/${ts}-${safe_branch}"
+out_dir="$repo_root/.tmp/reviews/${ts}-${safe_branch}"
 mkdir -p "$out_dir"
 ```
 
@@ -172,8 +172,9 @@ wc -l "$out_dir/diff.patch"
 Refuse to proceed if the diff is empty. If it exceeds 5000 lines, warn the
 user and ask whether to proceed — reviewer quality degrades on huge diffs.
 
-**Ensure the local-ctx folder is gitignored.** If `claude-local-ctx/` is not
-in `.gitignore` (check with `grep -q claude-local-ctx "$repo_root/.gitignore"`),
+**Ensure the artifacts folder is gitignored.** Review artifacts live under
+`.tmp/`, which is the conventional gitignored scratch dir in most repos. If
+`.tmp/` is not in `.gitignore` (check with `grep -q '\.tmp/' "$repo_root/.gitignore"`),
 ask the user for permission to add it. Do not silently modify `.gitignore`.
 
 ## 3. Load project context
@@ -1338,7 +1339,7 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 14. Save `findings.json`, the assembled `review.md`, and each
     `review-iter${N}.json` to `$out_dir` before printing to the terminal.
 15. Never silently modify `.gitignore` — ask permission to add
-    `claude-local-ctx/` if missing.
+    `.tmp/` if missing.
 16. Re-review is always a fresh INDEPENDENT panel pass over the full updated
     diff (stochastic coverage), adaptively sized per step 5 — never a narrow
     fix-delta sweep. The only thing that skips a pass is a verified
