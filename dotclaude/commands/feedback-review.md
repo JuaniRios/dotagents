@@ -27,6 +27,15 @@ If the PR is closed or merged, warn and ask whether to continue.
 resolved when reviewers or authors resolve them. Resolved threads are done --
 never include them in the triage.
 
+**Do NOT filter on `isOutdated`.** A thread is `isOutdated` when the diff hunk
+its comment was anchored to has since changed -- which happens to nearly every
+thread when a PR is squashed or force-pushed (the norm on Graphite stacks).
+Outdated does NOT mean addressed. An outdated-but-unresolved thread is still
+live, actionable feedback -- keep it. Flag it as `outdated -- re-verify against
+current code` so you re-check the current source before acting: the referenced
+line numbers may have shifted, or the issue may already be fixed by a later
+push (in which case reply/resolve rather than silently dropping it).
+
 Use the GraphQL API to get review threads with resolution status.
 
 **CRITICAL: You MUST paginate.** PRs with active CodeRabbit reviews routinely
@@ -73,8 +82,8 @@ before proceeding.
 **CRITICAL: Filter programmatically, not by reading raw JSON.** GraphQL
 responses for large PRs routinely exceed 200KB and get persisted to files that
 you cannot fully read in context. After fetching all pages, save each page's
-output to a temp file and use a script to extract only unresolved, non-outdated
-threads. Example:
+output to a temp file and use a script to extract every unresolved thread
+(outdated ones included, tagged for re-verification). Example:
 
 ```bash
 # After saving each page to /tmp/pr-threads-page-*.json:
@@ -85,7 +94,9 @@ for path in sorted(glob.glob('/tmp/pr-threads-page-*.json')):
     with open(path) as f:
         data = json.load(f)
     threads.extend(data['data']['repository']['pullRequest']['reviewThreads']['nodes'])
-unresolved = [t for t in threads if not t['isResolved'] and not t['isOutdated']]
+unresolved = [t for t in threads if not t['isResolved']]
+for thread in unresolved:
+    thread['_needs_reverify'] = thread['isOutdated']  # outdated -> re-check current source
 print(json.dumps(unresolved, indent=2))
 " > /tmp/pr-unresolved-threads.json
 ```
