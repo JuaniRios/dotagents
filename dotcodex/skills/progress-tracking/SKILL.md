@@ -130,8 +130,9 @@ Read the description and metadata of each issue.
 
 ## Step 4b — Fetch Linear milestones
 
-For each relevant Linear project, fetch the milestone structure to
-understand the planned roadmap and current phase:
+For each Linear project that has issues relevant to this bot (determine the set
+per Step 5, from the data — never from a hardcoded list of names), fetch the
+milestone structure to understand the planned roadmap and current phase:
 
 ```bash
 linear project list --json --no-pager  # find project IDs
@@ -144,26 +145,39 @@ writing an accurate "coming next" section.
 
 ## Step 5 — Filter issues by relevance
 
-For each issue, decide whether it's relevant to the project based on:
+Relevance is judged by the **work itself**, never by a fixed list of project
+names. New Linear projects spin up regularly for both bots, so an unfamiliar or
+recently-created project is **not** grounds to exclude an issue. Do not use
+project membership — or a project's absence from any known list — as a filter.
 
-1. **Project context** from the config:
+Decide with, in priority order:
+
+1. **Does the work touch this bot's repo?** Strongest signal: the issue is
+   linked to, or its work landed in, a PR/commit in this bot's repo
+   (`st0x.liquidity` for hedge-bot, `st0x.issuance` for issuance-bot). If so,
+   include it — whatever project it's filed under.
+2. **Domain context** from the config:
    - **hedge-bot**: liquidity bot — hedging, rebalancing, vaults, Raindex,
      Alpaca, order strategies, staging/prod deployment
    - **issuance-bot**: Alpaca ITN issuer — minting, redemption, account
      linking, asset/token management, dividends and corporate actions, new
      token launches, the Rain SFT (`OffchainAssetReceiptVault`) contracts
-2. **Issue description** — does it mention components, features, or bugs
-   related to this project?
-3. **Labels and Linear project assignment** — if assigned to a matching
-   Linear project, include it
-4. **Common sense** — an issue about "website redesign" belongs to neither
-   bot; "fix hedging gap calculation" is hedge-bot; "redemption journaling
-   error" is issuance-bot
+3. **Issue description** — does it mention components, features, or bugs in
+   this bot's domain?
+4. **Common sense** — "website redesign" belongs to neither bot; "fix hedging
+   gap calculation" is hedge-bot; "redemption journaling error" is issuance-bot.
+
+When you hit a project you don't recognize, don't skip it — open its issues,
+read the descriptions and any linked PRs, and include anything that serves this
+bot's repo or domain. When genuinely unsure, lean toward including it and say so
+in the report, rather than silently dropping possibly-relevant work.
 
 **Both bots share the RAI team and some code** (notably the event-sourcing /
 CQRS core, `event-sorcery`). Watch for two things:
-- The other bot's work will appear in the query results — exclude it and note
-  why, per the Excluded Issues section.
+- The *other* bot's work, plus other products (e.g. Bebop pricing,
+  frontend/webapp, marketing/analytics), will show up in the query results —
+  exclude those and note why, per the Excluded Issues section. Base that call on
+  what the work is, not on the project's name.
 - Genuinely cross-cutting work (e.g. an `event-sorcery` change, shared
   tooling) can be **included** for whichever bot the report is about when it
   landed in or directly serves that bot's repo — say so explicitly.
@@ -222,17 +236,17 @@ understand the planned roadmap:
 linear milestone list --project "<project name>" --json
 ```
 
-Run this for each relevant Linear project. The relevant projects depend on
-which bot the report is about:
+Run this for each project that has INCLUDED issues (from Step 5). The examples
+below are illustrative only, not an allowlist:
 - **hedge-bot**: e.g. "Live MVP of st0x.liquidity bot", "Robust liquidity
   management with auto-recovery", "ST0x observability, hardening, and testing".
 - **issuance-bot**: e.g. "Issuance Bot Improvements", "Dividends", "New Token
   Launches", "Corporate-action-aware oracle".
 
-(Confirm the actual project names from the Linear data each run — don't assume
-the lists above are exhaustive or current.) Milestones define the intended
-sequencing — use them to understand what phase the team is in and what the next
-milestone is.
+Derive the real set of projects from the data each run — a project you've never
+seen before is still in scope if its work serves the bot. Never assume the lists
+above are exhaustive or current. Milestones define the intended sequencing — use
+them to understand what phase the team is in and what the next milestone is.
 
 Also look at all **Todo** and **Backlog** issues (not just In Progress /
 In Review) to identify the forward workplan. From these, determine:
