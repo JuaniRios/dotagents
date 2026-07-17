@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, Workflow, AskUserQuestion
-description: Cross-review the current branch with a multi-model Workflow panel (3x Sonnet, 2x Codex gpt-5.5 + inspectors), auto-fix findings, and re-review until clean. Each re-review is a fresh independent panel pass (AI review is stochastic — every pass finds different issues) with fix-verification folded in; on chunked runs only changed chunks get the full panel. Adaptive panel sizing + pipelined verify keep it fast. Loops automatically — only stops for disputed findings or massive changes. Pass `stack` to run across the whole upstack, amending each branch.
+description: Cross-review the current branch with a multi-model Workflow panel, auto-fix findings, and re-review until clean. Group verified fixes that are too large or out of scope for the current PR under one Linear parent, then implement its child issues serially with /implement-issue. Pass `stack` to review the whole upstack.
 argument-hint: [stack]
 ---
 
@@ -12,6 +12,13 @@ The loop is **automatic by default**. Findings that clearly should be fixed
 are fixed without asking. The loop re-reviews after each fix pass to catch
 issues introduced by the fixes themselves. It stops when a review pass
 returns no new actionable findings.
+
+Verified findings whose proper fix would materially expand the current PR are
+not discarded. The loop collects them across all passes, groups them as child
+issues under one new Linear parent, and, after the current PR converges,
+implements those children one at a time through `/implement-issue`. The
+parent/child issue batch still follows `/linear-cli`'s draft and approval
+rules before creation.
 
 **Why it loops:** AI review is stochastic — each independent pass over the
 same diff surfaces *different* findings. The loop runs **fresh full panel
@@ -64,21 +71,21 @@ Follow these steps precisely.
 ## Stack mode (`/review-loop stack`)
 
 When invoked with the `stack` argument, wrap the single-branch loop (steps
-1–14) in an upstack walk: review-loop the current branch, fold the fixes into
+1–15) in an upstack walk: review-loop the current branch, fold the fixes into
 its commit, move up, and repeat until the top of the stack. Passing `stack` is
 an explicit opt-in to the amend-and-advance flow, so in stack mode **hard rule
 #4 is relaxed**: you MAY `gt modify -a` to amend fixes into the current
 branch before moving up. You still never `gt submit`/push without the user
 asking.
 
-With no `stack` argument, skip this section entirely and run steps 1–14 once
+With no `stack` argument, skip this section entirely and run steps 1–15 once
 on the current branch.
 
 ### Stack flow
 
 1. Record the starting branch: `git branch --show-current`. You return here at
    the very end.
-2. Run the full single-branch loop (**steps 1–14**) on the current branch.
+2. Run the full single-branch loop (**steps 1–12**) on the current branch.
    - **Relax the step-1 clean-tree gate after the first branch**: `gt up`
      restacks descendants, so a non-empty tree from that is expected. Still
      stop if there are unrelated uncommitted edits you did not make.
@@ -94,7 +101,11 @@ on the current branch.
 5. If the single-branch loop **fails to converge** on any branch (hits the
    4-pass cap), stop on that branch — do **NOT** continue up the stack. Report
    which branch is stuck and follow the normal non-convergence flow.
-6. When done (success or failure), return to the starting branch
+6. Accumulate scope-expanding follow-up candidates across every reviewed
+   branch. Do not create a parent per branch. After the entire upstack
+   converges, run steps 13–14 once so one parent groups the invocation's full
+   follow-up set.
+7. When done (success or failure), return to the starting branch
    (`gt checkout <starting-branch>`) and print a per-branch summary:
    ```
    Stack review-loop summary:
@@ -105,7 +116,8 @@ on the current branch.
 
 Each branch gets its own review directory (the step-2 `out_dir` is
 branch-named), its own diff against its own `gt parent`, and its own 4-pass
-cap. The Defer-to-Linear step (13) still applies per branch.
+cap. Linear grouping and serial implementation happen once after the stack
+walk, not once per branch.
 
 ---
 
@@ -158,7 +170,14 @@ ts=$(date +%Y-%m-%d_%H-%M-%S)
 safe_branch=$(echo "$branch" | tr '/' '_')
 out_dir="$repo_root/.tmp/reviews/${ts}-${safe_branch}"
 mkdir -p "$out_dir"
+follow_up_candidates_path=${follow_up_candidates_path:-"$out_dir/follow-up-candidates.json"}
 ```
+
+Initialize `follow_up_candidates_path` once for the whole invocation and carry
+that same path through every pass. Create it with an empty `candidates` array
+before the first review pass. In stack mode, the wrapper sets it before the
+first branch and passes it into each branch loop so candidates do not fragment
+across branch-specific review directories.
 
 Write the diff and file manifest. Diff against the working tree (no `..HEAD`)
 so re-review iterations automatically include uncommitted fixes:
@@ -260,7 +279,10 @@ What NOT to flag:
 - Style, formatting, import ordering, naming nits unless the project docs
   explicitly mandate them.
 - Issues the compiler, linter, or typechecker would catch — assume CI exists.
-- Pre-existing issues on lines the diff did not modify.
+- Pre-existing issues unrelated to the changed behavior. If tracing an
+  in-scope change exposes a concrete adjacent problem whose proper fix would
+  materially expand this PR, report it with evidence so it can become a
+  grouped follow-up; do not roam the repository looking for unrelated work.
 - Missing documentation unless the docs mandate it.
 - Renamings, reorganizations, or "this could be factored differently"
   suggestions.
@@ -811,6 +833,13 @@ The workflow returns `{findings, dismissed, laneErrors, fixVerifications}`.
    reviewer lanes** errored, stop.
 4. If `findings` is empty (and, on re-review passes, every fix verified with
    no new issues), the pass is clean.
+5. Do not lose verified `out-of-scope` findings in the dismissed audit trail.
+   When verification confirms one is real, concrete, and directly exposed by
+   the PR review, append it to an invocation-wide
+   `$follow_up_candidates_path`. Carry the finding, verification
+   rationale, source branch/commit, review path, and why the fix does not
+   belong in the current PR. Deduplicate across lanes, passes, and stack
+   branches by the underlying problem, not merely by title.
 
 ## 6. (Reserved)
 
@@ -860,8 +889,10 @@ made from `{severity, verdict, confidence, file, line, title}`; the prose stays
 on disk in `review.md`/`findings.json`. Re-dumping all N findings' bodies each
 pass is the single biggest avoidable main-context cost of the loop.
 
-If the review reports **no findings**, print that prominently and exit —
-nothing to loop over.
+If the review reports **no actionable findings**, print that prominently. If
+`$follow_up_candidates_path` is empty, exit successfully. If it contains
+verified candidates, treat the current PR as converged and continue to step 13
+instead of dropping the follow-up queue.
 
 ---
 
@@ -880,8 +911,8 @@ Findings the verifier judged `invalid` or `out-of-scope` are already in the
 ## 9. Build the triage plan
 
 For each remaining finding, compute a **default action** based on severity,
-verdict, and confidence. **Bias heavily toward fixing now** — only defer
-when the fix is massive enough to warrant its own stacked PR.
+verdict, and confidence. **Bias heavily toward fixing now** — use grouped
+follow-up only when the proper fix is genuinely separate scope.
 
 | Severity   | Verdict  | Confidence | Default action |
 | ---------- | -------- | ---------- | -------------- |
@@ -903,10 +934,17 @@ when the fix is massive enough to warrant its own stacked PR.
 **Discuss**: the evidence is weak or reviewers disagree. Show the user the
 full finding and ask what to do. Default to fixing unless it's massive.
 
-**Defer to Linear** is NOT a default action. Only use it when:
-- The user explicitly asks to defer a specific finding, OR
-- A fix is large enough that it should be a separate stacked PR (e.g.,
-  a multi-file refactor or new feature, not a surgical bug fix)
+Apply a **scope gate** before the table above. If a verified finding is real
+but its proper fix materially expands the current PR's stated goal (for
+example, an independent feature, multi-domain refactor, or adjacent
+pre-existing defect), assign **Grouped follow-up** instead of auto-fix. Add it
+to `$follow_up_candidates_path`; do not force scope creep into the current PR.
+Critical issues still qualify when they are genuinely separate—the serial
+implementation phase handles them first.
+
+**Grouped follow-up** is also used when the user explicitly defers a finding.
+It is not a way to avoid a surgical in-scope fix. When in doubt about scope,
+fix it now.
 
 When in doubt, fix it now.
 
@@ -939,7 +977,7 @@ Q: [#N] <title> — sev <severity>. Reviewers disagree — what should I do?
    options:
      - "Fix now" (Recommended) — implement the fix in this session
      - "Dismiss" — drop it, not a real issue
-     - "Defer" — too large for this PR, will stack separately
+     - "Grouped follow-up" — separate scope; create and implement as a child issue
      - "Show me the details" — read the full finding first
 ```
 
@@ -950,7 +988,8 @@ After resolving discuss items, print the consolidated plan:
 
 ```
 Plan:
-  Fix now (4):     #1, #2, #3, #4
+  Fix now (3):     #1, #2, #4
+  Follow up (1):   #3
   Dismiss (1):     #5
 ```
 
@@ -983,9 +1022,10 @@ For each "fix now" finding, in severity order:
 7. Do **not** run the full test suite, lints, or commit yet — `/ci` runs
    only after the review loop converges.
 
-If while implementing a fix you realize it's larger than expected or the
-finding is more nuanced than the report suggests, stop and tell the user.
-Offer to re-triage (defer, dismiss, or adjust the fix).
+If while implementing a fix you discover that the real solution materially
+expands the PR, reclassify it as a grouped follow-up, record the concrete
+scope reason in `$follow_up_candidates_path`, and continue with the remaining
+in-scope fixes. Only stop for a genuinely ambiguous correctness decision.
 
 ### Optional: fan out independent fixes
 
@@ -1089,7 +1129,7 @@ so launch them **concurrently** after a fix pass — start `/ci` (invoke the
 convergence on both:
 
 - Re-review clean **and** `/ci` green, `/ci` made no changes → converged,
-  go to step 14.
+  go to step 13.
 - Re-review clean **and** `/ci` made changes (lint/format) → apply the
   formatter-only skip above; if the changes are purely formatter output you
   are converged, otherwise run one more re-pass over the new delta.
@@ -1130,107 +1170,122 @@ Re-review iteration <N> (independent full pass, <K> lanes) — stochastic covera
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-## 13. Defer-to-Linear loop (only if user explicitly deferred findings)
+## 13. Group scope-expanding follow-ups in Linear
 
-This step only runs if the user chose "Defer" for any discuss finding.
-Skip entirely if no findings were deferred.
+Run this step after the current branch (or entire requested stack) converges.
+Load the invocation-wide `$follow_up_candidates_path`. Candidates are:
 
-For each "defer" finding, invoke the `linear-cli` skill. For each one:
+- verified `out-of-scope` findings that are real, concrete, and directly
+  exposed while reviewing the PR;
+- verified findings reclassified by the scope gate because the proper fix
+  would materially expand the current PR; and
+- findings the user explicitly chose to move to a grouped follow-up.
 
-1. **Draft the issue** in a tempfile, following the linear-cli skill's
-   "Drafting issues from review findings" pattern:
+Exclude invalid/speculative findings and unrelated repository observations.
+Deduplicate materially identical candidates. If none remain, skip steps
+13–14.
 
-   - **Title:** a concise imperative summary derived from the finding title.
-     Lead with the action, not the problem. Example: "Add retry on
-     transient HTTP errors in broker client" not "Missing retry".
-   - **Body** (in the tempfile):
+Invoke `/linear-cli` and follow its exact `--help`, file-based description,
+required-metadata, and approval rules:
 
-     ```markdown
-     ## Problem
+1. Resolve the current PR's Linear issue when possible and inherit its team,
+   project, milestone, and assignee. If there is no linked issue, use the
+   repository's Linear configuration. If the required project or other
+   metadata cannot be inferred safely, ask one batched metadata question.
+2. Draft **one parent issue** titled `Address follow-ups from review of
+   <original issue or PR>`. Its body explains the reviewed goal, links the
+   original PR/branch and review reports, and states that each child is an
+   independently implementable scope boundary. Set its priority to the
+   highest child priority.
+3. Draft **one child issue per candidate**. Use an imperative title and this
+   body shape:
 
-     <issue text from the finding>
+   ```markdown
+   ## Problem
 
-     ## Evidence
+   <verified issue text>
 
-     - File: `<path>:<line-range>`
-     - Finding category: <correctness | security | convention | ...>
-     - Severity: <severity>
-     - Found during review of branch `<branch>` (commit `<sha>`)
+   ## Evidence
 
-     ## Proposed fix
+   - File: `<path>:<line-range>`
+   - Category: <category>
+   - Severity: <severity>
+   - Found during review of branch `<branch>` (commit `<sha>`)
 
-     <recommended_fix from the finding>
+   ## Desired outcome
 
-     ## Verification rationale
+   <outcome derived from the recommended fix, stated without over-prescribing implementation>
 
-     <the verifier's rationale from the finding>
+   ## Verification rationale
 
-     ---
+   <verifier rationale>
 
-     Deferred from review `<path to review.md>`.
-     ```
+   ---
 
-2. **Choose metadata**: priority by severity (critical -> urgent, high ->
-   high, medium -> medium, low -> low, nit -> low). Labels: prefer `bug`
-   for correctness/security, `tech-debt` for maintainability, `test` for
-   test-coverage findings. Project and team come from the repo's
-   `.linear.toml` — let `linear` pick them up automatically. Do not pass
-   `--team` or `--project` unless the user tells you which ones.
-
-3. **Show the draft to the user** before running any `linear` command.
-   Format:
-
-   ```
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Draft Linear issue — [#N] <finding title>
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Title:    <draft title>
-   Priority: <severity-derived>
-   Labels:   <labels>
-
-   <body contents>
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Grouped from review `<path to review.md>` because the fix would expand the
+   original PR's scope.
    ```
 
-4. **Ask for confirmation**, using `AskUserQuestion`:
+4. Derive child priority from severity and select only labels that actually
+   exist for the resolved team. Give every parent and child the required
+   project and default assignee. Preserve the original issue's milestone when
+   appropriate.
+5. Show the exact parent draft, every child draft, and all metadata as one
+   batch. Ask once with `AskUserQuestion` to create the group; allow edits or
+   removal of individual children. This single approval covers the displayed
+   parent and child drafts—do not ask again per child unless a draft changes
+   materially.
+6. After approval, create the parent first, then create each child as a true
+   Linear subissue of that parent (not merely a `blocks` relation). Run
+   `linear issue create --help` and `linear issue update --help` before using
+   parent flags; use `/linear-cli`'s raw GraphQL fallback only if the installed
+   CLI cannot set parentage.
+7. Record the parent and ordered child IDs/URLs in
+   `$out_dir/follow-up-issues.json`. Order children by severity, then discovery
+   order. Update the parent description with child links if Linear does not
+   render them automatically.
 
-   ```
-   Q: Create this Linear issue for finding #N?
-     options:
-       - "Create"    (Recommended)
-       - "Edit"      — tell me what to change
-       - "Skip"      — don't create this one
-   ```
+Do not create one parent per finding or per stack branch. One review-loop
+invocation produces at most one new follow-up parent.
 
-   If the user picks "Edit", ask what to change, revise, and re-confirm.
+## 14. Implement grouped follow-ups serially
 
-5. **Create the issue** only after explicit confirmation:
+After the issue group is created, implement every child through
+`/implement-issue` **one at a time**. Never run child implementations in
+parallel.
 
-   ```bash
-   body_file=$(mktemp -t linear-issue.XXXXXX.md)
-   cat > "$body_file" <<'EOF'
-   <approved body>
-   EOF
-   linear issue create \
-     --title "<approved title>" \
-     --description-file "$body_file" \
-     --priority <severity-derived> \
-     --label <labels>
-   rm "$body_file"
-   ```
+1. Capture the branch where review-loop started. The `/implement-issue`
+   handoff requires a clean tree. If this loop applied reviewed fixes in
+   single-branch mode, invoke `/graphite` and run `gt modify -a` once to fold
+   only those fixes into the current branch before leaving it. This is the
+   sole single-branch amend exception; do not submit directly from review-loop.
+2. For each child ID in `follow-up-issues.json`, in order:
+   - invoke `/implement-issue <CHILD-ID>` and let it complete its full plan,
+     implementation, review, PR, submission, CI, and Linear workflow;
+   - wait for it to finish successfully before starting the next child; and
+   - record its branch, PR, and final status in `follow-up-issues.json`.
+3. Pass the existing parent ID as standing context. If a child's nested review
+   discovers another genuine scope-expanding finding, reuse this parent and
+   append the new child to the end of the same serial queue instead of creating
+   a nested follow-up parent. Search the parent's existing children first to
+   avoid duplicate issues or cycles.
+4. If one child blocks or fails, stop the serial queue, leave the remaining
+   children unstarted, update the parent with the blocker, and report exactly
+   where execution stopped. Never skip ahead silently.
+5. When all children finish, update the parent status to match the repository's
+   Linear policy and the children's actual states. Do not mark the parent Done
+   while any child PR is still in a state that keeps its issue open.
+6. Return to the branch where review-loop started before printing the final
+   summary.
 
-6. **Print the issue URL** returned by `linear issue create` and record the
-   issue ID — you'll reference them in the summary.
+`/implement-issue` retains its own plan-approval and architecture-decision
+checkpoints. "Serial" means the complete workflow for child N finishes before
+child N+1 begins.
 
-You can batch the confirmation step: if there are multiple "defer" findings,
-draft all of them first, show all drafts, ask in one `AskUserQuestion`
-call (up to 4 at a time). Don't skip showing the drafts — the user must see
-the title and body before any issue is created.
+## 15. Summarize
 
-## 14. Summarize
-
-After all review iterations converge (no new findings) and any deferred
-Linear issues are created (or skipped), print a final summary:
+After all review iterations converge and the grouped follow-up queue either
+completes or stops on a real blocker, print a final summary:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1242,8 +1297,9 @@ Fixed (3):
   #2  high      Missing auth check on /admin            <file>:<line>
   #4  medium    Lock contention in hot path             <file>:<line>
 
-Deferred to Linear (1):
-  #3  medium    Add retry on transient errors           <linear url>
+Grouped follow-ups (2):
+  Parent         Address follow-ups from review         <linear url>
+  #3  medium     Add retry on transient errors           <child url>  implemented: <PR url>
 
 Dismissed (1):
   #5  nit       Rename variable for clarity
@@ -1261,20 +1317,15 @@ options (name the option chosen and why). If a fix made the PR description,
 docs, or comments stale, call that out explicitly so the user can update
 them before submitting.
 
-**Suggested Linear issues** — findings that were NOT fixed but are worth
-tracking: dismissed-as-out-of-scope findings that are real, disputed
-findings whose fix was too large for this PR, and auto-dismissed low/nit
-findings you judge worth a follow-up. One line each (severity, title, why
-it's worth tracking), then offer to draft them via the step-13 flow if the
-user wants. Never create an issue without the per-issue confirmation from
-step 13. Omit the section when there are no candidates.
+**Grouped follow-ups** — name the parent and each child, with implementation
+status and PR link. If the queue stopped, identify the blocker and list the
+unstarted children. Omit this section when there were no candidates.
 
-Then stop. Do not auto-run `gt modify`, `gt submit`, or any other
-mutation — the user decides when to amend and push.
+Then stop. Outside stack mode and the explicit grouped-follow-up handoff in
+step 14, do not auto-run `gt modify`, `gt submit`, or any other mutation.
 
-**In stack mode**, this is where the single-branch loop returns to the Stack
-flow: the wrapper amends the branch (`gt modify -a`) and moves up. Print the
-per-branch summary line, then continue the upstack walk — do not stop here.
+**In stack mode**, steps 13–15 run only after the upstack walk has converged;
+the wrapper must not create or implement follow-ups per branch.
 
 ---
 
@@ -1282,10 +1333,12 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 
 - **All reviewer lanes error:** stop immediately, tell the user, don't
   proceed to triage. (Inspector lanes erroring is non-fatal.)
-- **Review returns no findings:** print "No findings" and exit the command
-  successfully — nothing to loop over.
-- **A fix turns out to be larger than expected:** stop, report progress,
-  ask whether to continue, defer to a stacked PR, or dismiss.
+- **Review returns no actionable findings:** print "No findings"; exit only
+  when the follow-up candidate queue is also empty. Otherwise continue to
+  grouped issue creation.
+- **A fix turns out to be larger than expected:** reclassify it as a grouped
+  follow-up when the solution is genuinely separate scope; stop only if the
+  classification or correctness decision is ambiguous.
 - **Review pass cap hit (4 passes):** stop and tell the user. Summarize
   what each pass found. Because re-review is stochastic, late passes usually
   surface *thinning* residual findings rather than fix-induced regressions —
@@ -1294,9 +1347,13 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 - **The workflow itself fails mid-run:** relaunch with
   `{scriptPath, args, resumeFromRunId}` — completed lanes return cached
   results instantly; only the failed part re-runs.
-- **A Linear issue fails to create:** report the exact `linear` error,
-  leave the draft tempfile in place, and continue with the rest of the
-  deferred items. Ask the user whether to retry the failed one at the end.
+- **The follow-up parent fails to create:** report the exact `linear` error,
+  preserve every draft, and stop before creating children.
+- **A follow-up child fails to create:** report the exact error, preserve the
+  draft and already-created group, and stop before serial implementation so
+  the parent is not silently incomplete.
+- **A child `/implement-issue` run blocks or fails:** update the parent with
+  the blocker, stop the queue, and leave later children unstarted.
 - **The user says "stop" mid-loop:** immediately stop, then print the
   summary with what was completed so far. Do not silently abandon the rest.
 - **Codex not installed:** warn the user and drop the codex lanes
@@ -1306,15 +1363,18 @@ per-branch summary line, then continue the upstack walk — do not stop here.
 
 1. **Auto-fix without asking** for findings that match auto-fix criteria.
    Only ask the user about "discuss" findings.
-2. **Bias toward fixing now.** Defer to Linear only when the user explicitly
-   asks or the fix is too large for the current PR.
-3. Never create Linear issues without explicit per-issue user confirmation
-   of the exact draft content.
+2. **Bias toward fixing now.** Use a grouped follow-up only when the proper fix
+   materially expands the current PR or the user explicitly requests it.
+   Never silently discard a verified, actionable out-of-scope finding.
+3. Never create Linear issues without showing the exact parent/child batch and
+   receiving explicit approval. One approval may cover the unchanged batch;
+   materially edited drafts require renewed approval.
 4. Never amend, commit, or `gt submit` automatically — the user drives
-   version control. **Exception (stack mode only):** when invoked with the
-   `stack` argument, `gt modify -a` to amend fixes into the current branch
-   before moving up is expected and allowed. Never `gt submit`/push without
-   the user asking, even in stack mode.
+   version control. **Exceptions:** stack mode may `gt modify -a` per branch;
+   and a created follow-up queue may `gt modify -a` once in single-branch mode
+   to make the reviewed starting branch clean before invoking
+   `/implement-issue`. Review-loop itself never submits; each serial
+   `/implement-issue` owns its branch/PR mutations and submission.
 5. Always use `--description-file` with `linear issue create`, never inline
    `--description`.
 6. Always re-verify findings against the current source before applying
@@ -1358,3 +1418,11 @@ per-branch summary line, then continue the upstack walk — do not stop here.
     finding bodies — those live on disk for the workflow/`review.md`. This is
     quality-neutral (same lanes, same verification) and is the loop's biggest
     main-context saving.
+19. Create at most one follow-up parent per review-loop invocation. Every
+    verified scope-expanding finding becomes a true child issue under it.
+20. Invoke `/implement-issue` for child issues strictly in series. A child must
+    finish its complete workflow before the next starts; on failure, stop and
+    preserve the remaining queue.
+21. Nested review loops from those child implementations reuse the same parent
+    and append deduplicated children to the serial queue; they never create a
+    hierarchy of follow-up parents.
