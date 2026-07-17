@@ -135,8 +135,15 @@ per Step 5, from the data — never from a hardcoded list of names), fetch the
 milestone structure to understand the planned roadmap and current phase:
 
 ```bash
-linear project list --json --no-pager  # find project IDs
-linear milestone list --project "<project name>" --json --no-pager
+# `linear project list` does NOT support --json, so get project IDs by reusing
+# the Step 4 issues JSON — extract unique id/name pairs:
+linear issue query --team <team> --updated-after <date> --json --limit 0 --no-pager \
+  | jq -r '[.nodes[] | select(.project) | {id: .project.id, name: .project.name}]
+      | unique_by(.id)[] | "\(.id)\t\(.name)"'
+
+# `linear milestone list` takes a project ID (NOT a name) and does NOT support
+# --json or --no-pager — read the plain table output:
+linear milestone list --project <projectId>
 ```
 
 Note which milestones are completed, which is active, and what's coming
@@ -233,7 +240,8 @@ nothing else in the report.
 understand the planned roadmap:
 
 ```bash
-linear milestone list --project "<project name>" --json
+# Project ID (not name); no --json support — parse the table (see Step 4b):
+linear milestone list --project <projectId>
 ```
 
 Run this for each project that has INCLUDED issues (from Step 5). The examples
