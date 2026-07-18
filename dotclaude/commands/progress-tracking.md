@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(cat:*), Bash(date:*), Bash(jq:*), Read, Write, Grep, Glob
-description: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, and saved daily reports since the last run or a custom time range. Outputs an investor-facing summary and saves it to disk.
+allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(cat:*), Bash(date:*), Bash(jq:*), Bash(tdl:*), Bash(python3:*), Bash(ls:*), Bash(grep:*), Read, Write, Grep, Glob
+description: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, and the dev-channel daily reports (everyone's, exported via tdl) since the last run or a custom time range. Outputs an investor-facing summary and saves it to disk.
 argument-hint: <project> [since <timeframe>]
 ---
 
@@ -94,42 +94,86 @@ Also use PRs to catch work that has no Linear issue attached. A merged
 PR without a linked issue still represents real progress that should
 appear in the report.
 
-## Step 3c — Fetch daily reports
+## Step 3c — Fetch dev-channel daily reports (everyone's, via tdl)
 
-The `/daily-report` skill posts an end-of-day summary to the dev channel and
-saves an exact copy locally. Those saved reports are a primary narrative
-source alongside PR descriptions: they capture incidents, prod status,
-manual interventions, and the *why* behind the work — context that
-git/Linear/PR data misses entirely.
+The whole team posts end-of-day reports in the dev Telegram channel. Export
+the channel over the report range with `tdl` so the synthesis sees
+**everyone's** daily reports plus the surrounding discussion — incidents,
+prod status, manual interventions, decisions, and the *why* behind the
+work. This context is invisible to git/Linear/PR data, and teammates'
+reports cover work that left no trace in this repo at all.
+
+Pre-flight:
 
 ```bash
-# Reports in range: <date>.html (the sent message) + <date>.json sidecar
-ls ~/Github/dotagents/dotclaude/data/daily-report/reports/ 2>/dev/null \
-  | sort | awk -v since="<YYYY-MM-DD>" '$0 >= since'
+if ! command -v tdl >/dev/null; then echo "tdl: NOT INSTALLED"
+elif ! tdl chat ls >/dev/null 2>&1; then echo "tdl: NOT LOGGED IN"
+else echo "tdl: ok"; fi
 ```
 
-Read every `<date>.html` in the range. The `<date>.json` sidecar holds the
-compact `status` / `action_items` / `themes` — useful as a quick scan to
-decide which days deserve a full read when the range is long.
+The work chats live in `~/.config/daily-report-telegram-chats.txt` (one
+chat ID or @username per line, `#` for comments — the same file the
+daily-report skill maintains). If it's missing, run `tdl chat ls`, ask the
+user which chat is the dev channel (AskUserQuestion), and write the file.
+
+Export each configured chat over the range and parse each export
+immediately (export and parse in the same loop — variables set inside a
+piped `while read` subshell don't survive it):
+
+```bash
+SINCE_EPOCH_S=$(date -j -f "%Y-%m-%d" "<YYYY-MM-DD>" +%s)
+NOW_EPOCH_S=$(date +%s)
+for chat in $(grep -v '^#' ~/.config/daily-report-telegram-chats.txt | grep -v '^$'); do
+  out="/tmp/tg-export-$(echo "$chat" | tr -c 'A-Za-z0-9' '-').json"
+  tdl chat export -c "$chat" -T time -i "$SINCE_EPOCH_S,$NOW_EPOCH_S" \
+    --all --with-content -o "$out" 2>/dev/null || { echo "export failed: $chat"; continue; }
+  echo "=== $chat ==="
+  python3 -c "
+import json, sys
+from datetime import datetime
+data = json.load(open(sys.argv[1]))
+for m in data.get('messages', []):
+    txt = m.get('text') or m.get('content') or ''
+    if not txt:
+        continue
+    ts = m.get('date')
+    when = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M') if ts else '?'
+    sender = m.get('from') or m.get('sender') or m.get('from_name') or '?'
+    print(f'[{when}] {sender}: {str(txt)[:400]}')
+" "$out"
+done
+```
+
+If the parsed output looks wrong, inspect the export schema first
+(`head -c 2000 "$out"`) and adapt the field names.
+
+A multi-week range produces a lot of messages — don't read it all
+linearly. First locate the daily reports (grep the parsed output for
+"Daily Report"), read each one, then selectively read the discussion
+around days that reports flag as eventful.
 
 Notes:
 
-- Daily reports cover ALL repos, not just this bot's — use only the themes
-  and status lines about this bot's repo/domain (Step 5 relevance rules
+- Daily reports and channel chatter cover ALL repos, not just this bot's —
+  use only the parts about this bot's repo/domain (Step 5 relevance rules
   apply here too).
-- They're first-person messages written for the dev channel; treat them as
-  context for the synthesis, never quote them verbatim.
+- Telegram is context, not content: it informs the synthesis but is never
+  quoted verbatim, and teammates are never named or attributed in the
+  report.
 - Missing days are normal (no report was sent), not an error.
-- Especially mine them for: incidents and their durations, manual prod
-  interventions, "merged but not deployed" gaps, and decisions that
+- Especially mine the reports for: incidents and their durations, manual
+  prod interventions, "merged but not deployed" gaps, and decisions that
   redirected the work. These feed the executive summary's honest framing —
   a daily report saying "prod was patched manually, fix still in PR" is
   exactly the kind of truth the investor summary must not paper over.
+- The user's own reports are also saved locally at
+  `~/Github/dotagents/dotclaude/data/daily-report/reports/` (`<date>.html`
+  + `<date>.json` sidecar with compact status/themes) — handy as a quick
+  pre-scan of which days were eventful before diving into the export.
 
-If the directory is empty or covers little of the range, note it and
-continue. The dev channel itself can be exported via `tdl` (see the
-daily-report skill's Telegram collector) to recover posted "📋 Daily
-Report" messages, but only do that if the user asks.
+If `tdl` is unavailable (not installed, not logged in) or the export
+fails, fall back to those locally saved reports only, and note in the
+report that team-wide dev-channel context was unavailable.
 
 ## Step 4 — Fetch Linear issues
 
@@ -437,7 +481,10 @@ single one.
   config file at `~/Github/dotagents/dotclaude/data/progress-tracking.json`.
 - **No issues found**: report git activity only, note no Linear activity.
 - **No commits found**: report Linear activity only, note no git activity.
-- **No daily reports in range**: proceed without them; note "daily-report
-  context unavailable for this period" so the user knows the narrative
-  leans on git/Linear/PRs alone.
+- **`tdl` not installed / not logged in / export fails**: fall back to the
+  locally saved daily reports
+  (`~/Github/dotagents/dotclaude/data/daily-report/reports/`); note that
+  team-wide dev-channel context was unavailable. If those are empty too,
+  note "daily-report context unavailable for this period" so the user
+  knows the narrative leans on git/Linear/PRs alone.
 - **First run (last_run is null)**: default to 14 days, tell the user.
