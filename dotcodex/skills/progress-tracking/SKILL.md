@@ -1,6 +1,6 @@
 ---
 name: progress-tracking
-description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, and git history since the last run or a custom time range. Outputs an investor-facing summary and saves it to disk."
+description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, and saved daily reports since the last run or a custom time range. Outputs an investor-facing summary and saves it to disk."
 ---
 
 # progress-tracking
@@ -103,6 +103,43 @@ over issue titles for understanding what was actually accomplished.
 Also use PRs to catch work that has no Linear issue attached. A merged
 PR without a linked issue still represents real progress that should
 appear in the report.
+
+## Step 3c — Fetch daily reports
+
+The daily-report workflow posts an end-of-day summary to the dev channel and
+saves an exact copy locally. Those saved reports are a primary narrative
+source alongside PR descriptions: they capture incidents, prod status,
+manual interventions, and the *why* behind the work — context that
+git/Linear/PR data misses entirely.
+
+```bash
+# Reports in range: <date>.html (the sent message) + <date>.json sidecar
+ls ~/Github/dotagents/dotclaude/data/daily-report/reports/ 2>/dev/null \
+  | sort | awk -v since="<YYYY-MM-DD>" '$0 >= since'
+```
+
+Read every `<date>.html` in the range. The `<date>.json` sidecar holds the
+compact `status` / `action_items` / `themes` — useful as a quick scan to
+decide which days deserve a full read when the range is long.
+
+Notes:
+
+- Daily reports cover ALL repos, not just this bot's — use only the themes
+  and status lines about this bot's repo/domain (Step 5 relevance rules
+  apply here too).
+- They're first-person messages written for the dev channel; treat them as
+  context for the synthesis, never quote them verbatim.
+- Missing days are normal (no report was sent), not an error.
+- Especially mine them for: incidents and their durations, manual prod
+  interventions, "merged but not deployed" gaps, and decisions that
+  redirected the work. These feed the executive summary's honest framing —
+  a daily report saying "prod was patched manually, fix still in PR" is
+  exactly the kind of truth the investor summary must not paper over.
+
+If the directory is empty or covers little of the range, note it and
+continue. The dev channel itself can be exported via `tdl` (see the
+daily-report skill's Telegram collector) to recover posted "📋 Daily
+Report" messages, but only do that if the user asks.
 
 ## Step 4 — Fetch Linear issues
 
@@ -287,6 +324,8 @@ explicitly.
 
 **Do**:
 - Quantify where possible (N issues completed, N bugs fixed, N contributors)
+- Use the daily reports (Step 3c) for incident timelines, durations, and
+  merged-vs-deployed truth — they beat inferring these from git alone
 - Explain *why* work matters, not just *what* was done
 - Be honest about challenges — investors respect transparency
 - Group related work into themes rather than listing individual tickets
@@ -409,4 +448,7 @@ single one.
   config file at `~/Github/dotagents/dotclaude/data/progress-tracking.json`.
 - **No issues found**: report git activity only, note no Linear activity.
 - **No commits found**: report Linear activity only, note no git activity.
+- **No daily reports in range**: proceed without them; note "daily-report
+  context unavailable for this period" so the user knows the narrative
+  leans on git/Linear/PRs alone.
 - **First run (last_run is null)**: default to 14 days, tell the user.
