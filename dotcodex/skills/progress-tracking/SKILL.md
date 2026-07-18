@@ -130,26 +130,58 @@ Export each configured chat over the range and parse each export
 immediately (export and parse in the same loop — variables set inside a
 piped `while read` subshell don't survive it):
 
+Everyone formats their end-of-day post differently — observed first lines
+include `📋 Daily Report — <date>`, `# Daily Update <date>`, a bare
+`UPDATE` / `Update` / `update`, `Daily update — July 16`, `Logging off for
+the day.`, and `Weekly catch-up`. Never grep for one literal header.
+Detect reports with two complementary rules:
+
+1. **First-line pattern** (case-insensitive, after stripping `#`/`*`/emoji):
+   contains `daily report`, `daily update`, `update`, `eod`, `logging off`,
+   `catch-up`, or `weekly` — and the message is ≥ ~200 chars.
+2. **Long-message fallback**: any message ≥ ~1200 chars that the pattern
+   missed is probably a multi-day catch-up, incident writeup, or detailed
+   status post — read those too.
+
+Export with `--raw`: the plain export has NO sender field, but `--raw`
+adds `raw.FromID.UserID`. Map user IDs to names using the teammate-DM
+section of the chats config (each `#` comment line names the person, the
+next line is their numeric user ID — for DMs the chat ID IS the user ID).
+Unmapped IDs stay numeric; that's fine.
+
 ```bash
 SINCE_EPOCH_S=$(date -j -f "%Y-%m-%d" "<YYYY-MM-DD>" +%s)
 NOW_EPOCH_S=$(date +%s)
 for chat in $(grep -v '^#' ~/.config/daily-report-telegram-chats.txt | grep -v '^$'); do
   out="/tmp/tg-export-$(echo "$chat" | tr -c 'A-Za-z0-9' '-').json"
   tdl chat export -c "$chat" -T time -i "$SINCE_EPOCH_S,$NOW_EPOCH_S" \
-    --all --with-content -o "$out" 2>/dev/null || { echo "export failed: $chat"; continue; }
+    --all --with-content --raw -o "$out" 2>/dev/null || { echo "export failed: $chat"; continue; }
   echo "=== $chat ==="
   python3 -c "
-import json, sys
+import json, sys, re, pathlib
 from datetime import datetime
+names = {}
+lines = pathlib.Path('$HOME/.config/daily-report-telegram-chats.txt').read_text().splitlines()
+for i, ln in enumerate(lines):
+    if ln.strip().isdigit() and i > 0 and lines[i-1].startswith('#'):
+        names[int(ln.strip())] = lines[i-1].lstrip('# ').strip()
+pat = re.compile(r'^[#*\s📋]*(daily\s*(report|update)|update\b|eod|logging off|catch[- ]?up|weekly)', re.I)
 data = json.load(open(sys.argv[1]))
 for m in data.get('messages', []):
-    txt = m.get('text') or m.get('content') or ''
-    if not txt:
+    txt = m.get('text') or ''
+    if not isinstance(txt, str) or not txt.strip():
         continue
-    ts = m.get('date')
-    when = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M') if ts else '?'
-    sender = m.get('from') or m.get('sender') or m.get('from_name') or '?'
-    print(f'[{when}] {sender}: {str(txt)[:400]}')
+    uid = ((m.get('raw') or {}).get('FromID') or {}).get('UserID')
+    sender = names.get(uid, uid or '?')
+    when = datetime.fromtimestamp(m['date']).strftime('%Y-%m-%d %H:%M')
+    first = txt.strip().splitlines()[0]
+    tag = 'REPORT' if (pat.match(first.strip()) and len(txt) >= 200) \
+        else ('LONG' if len(txt) >= 1200 else None)
+    if tag:
+        print(f'--- {tag} [{when}] {sender} ---')
+        print(txt[:2500])
+    else:
+        print(f'[{when}] {sender}: {txt[:200]}')
 " "$out"
 done
 ```
@@ -158,9 +190,12 @@ If the parsed output looks wrong, inspect the export schema first
 (`head -c 2000 "$out"`) and adapt the field names.
 
 A multi-week range produces a lot of messages — don't read it all
-linearly. First locate the daily reports (grep the parsed output for
-"Daily Report"), read each one, then selectively read the discussion
-around days that reports flag as eventful.
+linearly. Read every `REPORT` and `LONG` block first, then selectively
+read the short-message discussion around days those blocks flag as
+eventful. If a teammate seems to have posted nothing for a stretch, skim
+that period's short messages before concluding they went quiet — formats
+drift, and a new one belongs in the pattern above (update this file when
+you find one).
 
 Notes:
 
