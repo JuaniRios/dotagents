@@ -202,9 +202,11 @@ Notes:
 - Daily reports and channel chatter cover ALL repos, not just this bot's —
   use only the parts about this bot's repo/domain (Step 5 relevance rules
   apply here too).
-- Telegram is context, not content: it informs the synthesis but is never
-  quoted verbatim, and teammates are never named or attributed in the
-  report.
+- Don't quote messages verbatim, but DO use them for attribution: the
+  sender on each report tells you who did what, which feeds the
+  who-did-what credit in the report (see Step 6). This is the opposite of
+  the daily-report workflow's no-attribution rule — that report is a
+  first-person chat message, this one credits the team.
 - Missing days are normal (no report was sent), not an error.
 - Especially mine the reports for: incidents and their durations, manual
   prod interventions, "merged but not deployed" gaps, and decisions that
@@ -405,6 +407,12 @@ explicitly.
 - Quantify where possible (N issues completed, N bugs fixed, N contributors)
 - Use the daily reports (Step 3c) for incident timelines, durations, and
   merged-vs-deployed truth — they beat inferring these from git alone
+- **Attribute who did what**, by name, throughout — in the summary's
+  headlines and in the detailed themes. Sources: PR authors, commit
+  authors, and the daily-report senders. The report goes out under
+  Juani's name, so his own work is first person ("I built...") and
+  teammates are named ("Gleb built...", "Josh landed..."). A report that
+  credits the team reads more credible, not less.
 - Explain *why* work matters, not just *what* was done
 - Be honest about challenges — investors respect transparency
 - Group related work into themes rather than listing individual tickets
