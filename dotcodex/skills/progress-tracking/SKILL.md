@@ -543,7 +543,10 @@ explicitly.
    a specific person (a decision, coordination, resources), that is a
    direct message to that person, not a line in this document. Open
    decisions may appear as risk statements ("X is undecided; until then
-   Y"), never as requests.
+   Y"), never as requests. Domain note: **RKLB is the designated
+   test/pilot asset** (extended-hours pilot, shared-inventory pilot) —
+   frame RKLB findings as test results that inform a decision, never as
+   material risks or losses by themselves.
 7. **By the next report** — 2-4 concrete expectations for the next
    period, honestly hedged ("should", "aiming for", not "will" unless
    certain). Also close the loop here on the PREVIOUS report's
