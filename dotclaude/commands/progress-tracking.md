@@ -420,6 +420,20 @@ explicitly.
    most want), assets live in prod, PRs landed, issues closed. Only rows
    the data actually supports — never fabricate a metric, and mark
    estimates as such.
+
+   **Profit is always framed as a rate, never just raw dollars.** A
+   higher-up can't judge "+$520" without a denominator. Whenever profit
+   appears (KPI table or prose), give alongside it:
+   - **bps on volume**: net PnL / traded volume — the margin per dollar
+     traded.
+   - **Annualized return on capital (APY)**: net PnL annualized over the
+     period, divided by the capital deployed. Capital comes from the
+     data (dashboard/inventory, daily reports) or the user — if it isn't
+     known, say "proper APY needs the capital base" and give the
+     annualized dollar run-rate instead, clearly labeled as an
+     extrapolation of a short sample.
+   Don't conflate the two: bps-on-volume is a margin, APY is a return on
+   capital. Show the arithmetic inputs so the number is checkable.
 5. **What's in progress / coming next** — Derive a clear workplan from
    the milestone structure, Todo/Backlog issues, and open PRs. Distinguish
    explicitly between: (a) what's on the critical path to the next
@@ -547,7 +561,11 @@ Per claim type:
   breakdown summing to it).
 - **Money, PnL, durations, dates**: traceable verbatim to a specific
   source (a daily report, the PnL endpoint, a git/deploy timestamp).
-  Never derive a new financial number by arithmetic the source didn't do.
+  Never derive a new financial number by arithmetic the source didn't
+  do — with one exception: the rate framings the summary requires (bps
+  on volume, annualized return) MAY be computed from verified inputs,
+  provided the inputs and formula are stated so the number is checkable,
+  and annualized figures are labeled as extrapolations.
 - **Attribution**: the named person matches the PR/commit author or the
   daily-report sender, not an assumption.
 
