@@ -1,6 +1,6 @@
 ---
 name: progress-tracking
-description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, and the dev-channel daily reports (everyone's, exported via tdl) since the last run or a custom time range. Produces a report for higher-ups — a standalone sendable executive summary (TL;DR, KPIs, risks & asks, next-report expectations) plus an internal appendix — and saves both to disk."
+description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and — for hedge-bot — the live /pnl endpoint via the pnl-review skill, since the last run or a custom time range. Produces a report for higher-ups — a standalone sendable executive summary (TL;DR, KPIs, risks & asks, next-report expectations) plus an internal appendix — and saves both to disk."
 ---
 
 # progress-tracking
@@ -245,6 +245,47 @@ Notes:
 If `tdl` is unavailable (not installed, not logged in) or the export
 fails, fall back to those locally saved reports only, and note in the
 report that team-wide dev-channel context was unavailable.
+
+## Step 3d — Query the PnL endpoint (hedge-bot only)
+
+For **hedge-bot**, get profitability numbers first-hand instead of only
+quoting daily reports: read and follow the `pnl-review` skill
+(`~/.codex/skills/pnl-review/SKILL.md`) with the report period as an
+explicit range, e.g. `2026-06-02 to 2026-07-17`. That skill owns the
+endpoint mechanics (ET dates, snapshot pinning, cost-tier rules); follow
+it, don't re-implement curl calls here.
+
+Respect its **3-call budget**. Get everything from as few calls as
+possible — one unfiltered full-period call already returns per-symbol and
+per-day decomposition. Questions to answer for the report:
+
+1. **Full-period net PnL and the gross→net bridge**, onchain volume, and
+   the bps margin (net / onchain notional). This becomes the KPI row and
+   replaces any daily-report-quoted PnL figure as the primary source.
+2. **Which days were negative** (daily windows are GROSS — label them so;
+   "every day positive" claims must say gross or net correctly).
+3. **What drove the profit**: hedged spread capture vs market-move luck vs
+   onchain netting, plus top winner / worst loser symbol and which bucket
+   drove each.
+4. **Cost coverage**: which costs are `not_ingested` — this is the exact
+   wording basis for the "net is an upper bound" caveat. If gas or other
+   costs are untracked, the report must say so.
+5. If extended hours is a period theme and budget allows, the pre+post
+   session split (2 extra calls — that exhausts the budget).
+
+Notes:
+
+- The endpoint has **no capital base** — it cannot give APY. The KPI
+  section's run-rate/APY handling still applies.
+- The data may not cover the whole report period (`availableRange`); if
+  clipped, state the actual PnL window in the report, never imply
+  full-period coverage.
+- **Cross-check against daily-report PnL claims** (feeds Step 6b): when
+  the endpoint and a daily report disagree, prefer the endpoint (it's
+  live data) and note the discrepancy instead of silently picking one.
+- If the endpoint is unreachable (not on the tailnet, host down), fall
+  back to the daily-report-quoted numbers and mark them "as reported on
+  <date>, not independently verified".
 
 ## Step 4 — Fetch Linear issues
 
@@ -658,6 +699,9 @@ correcting.
   config file at `~/Github/dotagents/dotclaude/data/progress-tracking.json`.
 - **No issues found**: report git activity only, note no Linear activity.
 - **No commits found**: report Linear activity only, note no git activity.
+- **`/pnl` endpoint unreachable** (hedge-bot): fall back to
+  daily-report-quoted PnL figures, marked "as reported on <date>, not
+  independently verified"; note the endpoint was unavailable.
 - **`tdl` not installed / not logged in / export fails**: fall back to the
   locally saved daily reports
   (`~/Github/dotagents/dotclaude/data/daily-report/reports/`); note that
