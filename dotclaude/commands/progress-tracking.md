@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(cat:*), Bash(date:*), Bash(jq:*), Bash(tdl:*), Bash(python3:*), Bash(ls:*), Bash(grep:*), Read, Write, Grep, Glob
-description: Gather progress on both bots by default (or hedge-bot / issuance-bot alone) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and the live /pnl endpoint via the pnl-review skill (liquidity side), since the last run or a custom time range. Produces a report for higher-ups — a standalone sendable executive summary (TL;DR, KPIs, risks & asks, next-report expectations), an ASD-STE100 variant of it, plus an internal appendix — and saves all three to disk.
+description: Gather progress on both bots by default (or hedge-bot / issuance-bot alone) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and the live /pnl endpoint via the pnl-review skill (liquidity side), since the last run or a custom time range. Produces a single ASD-STE100 report for higher-ups (TL;DR, KPIs, risks & asks, next-report expectations) and saves it to disk.
 argument-hint: "[both|hedge-bot|issuance-bot] [since <timeframe>]"
 ---
 
@@ -39,7 +39,7 @@ boundaries. Deltas from the single-bot flow:
 
 - **Since date**: the OLDER of the two projects' `last_run` values, so
   nothing falls in a gap. If the two differ materially, say so once in
-  the appendix.
+  the report.
 - **Steps 3/3b (git, PRs)**: run for BOTH repos; keep results labeled per
   repo.
 - **Step 3c (dev channel)**: one export serves both — use everything
@@ -52,12 +52,9 @@ boundaries. Deltas from the single-bot flow:
 - **Step 6 (report)**: one TL;DR and one narrative covering both, with
   every accomplishment/risk labeled by bot where it isn't obvious; the
   KPI table gets per-bot rows where metrics differ (incidents, output)
-  and shared rows where they don't. The appendix keeps per-bot sections
-  (incidents, issues, git activity) and one shared excluded-issues list.
-- **Step 7 (save)**: filenames `combined-<YYYY-MM-DD>.md`,
-  `combined-<YYYY-MM-DD>-summary.md`, and
-  `combined-<YYYY-MM-DD>-summary-ste.md`; update BOTH projects'
-  `last_run`.
+  and shared rows where they don't.
+- **Step 7 (save)**: filename `combined-<YYYY-MM-DD>.md` (the single
+  STE report); update BOTH projects' `last_run`.
 - **Step 2b (continuity)**: read the most recent prior report of ANY kind
   (combined or single-bot) per bot, so expectations from older single-bot
   reports still get closed out.
@@ -398,38 +395,46 @@ Classify each issue as:
 
 ## Step 6 — Compile the report
 
-### Load the voice skill first
+### Write the whole report in ASD-STE100
 
-Before writing any prose, load the `write-as-juani` skill. This report goes out
-under Juani's name, so the narrative has to sound like he wrote it. Without it
-the default voice drifts to generic-professional and reads like a machine wrote
-it.
+The report is written in **ASD-STE100 (Simplified Technical English)** —
+controlled language, not personal voice. Do NOT load the `write-as-juani`
+skill for this report; controlled language and personal voice are mutually
+exclusive by design. STE rules to apply throughout:
 
-Apply the voice to the **prose**: the executive summary, the narrative, and any
-commentary. Leave the structured parts alone (issue tables, PR lists, git
-activity, excluded-issues appendix) — those are data, not voice.
+- Sentences ≤ 25 words, one idea each; paragraphs ≤ 6 sentences.
+- Active voice with named agents ("Rouz built X. Gleb did the reviews.").
+- One meaning per word. In particular, collapse status vocabulary to
+  exactly two states used consistently: **merged** and **deployed**
+  (never "landed", "shipped", "live" as synonyms).
+- No idiom or metaphor ("hard to kill" → "resistant to failures").
+- "approximately", never "~" or "about".
+- Warnings as explicit callouts: "Caution: the profit values do not
+  include gas costs."
+- Domain terms (PnL, hedge, spread, basis points) survive as technical
+  names, which STE permits.
+- Label the report as STE-style, not certified STE (full compliance
+  needs the official dictionary).
 
-Note especially the skill's honesty rule: never oversell maturity or certainty,
-state what is fragile or unfinished out loud. That is not in tension with an
-investor-facing report, it is what makes one credible. See the Tone note below.
+STE does not weaken the honesty rule — it strengthens it: state what is
+fragile or unfinished in plain short sentences, and frame progress
+against real completion, never aspiration.
 
 Structure the report as markdown, ready to copy-paste.
 
-The report has two distinct audiences and sections:
+### Report structure (the single deliverable)
 
-### Section 1: Executive Summary (the deliverable)
+This document IS the deliverable — the only saved output of this command.
+It gets sent as-is to higher-ups (leadership, investors) to communicate
+progress, justify timelines, and build confidence. Write it as a
+standalone narrative: someone should be able to read only this document
+and fully understand what happened, what's at risk, and what's needed
+from them. There is no saved appendix; supporting detail (issue lists,
+incident logs, excluded issues) is shown in the conversation during the
+run, not in the file.
 
-This is not just the most important part — it IS the deliverable. It gets
-sent as-is to higher-ups (leadership, investors) to communicate progress,
-justify timelines, and build confidence. Write it as a standalone
-narrative: someone should be able to read only this section and fully
-understand what happened, what's at risk, and what's needed from them.
-Section 2 is an internal appendix and is NOT part of what gets forwarded
-(Step 7 saves Section 1 as its own sendable file).
-
-**Tone**: Juani's voice (see the `write-as-juani` skill loaded above), at its
-report register: clear, specific, warm, no fluff. Not overly technical but not
-dumbed down. Use domain terms investors would know (hedging, rebalancing,
+**Tone**: ASD-STE100 (see the STE rules above): short, active, specific,
+no fluff. Use domain terms investors would know (hedging, rebalancing,
 deployment infrastructure) but explain system internals in plain English.
 Avoid jargon like "projection views", "optimistic lock conflicts", or
 "apalis jobs" — translate these into what they mean for the product.
@@ -551,81 +556,17 @@ explicitly.
   detailed sections below
 - Pad with filler — every sentence should carry information
 
-### Section 2: Detailed breakdown (reference / appendix)
+### Supporting detail: conversation only, never saved
 
-After the summary, include the full technical detail for the team's own
-reference and for investors who want to drill down:
+The report file contains ONLY the STE document above. Do not save an
+appendix. During the run, show in the conversation (for the user's
+review, not for forwarding):
 
-```markdown
-# Progress Report: <project>
-**Period**: <since_date> to <today>
-**Generated**: <today datetime>
-
-## Summary
-
-<executive summary as described above — multiple paragraphs>
-
----
-
-## Detailed Breakdown
-
-### Linear Issues
-
-#### Completed
-- **<ID>**: <title> — <one-line summary of what was done>
-
-#### In Progress
-- **<ID>**: <title> — <current status / what remains>
-
-#### In Review
-- **<ID>**: <title> — <what this is about>
-
-#### Upcoming
-- **<ID>**: <title> — <what this is about>
-
-#### Backlog (relevant)
-- **<ID>**: <title>
-
-### Git Activity
-- **<N> commits** across the period
-- Key changes:
-  - <grouped summary of commits by area/feature>
-
-### Excluded Issues (for review)
-These RAI issues were updated in the period but deemed unrelated:
-- **<ID>**: <title> — reason: <why excluded>
-
----
-*Generated by /progress-tracking*
-```
-
-Adapt the sections based on what's actually there — omit empty sections.
-Keep descriptions concise. Group related commits rather than listing every
-single one.
-
-### Section 3: STE variant of the summary
-
-After the summary passes verification (Step 6b), also render it as an
-**ASD-STE100 (Simplified Technical English) variant** — same facts, same
-section order, controlled language. This is a side artifact for readers
-who want maximum clarity over voice; the standard summary remains the
-primary sendable. Rules to apply:
-
-- Sentences ≤ 25 words, one idea each; paragraphs ≤ 6 sentences.
-- Active voice with named agents ("Rouz built X. Gleb did the reviews.").
-- One meaning per word. In particular, collapse status vocabulary to
-  exactly two states used consistently: **merged** and **deployed**
-  (never "landed", "shipped", "live" as synonyms).
-- No idiom or metaphor ("hard to kill" → "resistant to failures").
-- "approximately", never "~" or "about".
-- Warnings as explicit callouts: "Caution: the profit values do not
-  include gas costs."
-- Domain terms (PnL, hedge, spread, basis points) survive as technical
-  names, which STE permits.
-- The `write-as-juani` voice does NOT apply to this artifact — controlled
-  language and personal voice are mutually exclusive by design.
-- Label it honestly as STE-style, not certified STE (full compliance
-  needs the official dictionary).
+- The excluded-issues breakdown (hard rule 3) — grouped by project with
+  counts and reasons, plus any borderline inclusion calls.
+- Any material discrepancy the verification pass (Step 6b) found, and
+  what changed because of it.
+- The per-bot incident list if the user asks for drill-down.
 
 ## Step 6b — Verify every claim (mandatory, before saving)
 
@@ -675,22 +616,17 @@ correcting.
 1. **Print the full report** as text output so the user can read and
    copy-paste it.
 
-2. **Save the report** to disk — three files:
+2. **Save the report** to disk — ONE file, the STE report:
 
    ```bash
-   # Full report (summary + internal appendix):
+   # The single deliverable (STE, sendable as-is):
    #   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>.md
-   # Sendable summary (Section 1 only, ready to forward to higher-ups):
-   #   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>-summary.md
-   # STE variant of the summary (Section 3):
-   #   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>-summary-ste.md
    ```
 
-   The summary file is Section 1 verbatim plus the Period header — no
-   appendix, no excluded-issues, no "Generated by" footer. It must stand
-   alone: this is the artifact the user forwards, so nothing in it may
-   depend on the appendix for context. The STE file is the controlled-
-   language rendering of the same content (see Section 3).
+   The file is the STE document plus the Period header — no appendix, no
+   excluded-issues, no "Generated by" footer. It must stand alone: this
+   is the artifact the user forwards. Supporting detail lives in the
+   conversation output only.
 
    Use `Write` to save all three. If files for the same project and date
    already exist, overwrite them (it's a re-run).
@@ -708,23 +644,21 @@ correcting.
 4. **Confirm**:
 
    ```
-   Report saved:  ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>.md
-   Sendable:      ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>-summary.md
-   STE variant:   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>-summary-ste.md
+   Report saved: ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>.md
    Last run updated to: <datetime>
    ```
 
 ## Hard rules
 
 1. **Never modify the repo or Linear issues** — this is read-only.
-2. **Always load the `write-as-juani` skill before writing the report.** The
-   prose (executive summary, narrative, commentary) is in Juani's voice; the
-   structured sections (tables, PR lists, git activity, excluded issues) stay
-   mechanical. Never oversell — frame progress against real completion ratios
-   and name what is unfinished.
-3. **Always show excluded issues** — the user needs to verify filtering.
-4. **Always save all three files to disk** (full report + `-summary.md`
-   sendable + `-summary-ste.md` STE variant) before finishing.
+2. **The report is written in ASD-STE100** (see the STE rules in Step 6).
+   Do NOT load the `write-as-juani` skill for it. Never oversell — frame
+   progress against real completion ratios and name what is unfinished.
+3. **Always show excluded issues in the conversation output** — the
+   user needs to verify filtering. They are never part of the saved
+   report.
+4. **Always save the STE report to disk** (the single output file)
+   before finishing.
 5. **Always update last_run** after a successful run.
 5b. **Always close the loop on the previous report's "By the next
    report" expectations** (Step 2b) — happened, slipped, or dropped,
