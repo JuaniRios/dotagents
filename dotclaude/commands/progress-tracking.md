@@ -586,9 +586,11 @@ the period." Then, per bot:
   `[#<n>](<graphite-url>) — <title> (<author>)`, per repo. These still
   count as real work (see docs/linear-workflow.md).
 - **Activity by person** — a table at the very end, one row per
-  contributor: issues completed (by Linear assignee), PRs landed (by
-  author, both repos), commits, and lines added/removed (both repos'
-  default branches, in-window). **Scope: bot work only.** A Linear
+  contributor: **issues closed** (Linear state Done, by assignee — never
+  open/in-progress states, and Canceled/Duplicate do not count; the
+  column label is "Issues closed"), PRs landed (by author, both repos),
+  commits, and lines added/removed (both repos' default branches,
+  in-window). **Scope: bot work only.** A Linear
   project that mixes bot and non-bot work (e.g. a token-launch ops
   project with oracle/website/setup tasks) must NOT be included
   wholesale — apply the Step 5 relevance judgment per issue, or exclude
