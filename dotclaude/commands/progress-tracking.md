@@ -546,7 +546,8 @@ explicitly.
 - **Attribute who did what**, by name, throughout — in the summary's
   headlines and in the detailed themes. Sources: PR authors, commit
   authors, and the daily-report senders. The report goes out under
-  Juani's name, so his own work is first person ("I built...") and
+  Juan's name, so his own work is first person ("I built...") and
+  he is "Juan" (never "Juani") when named in third person, and
   teammates are named ("Gleb built...", "Josh landed..."). A report that
   credits the team reads more credible, not less.
 - Explain *why* work matters, not just *what* was done
