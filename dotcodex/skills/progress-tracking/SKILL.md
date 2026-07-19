@@ -1,6 +1,6 @@
 ---
 name: progress-tracking
-description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and — for hedge-bot — the live /pnl endpoint via the pnl-review skill, since the last run or a custom time range. Produces a report for higher-ups — a standalone sendable executive summary (TL;DR, KPIs, risks & asks, next-report expectations) plus an internal appendix — and saves both to disk."
+description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on both bots by default (or hedge-bot / issuance-bot alone) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and the live /pnl endpoint via the pnl-review skill (liquidity side), since the last run or a custom time range. Produces a report for higher-ups — a standalone sendable executive summary (TL;DR, KPIs, risks & asks, next-report expectations) plus an internal appendix — and saves both to disk."
 ---
 
 # progress-tracking
@@ -25,9 +25,10 @@ was run, or since a user-specified time range.
 The argument is: `<project> [since <timeframe>]`
 
 Examples:
-- `hedge-bot` — since last run
-- `issuance-bot` — since last run
-- `hedge-bot since last week` — override: last 7 days
+- (empty) or `both` — combined report on both bots, since last run
+- `hedge-bot` — liquidity bot only, since last run
+- `issuance-bot` — issuance bot only, since last run
+- `both since last week` — combined, override: last 7 days
 - `issuance-bot since last 10 days` — override: last 10 days
 - `hedge-bot since 2026-04-01` — override: specific date
 
@@ -35,11 +36,39 @@ Extract:
 1. **Project name** — the first word (e.g., `hedge-bot` or `issuance-bot`)
 2. **Time override** — everything after `since` (optional)
 
-If no project name is provided, default to `hedge-bot`. The two configured
-projects are `hedge-bot` (the liquidity bot, `st0x.liquidity`) and
-`issuance-bot` (the Alpaca ITN issuer, `st0x.issuance`). Both live in the same
-Linear team (RAI), so relevance filtering (Step 5) matters — issues for one
-bot routinely show up when querying the other.
+If no project name is provided, default to **`both`** — a single combined
+report covering the two bots. The configured projects are `hedge-bot` (the
+liquidity bot, `st0x.liquidity`) and `issuance-bot` (the Alpaca ITN issuer,
+`st0x.issuance`); naming one still produces a single-bot report. Both live
+in the same Linear team (RAI), so relevance filtering (Step 5) matters.
+
+### Combined mode (`both`, the default)
+
+One report, both bots — higher-ups care about the product, not repo
+boundaries. Deltas from the single-bot flow:
+
+- **Since date**: the OLDER of the two projects' `last_run` values, so
+  nothing falls in a gap. If the two differ materially, say so once in
+  the appendix.
+- **Steps 3/3b (git, PRs)**: run for BOTH repos; keep results labeled per
+  repo.
+- **Step 3c (dev channel)**: one export serves both — use everything
+  relevant to either bot instead of filtering to one.
+- **Step 3d (PnL)**: still hedge-bot only (issuance has no /pnl); frame
+  it as the liquidity side's number.
+- **Step 5 (relevance)**: include issues relevant to EITHER bot, tagged
+  with which; excluded = belongs to neither (other products). Shared
+  work (event-sorcery, shared crates) is included once, marked shared.
+- **Step 6 (report)**: one TL;DR and one narrative covering both, with
+  every accomplishment/risk labeled by bot where it isn't obvious; the
+  KPI table gets per-bot rows where metrics differ (incidents, output)
+  and shared rows where they don't. The appendix keeps per-bot sections
+  (incidents, issues, git activity) and one shared excluded-issues list.
+- **Step 7 (save)**: filenames `combined-<YYYY-MM-DD>.md` and
+  `combined-<YYYY-MM-DD>-summary.md`; update BOTH projects' `last_run`.
+- **Step 2b (continuity)**: read the most recent prior report of ANY kind
+  (combined or single-bot) per bot, so expectations from older single-bot
+  reports still get closed out.
 
 ## Step 2 — Load config and determine date range
 
