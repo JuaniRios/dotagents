@@ -604,13 +604,18 @@ the period." Then, per bot:
   open/in-progress states, and Canceled/Duplicate do not count; the
   column label is "Issues closed"), PRs landed (by author, both repos),
   commits, and lines added/removed (both repos' default branches,
-  in-window). **Scope: bot work only.** A Linear
-  project that mixes bot and non-bot work (e.g. a token-launch ops
-  project with oracle/website/setup tasks) must NOT be included
-  wholesale — apply the Step 5 relevance judgment per issue, or exclude
-  the project from the appendix and stats and keep only its bot-facing
-  facts in the narrative. The same scope applies to the appendix issue
-  lists. Map handles
+  in-window). **Scope: bot work only — defined by the repos and their
+  surrounding logic, never by Linear project names.** Projects are
+  transient (several exist per bot at any time, depending on the goal),
+  so apply the Step 5 relevance judgment: an issue counts when its work
+  serves one of the two repos or their surrounding logic, whatever
+  project it sits in. A project that mixes bot and non-bot work (e.g. a
+  token-launch ops project with oracle/website/setup tasks) must NOT be
+  included wholesale. When describing the scope in the report, say
+  "issues about the two bot repositories and their surrounding logic" —
+  never enumerate Linear projects as the definition. The same scope
+  applies to the appendix issue lists (grouping BY project for display
+  is fine; scoping by project is not). Map handles
   to real names via the team map (memory: team-handle-names; Linear
   assignees like `juan1` = Juan). Unassigned Done issues get their own
   row. These are activity indicators, not performance scores — say so
