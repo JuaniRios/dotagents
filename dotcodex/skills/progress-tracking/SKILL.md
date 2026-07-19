@@ -606,7 +606,14 @@ Per claim type:
   chat does not count without one of those two.
 - **"Deployed" / "live"**: a successful deploy run post-dating the merge,
   or a daily report explicitly stating the deploy happened. Merged is not
-  deployed.
+  deployed. **And check what the deploy run actually deployed**: a deploy
+  workflow can ship only part of the tree (e.g. the NixOS system/infra
+  profile without the new service build), so a successful run at commit X
+  does NOT prove every change merged at X is live. Read the workflow/run
+  to see which component it deploys, and corroborate with a second
+  signal: a daily report naming the deploy's scope, or runtime evidence
+  (version/health endpoint, observed behavior). If the scope cannot be
+  confirmed, write "merged; deployment not confirmed" — never "deployed".
 - **Counts** (PRs, issues, commits, contributors): recompute with a fresh
   query while writing, and sanity-check against a second angle (e.g.
   merged-PR count vs master commit count; issue count vs the state
