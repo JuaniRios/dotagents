@@ -596,6 +596,14 @@ the period." Then, per bot:
 - **PRs without a linked issue**: one line each,
   `[#<n>](<graphite-url>) — <title> (<author>)`, per repo. These still
   count as real work (see docs/linear-workflow.md).
+- **Activity by person** — a table at the very end, one row per
+  contributor: issues completed (by Linear assignee, included projects
+  only), PRs landed (by author, both repos), commits, and lines
+  added/removed (both repos' default branches, in-window). Map handles
+  to real names via the team map (memory: team-handle-names; Linear
+  assignees like `juan1` = Juan). Unassigned Done issues get their own
+  row. These are activity indicators, not performance scores — say so
+  in one line under the table.
 
 **Hyperlinks everywhere**: every issue and PR reference in the report —
 body and appendix — is a link. Issues link to Linear
