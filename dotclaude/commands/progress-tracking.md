@@ -427,7 +427,10 @@ Structure the report as markdown, ready to copy-paste.
 The title of the report is exactly:
 `# St0x liquidity and issuance bots progress report` (combined mode).
 For a single-bot run, use `# St0x liquidity bot progress report` or
-`# St0x issuance bot progress report`. Below the title, the Period line.
+`# St0x issuance bot progress report`. Below the title, the Period line,
+then exactly this note line:
+`**Note**: This report uses Simplified Technical English (ASD-STE100
+style): short sentences, active voice, one meaning for each word.`
 
 This document IS the deliverable — the only saved output of this command.
 It gets sent as-is to higher-ups (leadership, investors) to communicate
