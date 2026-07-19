@@ -62,7 +62,8 @@ boundaries. Deltas from the single-bot flow:
 - **Step 6 (report)**: one TL;DR and one narrative covering both, with
   every accomplishment/risk labeled by bot where it isn't obvious; the
   KPI table gets per-bot rows where metrics differ (incidents, output)
-  and shared rows where they don't.
+  and shared rows where they don't. The optional completed-work appendix
+  gets per-bot subsections.
 - **Step 7 (save)**: filename `combined-<YYYY-MM-DD>.md` (the single
   STE report); update BOTH projects' `last_run`.
 - **Step 2b (continuity)**: read the most recent prior report of ANY kind
@@ -576,11 +577,35 @@ explicitly.
   detailed sections below
 - Pad with filler — every sentence should carry information
 
-### Supporting detail: conversation only, never saved
+### Final section: completed work in detail (optional reading)
 
-The report file contains ONLY the STE document above. Do not save an
-appendix. During the run, show in the conversation (for the user's
-review, not for forwarding):
+The report ends with one appendix section inside the same file:
+`## Appendix: completed work in detail (optional reading)`. Open it with
+one STE line: "This section is optional. It lists the completed work of
+the period." Then, per bot:
+
+- **Issues completed** in the window: one line each,
+  `RAI-<id> — <short title>`, grouped by project/theme.
+- **PRs landed** in the window: one line each,
+  `#<number> — <title> (<author>)`, grouped by theme or stack (sorting
+  by PR number approximates stack order).
+
+**Counting rule (Graphite merge queue)**: a PR counts as landed when it
+is GitHub-merged OR closed with the `externally-merged` label. The merge
+queue closes PRs instead of merging them; the label (applied by the
+externally-merged workflow and its push-to-master backstop) marks the
+real merges. A closed PR without the label counts only if its commit is
+on master. Never list a closed, unmerged, unlabeled PR as landed.
+
+Lists are data: STE prose rules apply to the sentences, but the lists
+themselves stay mechanical.
+
+### Other supporting detail: conversation only, never saved
+
+Apart from the optional completed-work appendix above, the report file
+contains ONLY the STE document. Do not save any other appendix. During
+the run, show in the conversation (for the user's review, not for
+forwarding):
 
 - The excluded-issues breakdown (hard rule 3) — grouped by project with
   counts and reasons, plus any borderline inclusion calls.
