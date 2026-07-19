@@ -406,39 +406,51 @@ Classify each issue as:
 
 ## Step 6 — Compile the report
 
-### Load the voice skill first
+### Write the whole report in ASD-STE100
 
-Before writing any prose, read the `write-as-juani` skill
-(`~/.codex/skills/write-as-juani/SKILL.md`) and follow it. This report goes out
-under Juani's name, so the narrative has to sound like he wrote it. Without it
-the default voice drifts to generic-professional and reads like a machine wrote
-it.
+The report is written in **ASD-STE100 (Simplified Technical English)** —
+controlled language, not personal voice. Do NOT apply the `write-as-juani`
+voice to this report; controlled language and personal voice are mutually
+exclusive by design. STE rules to apply throughout:
 
-Apply the voice to the **prose**: the executive summary, the narrative, and any
-commentary. Leave the structured parts alone (issue tables, PR lists, git
-activity, excluded-issues appendix) — those are data, not voice.
+- Sentences ≤ 25 words, one idea each; paragraphs ≤ 6 sentences.
+- Active voice with named agents ("Rouz built X. Gleb did the reviews.").
+- One meaning per word. In particular, collapse status vocabulary to
+  exactly two states used consistently: **merged** and **deployed**
+  (never "landed", "shipped", "live" as synonyms).
+- No idiom or metaphor ("hard to kill" → "resistant to failures").
+- "approximately", never "~" or "about".
+- Warnings as explicit callouts: "Caution: the profit values do not
+  include gas costs."
+- Domain terms (PnL, hedge, spread, basis points) survive as technical
+  names, which STE permits.
+- Label the report as STE-style, not certified STE (full compliance
+  needs the official dictionary).
 
-Note especially the honesty rule: never oversell maturity or certainty, state
-what is fragile or unfinished out loud. That is not in tension with an
-investor-facing report, it is what makes one credible. See the Tone note below.
+STE does not weaken the honesty rule — it strengthens it: state what is
+fragile or unfinished in plain short sentences, and frame progress
+against real completion, never aspiration.
 
 Structure the report as markdown, ready to copy-paste.
 
-The report has two distinct audiences and sections:
+### Report structure (the single deliverable)
 
-### Section 1: Executive Summary (the deliverable)
+The title of the report is exactly:
+`# St0x liquidity and issuance bots progress report` (combined mode).
+For a single-bot run, use `# St0x liquidity bot progress report` or
+`# St0x issuance bot progress report`. Below the title, the Period line.
 
-This is not just the most important part — it IS the deliverable. It gets
-sent as-is to higher-ups (leadership, investors) to communicate progress,
-justify timelines, and build confidence. Write it as a standalone
-narrative: someone should be able to read only this section and fully
-understand what happened, what's at risk, and what's needed from them.
-Section 2 is an internal appendix and is NOT part of what gets forwarded
-(Step 7 saves Section 1 as its own sendable file).
+This document IS the deliverable — the only saved output of this command.
+It gets sent as-is to higher-ups (leadership, investors) to communicate
+progress, justify timelines, and build confidence. Write it as a
+standalone narrative: someone should be able to read only this document
+and fully understand what happened, what's at risk, and what's needed
+from them. There is no saved appendix; supporting detail (issue lists,
+incident logs, excluded issues) is shown in the conversation during the
+run, not in the file.
 
-**Tone**: Juani's voice (see the `write-as-juani` skill read above), at its
-report register: clear, specific, warm, no fluff. Not overly technical but not
-dumbed down. Use domain terms investors would know (hedging, rebalancing,
+**Tone**: ASD-STE100 (see the STE rules above): short, active, specific,
+no fluff. Use domain terms investors would know (hedging, rebalancing,
 deployment infrastructure) but explain system internals in plain English.
 Avoid jargon like "projection views", "optimistic lock conflicts", or
 "apalis jobs" — translate these into what they mean for the product.
