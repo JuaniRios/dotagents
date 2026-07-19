@@ -518,6 +518,45 @@ Adapt the sections based on what's actually there — omit empty sections.
 Keep descriptions concise. Group related commits rather than listing every
 single one.
 
+## Step 6b — Verify every claim (mandatory, before saving)
+
+This report goes to higher-ups who WILL poke at the numbers. A claim that
+dies under one follow-up question poisons trust in the whole report. So
+before saving anything: extract every checkable claim from the drafted
+summary — every count, amount, date, duration, and status word ("merged",
+"deployed", "in review", "live", "fixed") — and verify each one against a
+**second, independent source**. One query feeding prose directly is how
+the wrong-PR-count mistake happened.
+
+Per claim type:
+
+- **"In review" / "open"**: re-fetch PR state live at write time (never
+  reuse a count fetched earlier in the session), AND confirm the changes
+  are absent from master (`git log origin/master --grep` on a few
+  titles). Bucket before citing (active / paused / stale — see Step 3b);
+  name the stack structure if you cite a stack.
+- **"Merged"**: the commit is on `origin/master`, or the PR is closed
+  with the `externally-merged` label. A PR someone said was merged in
+  chat does not count without one of those two.
+- **"Deployed" / "live"**: a successful deploy run post-dating the merge,
+  or a daily report explicitly stating the deploy happened. Merged is not
+  deployed.
+- **Counts** (PRs, issues, commits, contributors): recompute with a fresh
+  query while writing, and sanity-check against a second angle (e.g.
+  merged-PR count vs master commit count; issue count vs the state
+  breakdown summing to it).
+- **Money, PnL, durations, dates**: traceable verbatim to a specific
+  source (a daily report, the PnL endpoint, a git/deploy timestamp).
+  Never derive a new financial number by arithmetic the source didn't do.
+- **Attribution**: the named person matches the PR/commit author or the
+  daily-report sender, not an assumption.
+
+For each claim the check fails or can't be run: fix the claim, soften it
+("about", "as of <date>", "reported as"), or cut it. Never ship a claim
+you couldn't verify twice. If a verification materially changes a number
+already discussed with the user, say so explicitly rather than silently
+correcting.
+
 ## Step 7 — Output and save
 
 1. **Print the full report** as text output so the user can read and
@@ -573,6 +612,10 @@ single one.
 5b. **Always close the loop on the previous report's "By the next
    report" expectations** (Step 2b) — happened, slipped, or dropped,
    each with a one-line why. Never silently drop a prior commitment.
+5c. **Every checkable claim must survive the Step 6b verification pass**
+   (second independent source, fresh queries at write time) before the
+   report is saved. A number that can't be verified twice gets softened
+   or cut, never shipped as-is.
 6. **Use `--json` for Linear queries** — parse structured data, don't
    scrape human-readable output.
 7. **Expand `~` in repo paths** before passing to git commands.
