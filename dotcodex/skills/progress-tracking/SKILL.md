@@ -597,9 +597,15 @@ the period." Then, per bot:
   `[#<n>](<graphite-url>) — <title> (<author>)`, per repo. These still
   count as real work (see docs/linear-workflow.md).
 - **Activity by person** — a table at the very end, one row per
-  contributor: issues completed (by Linear assignee, included projects
-  only), PRs landed (by author, both repos), commits, and lines
-  added/removed (both repos' default branches, in-window). Map handles
+  contributor: issues completed (by Linear assignee), PRs landed (by
+  author, both repos), commits, and lines added/removed (both repos'
+  default branches, in-window). **Scope: bot work only.** A Linear
+  project that mixes bot and non-bot work (e.g. a token-launch ops
+  project with oracle/website/setup tasks) must NOT be included
+  wholesale — apply the Step 5 relevance judgment per issue, or exclude
+  the project from the appendix and stats and keep only its bot-facing
+  facts in the narrative. The same scope applies to the appendix issue
+  lists. Map handles
   to real names via the team map (memory: team-handle-names; Linear
   assignees like `juan1` = Juan). Unassigned Done issues get their own
   row. These are activity indicators, not performance scores — say so
