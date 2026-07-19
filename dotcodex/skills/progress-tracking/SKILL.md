@@ -120,6 +120,14 @@ Also use PRs to catch work that has no Linear issue attached. A merged
 PR without a linked issue still represents real progress that should
 appear in the report.
 
+**Never cite the raw open-PR count as "work in review."** Open PRs are a
+mix: the active stack being landed, deliberately paused stacks, and stale
+drafts from months ago. Fetch `createdAt` and `isDraft`, bucket by
+recency (active = created in the last ~2 weeks or clearly being iterated;
+paused = tied to a Paused Linear project; stale = months old, untouched),
+and report the buckets — "~30 active PRs (56 open in total incl. paused
+stacks and stale drafts)", never just "56 PRs in review".
+
 ## Step 3c — Fetch dev-channel daily reports (everyone's, via tdl)
 
 The whole team posts end-of-day reports in the dev Telegram channel. Export
