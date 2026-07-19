@@ -585,11 +585,23 @@ The report ends with one appendix section inside the same file:
 one STE line: "This section is optional. It lists the completed work of
 the period." Then, per bot:
 
-- **Issues completed** in the window: one line each,
-  `RAI-<id> — <short title>`, grouped by project/theme.
-- **PRs landed** in the window: one line each,
-  `#<number> — <title> (<author>)`, grouped by theme or stack (sorting
-  by PR number approximates stack order).
+- **Work items completed** in the window, grouped by project/theme —
+  one line per item, **issue first** (the issue is the main work item),
+  with its associated PR(s) on the same line:
+  `[RAI-<id>](https://linear.app/makeitrain/issue/RAI-<id>) — <short
+  title> ([#<n>](https://app.graphite.dev/github/pr/<org>/<repo>/<n>))`.
+  Associate a PR to an issue when the PR title or body references the
+  issue ID (fetch PR bodies to build the mapping). An issue with no PR
+  gets no parenthesis; an issue with several PRs lists them all.
+- **PRs without a linked issue**: one line each,
+  `[#<n>](<graphite-url>) — <title> (<author>)`, per repo. These still
+  count as real work (see docs/linear-workflow.md).
+
+**Hyperlinks everywhere**: every issue and PR reference in the report —
+body and appendix — is a link. Issues link to Linear
+(`https://linear.app/makeitrain/issue/<ID>`); PRs link to Graphite
+(`https://app.graphite.dev/github/pr/<org>/<repo>/<number>`, org is
+`ST0x-Technology` for both bot repos).
 
 **Counting rule (Graphite merge queue)**: a PR counts as landed when it
 is GitHub-merged OR closed with the `externally-merged` label. The merge
