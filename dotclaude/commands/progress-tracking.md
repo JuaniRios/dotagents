@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(cat:*), Bash(date:*), Bash(jq:*), Bash(tdl:*), Bash(python3:*), Bash(ls:*), Bash(grep:*), Read, Write, Grep, Glob
-description: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, and the dev-channel daily reports (everyone's, exported via tdl) since the last run or a custom time range. Outputs an investor-facing summary and saves it to disk.
+description: Gather progress on a project (hedge-bot or issuance-bot) from Linear issues, GitHub PRs, git history, and the dev-channel daily reports (everyone's, exported via tdl) since the last run or a custom time range. Produces a report for higher-ups — a standalone sendable executive summary (TL;DR, KPIs, risks & asks, next-report expectations) plus an internal appendix — and saves both to disk.
 argument-hint: <project> [since <timeframe>]
 ---
 
@@ -50,6 +50,22 @@ Determine the "since" date:
   (first run), default to 14 days ago and tell the user.
 
 Store the resolved date as an ISO 8601 string for use in queries.
+
+## Step 2b — Load the previous report (continuity)
+
+Reports live in `~/Github/dotagents/dotclaude/data/progress-tracking/reports/`.
+Read the most recent prior report for this project (skip one dated today —
+that's a re-run). Two things to extract:
+
+1. Its **"By the next report"** section (if present): every expectation
+   listed there must be answered in the new report — happened, slipped, or
+   dropped, with a one-line why. This is what makes consecutive reports
+   accountable to each other; a higher-up reading two reports in a row
+   should never wonder what happened to a promise.
+2. Its period end date, to sanity-check the new range has no gap.
+
+If no prior report exists, note "first report — no continuity data" and
+move on.
 
 ## Step 3 — Fetch git history
 
@@ -322,12 +338,15 @@ Structure the report as markdown, ready to copy-paste.
 
 The report has two distinct audiences and sections:
 
-### Section 1: Executive Summary (investor-facing)
+### Section 1: Executive Summary (the deliverable)
 
-This is the most important part of the report. It will be sent to
-investors to communicate progress, justify timelines, and build
-confidence. Write it as a standalone narrative — someone should be able
-to read only this section and fully understand what happened.
+This is not just the most important part — it IS the deliverable. It gets
+sent as-is to higher-ups (leadership, investors) to communicate progress,
+justify timelines, and build confidence. Write it as a standalone
+narrative: someone should be able to read only this section and fully
+understand what happened, what's at risk, and what's needed from them.
+Section 2 is an internal appendix and is NOT part of what gets forwarded
+(Step 7 saves Section 1 as its own sendable file).
 
 **Tone**: Juani's voice (see the `write-as-juani` skill loaded above), at its
 report register: clear, specific, warm, no fluff. Not overly technical but not
@@ -374,22 +393,44 @@ if it isn't. If two workstreams are parallel and independent, say so
 explicitly.
 
 **Structure the summary as**:
-1. **Opening paragraph** — what the team focused on this period and why.
+1. **TL;DR** — 3-5 lines at the very top: overall status in one sentence,
+   the single biggest win of the period, the single biggest open risk,
+   and (if any) the one thing needed from the reader. A higher-up who
+   reads nothing else should still walk away correctly informed.
+2. **Opening paragraph** — what the team focused on this period and why.
    Frame the work in terms of product goals (e.g., "production readiness",
    "risk reduction", "operational reliability") not just tickets closed.
-2. **Key accomplishments** — 3-5 bullet points, each 1-2 sentences.
+3. **Key accomplishments** — 3-5 bullet points, each 1-2 sentences.
    Lead with the business impact, then briefly mention what was done
    technically. E.g., "Eliminated a class of stuck-transfer failures that
    could block rebalancing indefinitely — added timeout-based recovery so
    the system self-heals without manual intervention."
-3. **What's in progress / coming next** — Derive a clear workplan from
+4. **KPIs** — a small scannable table of the period's numbers, drawn from
+   the PnL data, daily reports, and incident log where available. Typical
+   rows: PnL / volume (when known), incidents and total degraded hours,
+   funds lost (state "$0" explicitly when true — it's the number they
+   most want), assets live in prod, PRs landed, issues closed. Only rows
+   the data actually supports — never fabricate a metric, and mark
+   estimates as such.
+5. **What's in progress / coming next** — Derive a clear workplan from
    the milestone structure, Todo/Backlog issues, and open PRs. Distinguish
    explicitly between: (a) what's on the critical path to the next
    milestone, (b) what's running in parallel and not blocking, and (c)
    what's deferred / background. Don't guess at sequencing — use the
    milestone and issue data to reason about it. Frame delays honestly but
    constructively.
-4. **Team output stats** — one line with commit count, contributors, and
+6. **Risks & asks** — the top 2-3 open risks stated plainly (what could
+   go wrong, what's being done about it, what recurs until a fix
+   deploys), followed by anything needed FROM the reader: decisions,
+   coordination, resources, approvals. Higher-ups read reports partly to
+   learn what's needed from them — if nothing is needed, say so in one
+   line rather than omitting the section.
+7. **By the next report** — 2-4 concrete expectations for the next
+   period, honestly hedged ("should", "aiming for", not "will" unless
+   certain). Also close the loop here on the PREVIOUS report's
+   expectations (from Step 2b): each one gets happened / slipped /
+   dropped with a one-line why.
+8. **Team output stats** — one line with commit count, contributors, and
    issues completed. Demonstrates velocity without belaboring it.
 
 **Do**:
@@ -474,14 +515,22 @@ single one.
 1. **Print the full report** as text output so the user can read and
    copy-paste it.
 
-2. **Save the report** to disk:
+2. **Save the report** to disk — two files:
 
    ```bash
-   # File: ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>.md
+   # Full report (summary + internal appendix):
+   #   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>.md
+   # Sendable summary (Section 1 only, ready to forward to higher-ups):
+   #   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>-summary.md
    ```
 
-   Use `Write` to save the report. If a report for the same project and
-   date already exists, overwrite it (it's a re-run).
+   The summary file is Section 1 verbatim plus the Period header — no
+   appendix, no excluded-issues, no "Generated by" footer. It must stand
+   alone: this is the artifact the user forwards, so nothing in it may
+   depend on the appendix for context.
+
+   Use `Write` to save both. If files for the same project and date
+   already exist, overwrite them (it's a re-run).
 
 3. **Update the last-run timestamp** in the config:
 
@@ -496,7 +545,8 @@ single one.
 4. **Confirm**:
 
    ```
-   Report saved: ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>.md
+   Report saved:  ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>.md
+   Sendable:      ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>-summary.md
    Last run updated to: <datetime>
    ```
 
@@ -509,8 +559,12 @@ single one.
    mechanical. Never oversell — frame progress against real completion ratios
    and name what is unfinished.
 3. **Always show excluded issues** — the user needs to verify filtering.
-4. **Always save the report to disk** before finishing.
+4. **Always save both files to disk** (full report + `-summary.md`
+   sendable) before finishing.
 5. **Always update last_run** after a successful run.
+5b. **Always close the loop on the previous report's "By the next
+   report" expectations** (Step 2b) — happened, slipped, or dropped,
+   each with a one-line why. Never silently drop a prior commitment.
 6. **Use `--json` for Linear queries** — parse structured data, don't
    scrape human-readable output.
 7. **Expand `~` in repo paths** before passing to git commands.
