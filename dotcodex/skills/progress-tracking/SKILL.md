@@ -1,6 +1,6 @@
 ---
 name: progress-tracking
-description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on both bots by default (or hedge-bot / issuance-bot alone) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and the live /pnl endpoint via the pnl-review skill (liquidity side), since the last run or a custom time range. Produces a single ASD-STE100 report for higher-ups (TL;DR, KPIs, risks & asks, next-report expectations) and saves it to disk."
+description: "Use when the user asks to run the former Claude /progress-tracking workflow: Gather progress on both bots by default (or hedge-bot / issuance-bot alone) from Linear issues, GitHub PRs, git history, the dev-channel daily reports (everyone's, exported via tdl), and the live /pnl endpoint via the pnl-review skill (liquidity side), since the last run or a custom time range. Produces a single ASD-STE100 report for higher-ups (TL;DR, KPIs, risks, next-report expectations) and saves it to disk."
 ---
 
 # progress-tracking
@@ -498,9 +498,9 @@ explicitly.
 
 **Structure the summary as**:
 1. **TL;DR** — 3-5 lines at the very top: overall status in one sentence,
-   the single biggest win of the period, the single biggest open risk,
-   and (if any) the one thing needed from the reader. A higher-up who
-   reads nothing else should still walk away correctly informed.
+   the single biggest win of the period, and the single biggest open
+   risk. A higher-up who reads nothing else should still walk away
+   correctly informed.
 2. **Opening paragraph** — what the team focused on this period and why.
    Frame the work in terms of product goals (e.g., "production readiness",
    "risk reduction", "operational reliability") not just tickets closed.
@@ -537,12 +537,13 @@ explicitly.
    what's deferred / background. Don't guess at sequencing — use the
    milestone and issue data to reason about it. Frame delays honestly but
    constructively.
-6. **Risks & asks** — the top 2-3 open risks stated plainly (what could
-   go wrong, what's being done about it, what recurs until a fix
-   deploys), followed by anything needed FROM the reader: decisions,
-   coordination, resources, approvals. Higher-ups read reports partly to
-   learn what's needed from them — if nothing is needed, say so in one
-   line rather than omitting the section.
+6. **Risks** — the top 2-4 open risks stated plainly: what could go
+   wrong, what's being done about it, what recurs until a fix deploys.
+   A progress report informs; it never asks. If something is needed from
+   a specific person (a decision, coordination, resources), that is a
+   direct message to that person, not a line in this document. Open
+   decisions may appear as risk statements ("X is undecided; until then
+   Y"), never as requests.
 7. **By the next report** — 2-4 concrete expectations for the next
    period, honestly hedged ("should", "aiming for", not "will" unless
    certain). Also close the loop here on the PREVIOUS report's
