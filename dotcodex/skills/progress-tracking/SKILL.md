@@ -735,7 +735,19 @@ correcting.
    ```
    Report saved: ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>.md
    Last run updated to: <datetime>
+
+   To convert to PDF:
+     cd ~/Github/dotagents/dotclaude/data/progress-tracking/reports && \
+     TYPST_FONT_PATHS="/System/Library/Fonts:/System/Library/Fonts/Supplemental:/Library/Fonts:$HOME/Library/Fonts" \
+     nix shell nixpkgs#pandoc nixpkgs#typst -c pandoc -f gfm <project>-<date>.md \
+       -o <project>-<date>.pdf --pdf-engine=typst -V mainfont="Helvetica Neue" \
+       -V papersize=a4 -V margin-x=2cm -V margin-y=2.2cm
    ```
+
+   Print the PDF command with the real filename substituted — it is
+   informational; do not run it unless asked. (`-f gfm` avoids pandoc's
+   citation parsing on @-words; TYPST_FONT_PATHS lets nix-typst see the
+   macOS fonts.)
 
 ## Hard rules
 
