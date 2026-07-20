@@ -11,6 +11,28 @@ Diagnose and recover stuck issuance-bot transactions on production. This
 workflow handles financial operations and production state, so it is
 intentionally strict.
 
+## Deployment Layout (NixOS)
+
+Production runs on a **NixOS** box (`st0x-issuance-nixos`), deployed via
+`deploy-rs` from the `~/Github/st0x.issuance` repo — NOT the old Docker/Ubuntu
+droplet. Do not assume Docker paths or on-box scripting tools:
+
+- No `docker`: the bot is a systemd unit `st0x-issuance.service`, listening on
+  `:8000`. There is no container image tag; the deployed git revision is
+  recorded at `/run/st0x/st0x-issuance.git-rev`.
+- No `python3` or `jq` on the box: consume raw `curl` JSON, and run any Decimal
+  arithmetic or pretty-printing locally on your workstation.
+- Database: `/mnt/data/issuance.db`.
+- Secrets: agenix-decrypted at `/run/agenix/st0x-issuance.env` (`ISSUER_API_KEY`,
+  `ALPACA_*`, `RPC_URL`, …). Read them only inside the remote SSH command that
+  needs them; never echo them.
+- New droplet after a rebuild ⇒ new host key/IP: if SSH reports
+  `Host key verification failed`, add the key once with `ssh-keyscan` before
+  retrying, and update the recorded host if the IP changed.
+- Run remote `sqlite3` queries through a single-quoted heredoc piped to
+  `bash -s` so SQL string literals survive shell quoting, rather than nesting
+  double-quoted SQL inside a quoted `ssh "..."` argument.
+
 ## Host Resolution
 
 Resolve the production host from, in order:
@@ -44,11 +66,13 @@ the master, and reduce the number of separate `ssh` calls.
 
 1. Identify deployed version.
    - SSH to the host (through the multiplexed master).
-   - Inspect the running Docker image tag or service metadata.
-   - The deployed image is the latest commit on `master` for the issuance repo,
-     so `force-complete`/`close` are available unless the running tag is visibly
-     behind `master`. Reference the deployed tag in findings, not an unrelated
-     local branch.
+   - Read the deployed git revision from `/run/st0x/st0x-issuance.git-rev` and
+     the unit state via `systemctl show st0x-issuance.service` (systemd, not
+     Docker).
+   - The deployed build is the latest commit on `master` for the issuance repo,
+     so `force-complete`/`close` are available unless the recorded revision is
+     visibly behind `master`. Reference the deployed revision in findings, not
+     an unrelated local branch.
 
 2. Fetch stuck issuance records.
    - Query the admin stuck endpoint using the remote `ISSUER_API_KEY`.
@@ -105,5 +129,8 @@ the master, and reduce the number of separate `ssh` calls.
 - Never print API keys, RPC URLs, database URLs, private keys, or bearer tokens.
 - Never mutate production state while inspecting a different deployed version
   than the one you described.
+- Never assume the old Docker/Ubuntu layout; the box is NixOS/systemd with no
+  `docker`, `python3`, or `jq`, DB at `/mnt/data/issuance.db`, and secrets at
+  `/run/agenix/st0x-issuance.env`.
 - Never open a fresh SSH connection per command; reuse one multiplexed master
   connection and batch remote work to avoid the server's connection rate limit.

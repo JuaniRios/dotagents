@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(ssh:*), Bash(curl:*), Bash(python3:*), Bash(sqlite3:*), Bash(cast:*), Bash(docker:*), Bash(grep:*), Bash(awk:*), Bash(cut:*), Bash(sed:*), Bash(git:*), Bash(paste:*), Read, AskUserQuestion
+allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(python3:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(grep:*), Bash(awk:*), Bash(cut:*), Bash(sed:*), Bash(git:*), Bash(paste:*), Read, AskUserQuestion
 description: Check, diagnose, and recover stuck issuance-bot transactions (mints and redemptions). Calls /admin/stuck, attempts /admin/recover on each, searches on-chain for unrecorded burns, and presents a findings table. Destructive actions (force-complete, close) require explicit user confirmation.
 argument-hint: "[host]"
 ---
@@ -19,8 +19,28 @@ nor an argument provides a host, tell the user:
 "No host configured. Either pass it as an argument or add `ISSUANCE_HOST=root@<ip>` to `~/Github/dotagents/.env`."
 and stop.
 
-Set `DB=/mnt/volume_nyc3_02/issuance.db` for all commands below, then set up a
+Set `DB=/mnt/data/issuance.db` for all commands below, then set up a
 **multiplexed SSH connection** (next section) before running anything remote.
+
+## Deployment layout (NixOS — read before running remote commands)
+
+Production runs on a **NixOS** box (`st0x-issuance-nixos`), deployed via
+`deploy-rs` from the `~/Github/st0x.issuance` repo. This is NOT the old
+Docker/Ubuntu droplet, so the classic paths and tooling do not apply:
+
+- **No `docker`** — the bot is a systemd unit `st0x-issuance.service`
+  (`systemctl status st0x-issuance`), listening on `:8000`.
+- **No `python3` or `jq` on the box** — consume raw JSON from `curl`; do any
+  pretty-printing or `python3` Decimal math **locally** on your laptop.
+- **DB**: `/mnt/data/issuance.db` (`DB` above).
+- **Secrets**: agenix-decrypted at `/run/agenix/st0x-issuance.env` (holds
+  `ISSUER_API_KEY`, `ALPACA_*`, `RPC_URL`, …) — read them only inside the remote
+  SSH command that needs them. NOT `/mnt/volume_nyc3_02/.env`.
+- **Deployed git rev**: `/run/st0x/st0x-issuance.git-rev`.
+- **New droplet ⇒ new host key / IP**: if the master fails with `Host key
+  verification failed`, add the key once with
+  `ssh-keyscan -t ed25519,rsa <ip> >> ~/.ssh/known_hosts`, then retry. If the IP
+  itself changed, update `ISSUANCE_HOST` in `~/Github/dotagents/.env` first.
 
 ## SSH connection reuse (CRITICAL — set up first)
 
@@ -58,23 +78,27 @@ When finished, close the master:
 
 ## 0. Check deployed version
 
-The deployed image is always the latest commit on `master` for the issuance
-repo. Confirm the running tag and note it for the report:
+The deployed build is always the latest commit on `master` for the issuance
+repo. Confirm the running revision and note it for the report (NixOS/systemd —
+there is no Docker image tag; `deploy-rs` records the git rev):
 
 ```bash
-ssh $HOST 'docker inspect issuance-bot --format "{{.Config.Image}}"'
+ssh $HOST 'cat /run/st0x/st0x-issuance.git-rev 2>/dev/null; systemctl show st0x-issuance.service -p ActiveState -p ExecMainStartTimestamp --value'
 ```
 
 `force-complete/redemption` and `close/redemption` have long been on `master`,
 so they are available on the deployed build — no commit-ancestry check needed.
-Only if the deployed tag is conspicuously old (image tag does not match the
-latest `master` commit) should you verify the endpoint exists before relying on
-it. Otherwise treat `FORCE_COMPLETE_DEPLOYED=true`.
+Only if the recorded git rev is conspicuously old (does not match the latest
+`master` commit) should you verify the endpoint exists before relying on it.
+Otherwise treat `FORCE_COMPLETE_DEPLOYED=true`.
 
 ## 1. Fetch stuck transactions
 
+The box has no `python3`/`jq`, so consume the raw JSON directly (pretty-print
+locally afterward if you need to):
+
 ```bash
-ssh $HOST 'KEY=$(grep "ISSUER_API_KEY" /mnt/volume_nyc3_02/.env | cut -d= -f2) && curl -s -H "X-API-KEY: $KEY" http://localhost:8000/admin/stuck | python3 -m json.tool'
+ssh $HOST 'KEY=$(grep "ISSUER_API_KEY" /run/agenix/st0x-issuance.env | cut -d= -f2 | tr -d "\"") && curl -s -w "\nHTTP %{http_code}\n" -H "X-API-KEY: $KEY" http://localhost:8000/admin/stuck'
 ```
 
 If the list is empty, report "✅ No stuck transactions" and stop.
@@ -90,7 +114,7 @@ Batch all redemptions into ONE `ssh` call (loop in the remote shell, read the
 key once) rather than one `ssh` per aggregate:
 
 ```bash
-ssh $HOST "KEY=\$(grep ISSUER_API_KEY /mnt/volume_nyc3_02/.env | cut -d= -f2) && \
+ssh $HOST "KEY=\$(grep ISSUER_API_KEY /run/agenix/st0x-issuance.env | cut -d= -f2 | tr -d '\"') && \
   for AGG in <agg_id_1> <agg_id_2> <agg_id_3>; do \
     echo \"== \$AGG ==\"; \
     curl -s -w '\n%{http_code}\n' -X POST -H \"X-API-KEY: \$KEY\" \
@@ -112,7 +136,7 @@ Interpret the HTTP status:
 For stuck **mints**, run instead:
 
 ```bash
-ssh $HOST "KEY=\$(grep ISSUER_API_KEY /mnt/volume_nyc3_02/.env | cut -d= -f2) && \
+ssh $HOST "KEY=\$(grep ISSUER_API_KEY /run/agenix/st0x-issuance.env | cut -d= -f2 | tr -d '\"') && \
   curl -s -w '\n%{http_code}' -X POST -H 'X-API-KEY: '\$KEY \
   http://localhost:8000/admin/reprocess/mint/<aggregate_id>"
 ```
@@ -123,14 +147,21 @@ Run this for each redemption classified "🔍 Needs on-chain check" in Step 2.
 
 ### 3a. Get full event history
 
+Run remote `sqlite3` via a **single-quoted heredoc** piped to `bash -s` so the
+SQL single-quote string literals survive intact. Do NOT embed double-quoted SQL
+inside `ssh "sqlite3 \"…\""` — the nested shell quoting mangles it and SQLite
+then reads `'Redemption'` as a column name.
+
 ```bash
-ssh $HOST "sqlite3 $DB \"
+ssh $HOST bash -s <<'EOF'
+sqlite3 /mnt/data/issuance.db "
 SELECT event_type, json(payload)
 FROM events
 WHERE aggregate_type = 'Redemption'
   AND aggregate_id = '<aggregate_id>'
 ORDER BY sequence;
-\""
+"
+EOF
 ```
 
 Extract from the payload:
@@ -140,14 +171,19 @@ Extract from the payload:
 
 ### 3b. Get vault address
 
+Same heredoc pattern (the quoted `<<'EOF'` also stops the local shell from
+expanding the `$.Added...` JSON paths):
+
 ```bash
-ssh $HOST "sqlite3 $DB \"
-SELECT json_extract(payload, '$.Added.vault')
+ssh $HOST bash -s <<'EOF'
+sqlite3 /mnt/data/issuance.db "
+SELECT json_extract(payload, '\$.Added.vault')
 FROM events
 WHERE aggregate_type = 'TokenizedAsset'
   AND event_type = 'TokenizedAssetEvent::Added'
-  AND json_extract(payload, '$.Added.underlying') = '<underlying>';
-\""
+  AND json_extract(payload, '\$.Added.underlying') = '<underlying>';
+"
+EOF
 ```
 
 Also check for `VaultAddressUpdated` events on the same asset — use the most
@@ -155,7 +191,8 @@ recent vault address if any updates exist.
 
 ### 3c. Compute expected share amount in hex
 
-Use exact decimal arithmetic (never float) to avoid precision loss:
+Run this **locally** on your laptop (the NixOS box has no `python3`). Use exact
+decimal arithmetic (never float) to avoid precision loss:
 
 ```bash
 python3 -c "
@@ -172,7 +209,7 @@ print(hex(total))
 Get the RPC URL from the server:
 
 ```bash
-HTTPS_RPC=$(ssh $HOST 'grep "RPC_URL" /mnt/volume_nyc3_02/.env | cut -d= -f2 | sed "s|wss://|https://|"')
+HTTPS_RPC=$(ssh $HOST 'grep "RPC_URL" /run/agenix/st0x-issuance.env | cut -d= -f2 | tr -d "\"" | sed "s|wss://|https://|"')
 ```
 
 Search for `Transfer(any → 0x0)` matching the exact share amount:
@@ -227,7 +264,7 @@ to the latest `master` commit, and stop.
 If confirmed and the endpoint is deployed:
 
 ```bash
-ssh $HOST "KEY=\$(grep ISSUER_API_KEY /mnt/volume_nyc3_02/.env | cut -d= -f2) && \
+ssh $HOST "KEY=\$(grep ISSUER_API_KEY /run/agenix/st0x-issuance.env | cut -d= -f2 | tr -d '\"') && \
   curl -s -X POST \
   -H 'X-API-KEY: '\$KEY \
   -H 'Content-Type: application/json' \
@@ -264,8 +301,9 @@ After the table, list any items needing follow-up as a numbered action list.
    was found on-chain — approximate matches are not sufficient.
 3. Always use `from decimal import Decimal` for share amount computation —
    never `float` (precision loss corrupts 18-decimal amounts).
-4. Never read `.env` files locally — evaluate `$ISSUER_API_KEY` and `$RPC_URL`
-   only on the remote server within a single SSH command.
+4. Never read secret files locally — evaluate `$ISSUER_API_KEY` and `$RPC_URL`
+   only on the remote server (from `/run/agenix/st0x-issuance.env`) within a
+   single SSH command.
 5. Never run destructive DB operations (DROP, DELETE, UPDATE) on the remote
    SQLite database.
 6. The deployed image is the latest `master` commit, which already includes
@@ -275,6 +313,19 @@ After the table, list any items needing follow-up as a numbered action list.
 ## Failure modes
 
 - **SSH permission denied**: check SSH key access to the server.
+- **`Host key verification failed`** (new droplet after a migration/rebuild):
+  add the key once with `ssh-keyscan -t ed25519,rsa <ip> >> ~/.ssh/known_hosts`,
+  then re-open the master. If the IP changed too, update `ISSUANCE_HOST` in
+  `~/Github/dotagents/.env` first.
+- **`docker: command not found` / `/mnt/volume_nyc3_02/...: No such file`**:
+  you're on the NixOS box — use the paths in "Deployment layout" above
+  (`st0x-issuance.service`, `/mnt/data/issuance.db`,
+  `/run/agenix/st0x-issuance.env`), not the old Docker droplet paths.
+- **`python3: command not found` on the box**: the box has no `python3`/`jq` —
+  consume raw JSON, and run any `python3` Decimal math locally (Step 3c).
+- **`sqlite3` error `no such column: "Redemption"`**: the SQL string literals
+  got mangled by nested shell quoting — run the query through the single-quoted
+  `<<'EOF'` heredoc to `bash -s` shown in Step 3a.
 - **`ssh: connect to host ... port 22: Connection refused`**: you opened too
   many separate SSH connections and tripped the server's rate limit. Ensure the
   multiplexed master from "SSH connection reuse" is up and that every `ssh` goes
