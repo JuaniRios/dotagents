@@ -16,14 +16,9 @@ Modify an existing Claude Code command/skill or Codex skill in
 ```
 ~/Github/dotagents/          # git repo (source of truth)
   dotclaude/
-    commands/                # Claude slash commands — one .md file each
-    ci.md                    #   invoked as /ci
-    pr-description.md        #   invoked as /pr-description
-    review-loop.md
-    review-pr.md
-    worktree.md
-    new-skill.md
     skills/                  # Claude skills — subdirectory with SKILL.md each
+      ci/SKILL.md            #   invoked as /ci
+      pr-description/SKILL.md   # invoked as /pr-description
       graphite/SKILL.md
       linear-cli/SKILL.md
       edit-skill/SKILL.md    #   this skill
@@ -33,23 +28,18 @@ Modify an existing Claude Code command/skill or Codex skill in
       graphite/SKILL.md
 
 ~/.claude/
-  commands -> ~/Github/dotagents/dotclaude/commands
   skills   -> ~/Github/dotagents/dotclaude/skills
 
 ~/.codex/
   skills   -> ~/Github/dotagents/dotcodex/skills
 ```
 
-### File formats
+There is no `dotclaude/commands/` directory. Claude Code merged custom slash
+commands into skills, so a skill at `dotclaude/skills/<name>/SKILL.md` both
+creates `/<name>` and can be invoked by Claude on its own when the
+`description` matches. Everything on the Claude side is a skill.
 
-**Claude commands** — `dotclaude/commands/<name>.md`:
-```yaml
----
-allowed-tools: <tools>
-description: <one-line>
-argument-hint: <hint>  # optional
----
-```
+### File formats
 
 **Claude skills** — `dotclaude/skills/<name>/SKILL.md`:
 ```yaml
@@ -57,6 +47,8 @@ argument-hint: <hint>  # optional
 name: <name>
 description: <one-line — Claude matches against this>
 allowed-tools: <tools>
+argument-hint: <hint>              # optional
+disable-model-invocation: true     # optional — slash-only, no auto-invoke
 ---
 ```
 
@@ -132,9 +124,6 @@ Determine which skill or command the user wants to edit from the
 conversation context. If ambiguous, list what's available and ask:
 
 ```bash
-echo "Claude commands:"
-ls ~/Github/dotagents/dotclaude/commands/*.md 2>/dev/null | xargs -I{} basename {} .md
-echo ""
 echo "Claude skills:"
 ls -d ~/Github/dotagents/dotclaude/skills/*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {}
 echo ""
@@ -145,17 +134,14 @@ ls -d ~/Github/dotagents/dotcodex/skills/*/SKILL.md 2>/dev/null | xargs -I{} dir
 Then ask the user which one to edit using `AskUserQuestion`.
 
 Resolve the file path:
-- Claude command `<name>`: `~/Github/dotagents/dotclaude/commands/<name>.md`
 - Claude skill `<name>`: `~/Github/dotagents/dotclaude/skills/<name>/SKILL.md`
 - Codex skill `<name>`: `~/Github/dotagents/dotcodex/skills/<name>/SKILL.md`
 
 **Always probe for a paired counterpart.** After resolving the target file,
-check whether a same-named file exists in the other agent's tree (Claude
-`commands/<name>.md` or `skills/<name>/SKILL.md` ↔ Codex `skills/<name>/SKILL.md`):
+check whether a same-named skill exists in the other agent's tree:
 
 ```bash
-ls ~/Github/dotagents/dotclaude/commands/<name>.md \
-   ~/Github/dotagents/dotclaude/skills/<name>/SKILL.md \
+ls ~/Github/dotagents/dotclaude/skills/<name>/SKILL.md \
    ~/Github/dotagents/dotcodex/skills/<name>/SKILL.md 2>/dev/null
 ```
 
