@@ -647,25 +647,27 @@ comment object. Use the finding's file path and line number from the
 review.
 
 **Comment tone rules:**
-- **Invoke the `write-as-juani` skill and write every comment (and the
-  copy-paste overall assessment in Step 2) in that voice.** The comments are
-  posted as the user, so they must read like he typed them: terse, honest,
-  warm, no fluff. The rules below are the review-specific constraints on top
-  of that voice — where they conflict, the severity-prefix and no-em-dash
-  rules here win.
-- Write like a human colleague leaving a quick review comment. Short,
-  direct, conversational.
-- No numbered prefixes like `#1`, `**#2 (HIGH)**`, etc. Just say what
-  the issue is.
+- **Write every comment (and the copy-paste overall assessment in Step 2)
+  in ASD-STE100 Simplified Technical English.** Use short sentences with one
+  idea each. Use the active voice and the present tense where you can. Use
+  simple, common words, and avoid long noun clusters and jargon pile-ups.
+  Keep code identifiers (`fn_name`, `file:line`, type names) verbatim. The
+  goal is a comment a non-native English reader can follow with zero
+  ambiguity. The review-specific rules below still apply on top; where they
+  conflict, the severity-prefix and no-em-dash rules here win.
+- Write clearly and directly. STE reads clinical rather than chatty, and
+  that is correct here: prioritize an unambiguous read over a casual tone.
+- No numbered prefixes like `#1`, `**#2 (HIGH)**`, etc. Just state the
+  issue.
 - No em dashes. Use commas, periods, or "because" instead.
 - **Start each comment with a lowercase severity prefix** that signals
   how important the finding is: `critical:`, `should fix:`, `minor:`,
-  or `nit:`. This replaces bold labels and numbered prefixes. The
-  prefix is short and natural, like a colleague would write.
+  or `nit:`. This replaces bold labels and numbered prefixes. Keep the
+  prefix short and plain.
 - No bullet-point lists inside a single comment unless genuinely needed.
-  Prefer short paragraphs.
-- Keep each comment to 2-4 sentences. Say what's wrong, why it matters,
-  and what to do about it.
+  Prefer short sentences in a short paragraph.
+- Keep each comment tight: say what is wrong, why it matters, and what to
+  do. Use as many short sentences as those three points need, and no filler.
 
 **Leave the review `body` empty.** Do NOT post the overall assessment to
 the draft — GitHub would attach it as the review summary, and the user
@@ -713,8 +715,8 @@ Omitting `event` is what makes the review a draft.
 This creates a draft review visible only to you (the reviewer) until
 submitted. Tell the user the draft is up, then **print the overall
 assessment in the conversation as a fenced copy-paste block** (written in
-the `write-as-juani` voice, same as the comments) so they can paste it into
-the review summary box when they submit from the GitHub UI:
+ASD-STE100 Simplified Technical English, same as the comments) so they can
+paste it into the review summary box when they submit from the GitHub UI:
 
 > Draft review created with N inline comments. The overall summary is not
 > part of the draft — paste this into the review summary box when you
@@ -763,15 +765,16 @@ itself to be targeted inline feedback, not a wall of text.
 5. Stay in the session after printing — this command is a conversation,
    not a one-shot.
 6. If the PR is closed/merged/draft, ask before proceeding.
-7. **Posted reviews must read like the user wrote them — invoke the
-   `write-as-juani` skill for every posted comment and the copy-paste
-   assessment.** No AI references (models, agents, Claude, Codex, Gemini).
-   No numbered finding prefixes (`#1`, `**#2 (HIGH)**`). No em dashes. No
-   bold severity labels. Use lowercase severity prefixes (`critical:`,
-   `should fix:`, `minor:`, `nit:`) to signal importance. Write short,
-   direct comments in his voice. The `findings.json` and `review.md` on
-   disk can use structured formatting (they're local), but anything posted
-   to GitHub must be in-voice, conversational, and concise.
+7. **Posted reviews must be written in ASD-STE100 Simplified Technical
+   English** for every posted comment and the copy-paste assessment: short
+   sentences, one idea each, active voice, present tense, simple words, code
+   identifiers verbatim, unambiguous for a non-native reader. No AI
+   references (models, agents, Claude, Codex, Gemini). No numbered finding
+   prefixes (`#1`, `**#2 (HIGH)**`). No em dashes. No bold severity labels.
+   Use lowercase severity prefixes (`critical:`, `should fix:`, `minor:`,
+   `nit:`) to signal importance. The `findings.json` and `review.md` on disk
+   can use structured formatting (they're local), but anything posted to
+   GitHub must be in STE.
 8. **Maximize inline comments; the draft `body` stays empty.** Never post
    the overall assessment to the draft review — leave `body` empty and
    print the 2-3 sentence assessment in the conversation as a copy-paste
