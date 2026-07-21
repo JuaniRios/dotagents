@@ -1,6 +1,6 @@
 ---
 name: feedback-review
-description: "Use when the user asks to run the former Claude /feedback-review workflow: Triage and address PR feedback (CodeRabbit inline, out-of-diff, and human reviewer comments) on the current branch. Summarizes each comment with severity and agent opinion, asks which to implement, fixes chosen ones, and drafts replies for dismissed or differently-handled comments."
+description: "Triage and address review feedback on the current branch's PR. Use whenever CodeRabbit or a human reviewer has left comments, or the user says address the review, handle the feedback, respond to the comments, or CodeRabbit found things. Summarizes each comment (CodeRabbit inline, out-of-diff, and human) with severity and an opinion, asks which to implement, fixes those, and drafts replies for the rest."
 ---
 
 # feedback-review

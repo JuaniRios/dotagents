@@ -1,6 +1,6 @@
 ---
 name: telegram-message
-description: "Use when the user asks to run the former Claude /telegram-message workflow: Format and send a message to Telegram via the bot API. Accepts a message description or content and formats it with Telegram HTML for pasting in group chat."
+description: "Format and send a message to Telegram via the bot API. Use whenever the user asks to send, post, or share something on Telegram or in the group chat — a summary, reminder, report, or update. Formats the content with Telegram HTML and sends it."
 ---
 
 # telegram-message

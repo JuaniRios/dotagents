@@ -1,6 +1,6 @@
 ---
 name: ci
-description: "Use when the user asks to run the former Claude /ci workflow: Fast local CI — check, clippy, fmt, nixfmt, pre-commit on changed files. Catches most issues in ~3 min. Use /ci-fix for full GitHub CI failures."
+description: "Run fast local CI before submitting — check, clippy, fmt, nixfmt, pre-commit on changed files (~3 min). Use whenever the user says run CI, lint, format, check it builds, or make sure it compiles, and before pushing or `gt submit`ing Rust or Nix changes. Use ci-fix instead when CI already failed on GitHub."
 ---
 
 # ci

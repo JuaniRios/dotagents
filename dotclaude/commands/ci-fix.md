@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gh:*), Bash(nix:*), Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(cat:*), Bash(grep:*), Bash(tail:*), Bash(wc:*), Bash(test:*), Bash(nixfmt:*), Bash(find:*), Bash(cd:*), Bash(bun:*), Read, Edit, Write, Grep, Glob, TodoWrite, Skill
-description: Fetch the latest GitHub CI run for this branch, diagnose failures, fix them locally, and amend.
+description: "Fix CI failures that already happened on GitHub. Use whenever CI is red, a check failed, the pipeline broke, or the user says CI is failing / fix CI. Fetches the latest run for this branch, diagnoses the failures, fixes them locally, and amends. Use ci instead for a pre-submit local check."
 argument-hint: "[stack]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(mkdir:*), Bash(cat:*), Bash(test:*), Bash(basename:*), Bash(date:*), Bash(wc:*), Bash(command:*), Read, Write, Skill
-description: Draft a concise, scannable PR title and description in plain ASD-STE100 English for the current branch from the full parent-aware diff and repo template, run a Codex reviewer over the draft, then push to GitHub automatically.
+description: "Draft and publish a pull-request title and description for the current branch. Use whenever a PR needs its description written or updated — after opening a PR, after `gt submit`, when a PR still has a placeholder title, or when the user says write/update the PR description, PR body, or PR summary. Reads the full parent-aware diff and repo template, writes plain ASD-STE100 English, runs a Codex reviewer over the draft, then pushes to GitHub."
 argument-hint: [--stack] (optional — draft descriptions for every branch in the stack)
 ---
 
