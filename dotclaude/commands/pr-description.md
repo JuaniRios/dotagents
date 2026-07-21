@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(mkdir:*), Bash(cat:*), Bash(test:*), Bash(basename:*), Bash(date:*), Bash(wc:*), Bash(command:*), Read, Write, Skill
-description: Draft a concise, scannable PR title and description for the current branch from the full parent-aware diff and repo template, run a Codex reviewer over the draft, then push to GitHub automatically.
+description: Draft a concise, scannable PR title and description in plain ASD-STE100 English for the current branch from the full parent-aware diff and repo template, run a Codex reviewer over the draft, then push to GitHub automatically.
 argument-hint: [--stack] (optional — draft descriptions for every branch in the stack)
 ---
 
@@ -171,6 +171,17 @@ Fill every section of the template based on what you read in the diff. Rules:
   parentheses, "so"/"cause", or split the sentence. No corporate boilerplate
   ("Key changes include", "In summary", "It's worth noting"), no adjective
   inflation ("comprehensive", "seamless", "robust"). Always use the Oxford comma.
+- **Write in ASD-STE100 (Simplified Technical English).** The reviewer may be a
+  non-native speaker, so the body must read once and be clear. One idea per
+  sentence. Sentences under ~20 words. Active voice with a real subject ("the
+  handler retries the burn", not "the burn is retried"). Simple tenses only. One
+  word for one thing, reused across the whole body, no synonym variation. No noun
+  stack longer than 3 words. Keep the articles and the "that". No Latin ("e.g.",
+  "i.e.", "etc." become "for example", "that is", "and so on") and no slash
+  conjunctions ("and/or"). Expand an acronym the first time it appears. This
+  governs *sentence construction* only, it never overrides the voice, the
+  abbreviations, or the honesty from `write-as-me`. If plainness and the voice
+  conflict, keep the voice and split the sentence.
 - **Concise and scannable above all.** Someone with zero context should grasp
   the PR in under 30 seconds. Prefer tight bullets over paragraphs, lead with
   the point, and cut filler. A reviewer should never have to wade through prose
@@ -259,7 +270,12 @@ seconds, or is it bloated with filler? (3) is anything important MISSING — a
 breaking change, migration, or risky change not called out? (4) is it IN VOICE —
 terse and direct, no em dashes anywhere, no corporate boilerplate ('Key changes
 include', 'In summary', 'It's worth noting'), no adjective inflation
-('comprehensive', 'seamless', 'robust'), no closing summary paragraph?
+('comprehensive', 'seamless', 'robust'), no closing summary paragraph? (5) is it
+PLAIN — does it follow ASD-STE100 (Simplified Technical English)? One idea per
+sentence, sentences under ~20 words, active voice with a real subject, simple
+tenses, one word per concept reused throughout, no noun stack over 3 words, no
+Latin abbreviations ('e.g.', 'i.e.', 'etc.'), no 'and/or'. Flag any sentence a
+non-native speaker would have to read twice.
 
 If the draft is good as-is, reply with exactly 'LGTM'. Otherwise reply with a
 short bulleted list of concrete fixes (what to cut, what to add, what to
@@ -379,3 +395,7 @@ And a one-line confirmation per PR updated.
     an invented URL.
 11. Always draft the body in the user's voice via the `write-as-me` skill,
     loaded in step 1. Never ship a PR description containing an em dash.
+12. Always write the body in ASD-STE100 (Simplified Technical English): one idea
+    per sentence, short sentences, active voice, simple tenses, one word per
+    concept, no Latin abbreviations. Plainness shapes the sentences, the voice
+    still owns the tone.

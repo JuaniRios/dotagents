@@ -1,6 +1,6 @@
 ---
 name: pr-description
-description: "Use when the user asks to run the former Claude /pr-description workflow: Draft a concise, scannable PR title and description for the current branch from the full parent-aware diff and repo template, run a Codex review pass over the draft, then push to GitHub automatically."
+description: "Use when the user asks to run the former Claude /pr-description workflow: Draft a concise, scannable PR title and description in plain ASD-STE100 English for the current branch from the full parent-aware diff and repo template, run a Codex review pass over the draft, then push to GitHub automatically."
 ---
 
 # pr-description
@@ -181,6 +181,17 @@ Fill every section of the template based on what you read in the diff. Rules:
   parentheses, "so"/"cause", or split the sentence. No corporate boilerplate
   ("Key changes include", "In summary", "It's worth noting"), no adjective
   inflation ("comprehensive", "seamless", "robust"). Always use the Oxford comma.
+- **Write in ASD-STE100 (Simplified Technical English).** The reviewer may be a
+  non-native speaker, so the body must read once and be clear. One idea per
+  sentence. Sentences under ~20 words. Active voice with a real subject ("the
+  handler retries the burn", not "the burn is retried"). Simple tenses only. One
+  word for one thing, reused across the whole body, no synonym variation. No noun
+  stack longer than 3 words. Keep the articles and the "that". No Latin ("e.g.",
+  "i.e.", "etc." become "for example", "that is", "and so on") and no slash
+  conjunctions ("and/or"). Expand an acronym the first time it appears. This
+  governs *sentence construction* only, it never overrides the voice, the
+  abbreviations, or the honesty from `write-as-me`. If plainness and the voice
+  conflict, keep the voice and split the sentence.
 - **Concise and scannable above all.** Someone with zero context should grasp
   the PR in under 30 seconds. Prefer tight bullets over paragraphs, lead with
   the point, and cut filler. A reviewer should never have to wade through prose
@@ -246,7 +257,7 @@ Before pushing, run a rigorous review pass over the draft. This replaces the
 human confirmation step — the review is the quality gate.
 
 Re-read the draft (title + body) against the parent-aware diff with fresh,
-skeptical eyes and check three things:
+skeptical eyes and check five things:
 
 1. **Accurate** — does every claim match what the diff actually does? No
    invented tests, changes, or impact. Strip anything the diff doesn't support.
@@ -260,10 +271,15 @@ skeptical eyes and check three things:
    adjective inflation ("comprehensive", "seamless", "robust"), no closing
    summary paragraph? Rewrite anything that reads as a competent stranger being
    professional.
+5. **Plain (ASD-STE100)** — one idea per sentence, sentences under ~20 words,
+   active voice with a real subject, simple tenses, one word per concept reused
+   throughout, no noun stack over 3 words, no Latin abbreviations ("e.g.",
+   "i.e.", "etc."), no "and/or". Split any sentence a non-native speaker would
+   have to read twice.
 
 If you want an independent second opinion and `codex` is available on PATH
 (`command -v codex`), you may shell out for one — pipe the diff and draft to
-`codex exec --sandbox read-only -m gpt-5.5 -C "$repo_root" "<draft + the three
+`codex exec --sandbox read-only -m gpt-5.5 -C "$repo_root" "<draft + the five
 checks above; reply 'LGTM' or a terse bulleted list of fixes>"` and read its
 reply. This is optional; the in-context review above is sufficient.
 
@@ -363,3 +379,7 @@ And a one-line confirmation per PR updated.
     an invented URL.
 11. Always draft the body in the user's voice via the `write-as-me` skill,
     read in step 1. Never ship a PR description containing an em dash.
+12. Always write the body in ASD-STE100 (Simplified Technical English): one idea
+    per sentence, short sentences, active voice, simple tenses, one word per
+    concept, no Latin abbreviations. Plainness shapes the sentences, the voice
+    still owns the tone.
