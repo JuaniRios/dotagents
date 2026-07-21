@@ -3,6 +3,7 @@ name: night-shift
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, AskUserQuestion, TodoWrite, EnterPlanMode, ExitPlanMode
 description: Autonomous overnight execution. Plans with you while you're awake, then drives the work itself under a self-armed goal loop while you sleep — never prompting, deciding everything itself, self-reviewing, verifying locally, logging decisions and deferred items to a doc, and reviewing it interactively when you return.
 argument-hint: <task description>
+disable-model-invocation: true
 ---
 
 # Night shift

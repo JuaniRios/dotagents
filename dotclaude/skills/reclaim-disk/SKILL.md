@@ -3,6 +3,7 @@ name: reclaim-disk
 allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), AskUserQuestion
 description: Reclaim SSD space by finding and (with per-category approval) deleting Rust target/ dirs, Foundry/cast caches, gitignored temp bloat, and other dev build artifacts across ~/Github. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
 argument-hint: [--dry-run] [--min-ignored <MB>] [extra-root ...]
+disable-model-invocation: true
 ---
 
 # Reclaim disk — prune build bloat with per-category approval

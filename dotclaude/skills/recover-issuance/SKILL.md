@@ -3,6 +3,7 @@ name: recover-issuance
 allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(python3:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(grep:*), Bash(awk:*), Bash(cut:*), Bash(sed:*), Bash(git:*), Bash(paste:*), Read, AskUserQuestion
 description: Check, diagnose, and recover stuck issuance-bot transactions (mints and redemptions). Calls /admin/stuck, attempts /admin/recover on each, searches on-chain for unrecorded burns, and presents a findings table. Destructive actions (force-complete, close) require explicit user confirmation.
 argument-hint: "[host]"
+disable-model-invocation: true
 ---
 
 Check and recover stuck issuance-bot transactions on the production server.
