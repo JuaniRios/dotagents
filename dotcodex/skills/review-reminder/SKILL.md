@@ -114,8 +114,8 @@ sensible order rather than raw PR-number order.
 
 ## Step 5 — Compose the message
 
-Read the `write-as-juani` skill (`~/.codex/skills/write-as-juani/SKILL.md`) and
-follow it. This message is sent to a colleague as Juani, so the framing line and
+Read the `write-as-me` skill (`~/.codex/skills/write-as-me/SKILL.md`) and
+follow it. This message is sent to a colleague as him, so the framing line and
 every PR description have to sound like him: short, direct, warm, no corporate
 padding.
 
@@ -208,8 +208,8 @@ else:
    tell the user to copy-paste it manually.
 7. Only re-request review for PRs the user explicitly opts to include as
    re-reviews — never re-request reviewers silently or for fresh-review PRs.
-8. Always read and follow the `write-as-juani` skill before composing — the
-   message goes to a teammate as Juani. Voice the prose (the ask, section
+8. Always read and follow the `write-as-me` skill before composing — the
+   message goes to a teammate as him. Voice the prose (the ask, section
    names, PR descriptions); leave the links and structure exactly as templated.
 
 ## Failure modes

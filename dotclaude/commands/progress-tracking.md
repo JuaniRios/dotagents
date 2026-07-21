@@ -399,7 +399,7 @@ Classify each issue as:
 ### Write the whole report in ASD-STE100
 
 The report is written in **ASD-STE100 (Simplified Technical English)** —
-controlled language, not personal voice. Do NOT load the `write-as-juani`
+controlled language, not personal voice. Do NOT load the `write-as-me`
 skill for this report; controlled language and personal voice are mutually
 exclusive by design. STE rules to apply throughout:
 
@@ -742,7 +742,7 @@ correcting.
 
 1. **Never modify the repo or Linear issues** — this is read-only.
 2. **The report is written in ASD-STE100** (see the STE rules in Step 6).
-   Do NOT load the `write-as-juani` skill for it. Never oversell — frame
+   Do NOT load the `write-as-me` skill for it. Never oversell — frame
    progress against real completion ratios and name what is unfinished.
 3. **Always show excluded issues in the conversation output** — the
    user needs to verify filtering. They are never part of the saved

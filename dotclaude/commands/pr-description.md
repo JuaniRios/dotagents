@@ -14,11 +14,11 @@ Follow these steps precisely.
 
 ## 1. Load the required skills
 
-Invoke **both** the `graphite` skill and the `write-as-juani` skill before doing
+Invoke **both** the `graphite` skill and the `write-as-me` skill before doing
 anything else.
 
 - `graphite` — version-control mechanics for the rest of this command.
-- `write-as-juani` — the PR body is prose the user ships under his own name, so
+- `write-as-me` — the PR body is prose the user ships under his own name, so
   it MUST be in his voice, not yours. Load it now, before you read the diff, so
   the first draft is already in-voice. "Match the repo's tone" in step 6 is about
   *structure* (bullets vs prose); this is about *voice*. Do not skip it just
@@ -165,7 +165,7 @@ Draft a concise PR title (under 70 characters). Rules:
 
 Fill every section of the template based on what you read in the diff. Rules:
 
-- **Write it in the user's voice, per the `write-as-juani` skill loaded in step
+- **Write it in the user's voice, per the `write-as-me` skill loaded in step
   1.** Register 3-4. Terse, why-first, honest about what's untested or fragile,
   concrete identifiers in backticks. **Never use em dashes** — use a comma,
   parentheses, "so"/"cause", or split the sentence. No corporate boilerplate
@@ -377,5 +377,5 @@ And a one-line confirmation per PR updated.
 10. Preserve screenshots across regeneration — re-insert already-hosted image
     markdown verbatim, and never replace a real screenshot with a local path or
     an invented URL.
-11. Always draft the body in the user's voice via the `write-as-juani` skill,
+11. Always draft the body in the user's voice via the `write-as-me` skill,
     loaded in step 1. Never ship a PR description containing an em dash.

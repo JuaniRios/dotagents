@@ -107,9 +107,9 @@ conventional-commit prefix (`feat`, `fix`, `chore`, `refactor`, etc.).
 
 ## 5. Write the release notes
 
-Before writing, read the `write-as-juani` skill
-(`~/.codex/skills/write-as-juani/SKILL.md`) and follow it. These notes are
-published under Juani's name, so the prose has to sound like him: terse,
+Before writing, read the `write-as-me` skill
+(`~/.codex/skills/write-as-me/SKILL.md`) and follow it. These notes are
+published under the user's name, so the prose has to sound like him: terse,
 concrete, honest about what is and isn't stable. Without it the summary drifts
 into release-marketing voice ("comprehensive", "seamless", "significantly
 improved"), which he never uses.
@@ -202,8 +202,8 @@ This workflow only drafts notes for human review.
    request list second, technical breakdown third.
 5. Write to `.tmp/` only. Never write release notes to a tracked path, create a
    GitHub release, or push a tag.
-6. Always read and follow the `write-as-juani` skill before writing. The
-   summary, highlights, and theme explanations are in Juani's voice; the pull
+6. Always read and follow the `write-as-me` skill before writing. The
+   summary, highlights, and theme explanations are in the user's voice; the pull
    request list and commit mapping stay mechanical. Never inflate
    ("comprehensive", "seamless"), and never let merged-but-undeployed or
    hand-patched work read as shipped.

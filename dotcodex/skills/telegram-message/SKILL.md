@@ -30,8 +30,8 @@ If no argument is provided, ask what to send.
 ## Step 2 — Format the message
 
 If you are **writing** the message (the user described what to say rather than
-handing you the exact text), read the `write-as-juani` skill
-(`~/.codex/skills/write-as-juani/SKILL.md`) first and draft it in his voice. It
+handing you the exact text), read the `write-as-me` skill
+(`~/.codex/skills/write-as-me/SKILL.md`) first and draft it in his voice. It
 goes out under his name.
 
 Skip the voice skill when the user supplied the literal text to send, or when
@@ -99,6 +99,6 @@ else:
 5. If `telegram-bot.env` is missing or send fails, print the formatted
    message and tell the user to copy-paste manually.
 6. When drafting the wording yourself, always read and follow the
-   `write-as-juani` skill first — the message is sent as Juani. Do not apply it
+   `write-as-me` skill first — the message is sent as him. Do not apply it
    to text the user supplied verbatim or to relayed machine output; format
    those unchanged.

@@ -79,8 +79,8 @@ commit prefix (`feat`/`fix`/`chore`/`refactor`).
 
 ## 5. Write the release notes
 
-Before writing, load the `write-as-juani` skill. These notes are published under
-Juani's name, so the prose has to sound like him: terse, concrete, honest about
+Before writing, load the `write-as-me` skill. These notes are published under
+the user's name, so the prose has to sound like him: terse, concrete, honest about
 what is and isn't stable. Without it the summary drifts into release-marketing
 voice ("comprehensive", "seamless", "significantly improved"), which he never uses.
 
@@ -175,8 +175,8 @@ This command only drafts notes for human review.
    and must still be listed.
 5. Write to `.tmp/` only — never to a tracked path, and never create a GitHub
    release.
-6. **Always load the `write-as-juani` skill before writing.** The summary,
-   highlights, and theme explanations are in Juani's voice; the "Pull requests"
+6. **Always load the `write-as-me` skill before writing.** The summary,
+   highlights, and theme explanations are in the user's voice; the "Pull requests"
    list and commit mapping stay mechanical. Never inflate ("comprehensive",
    "seamless"), and never let merged-but-undeployed or hand-patched work read
    as shipped.

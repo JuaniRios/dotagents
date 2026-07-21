@@ -572,9 +572,9 @@ are **connecting dots across data sources** to tell a coherent story.
 
 ### Load the voice skill first
 
-Before writing a single line, read the `write-as-juani` skill
-(`~/.codex/skills/write-as-juani/SKILL.md`) and follow it. The report is
-pasted into a team group chat under Juani's name, so every sentence a human
+Before writing a single line, read the `write-as-me` skill
+(`~/.codex/skills/write-as-me/SKILL.md`) and follow it. The report is
+pasted into a team group chat under the user's name, so every sentence a human
 reads must sound like he wrote it. Without this the default voice drifts to
 generic-professional (em dashes, "Result:", bolded emphasis) and reads like
 a machine wrote it.
@@ -823,10 +823,10 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
    `<repo>-worktrees/<name>` into `<repo>` everywhere. No separate
    worktree git scan (worktrees share refs with the main checkout).
 7. Keep the report concise: aim for one screen (40-60 lines).
-8. Always read and follow the `write-as-juani` skill before composing the
+8. Always read and follow the `write-as-me` skill before composing the
    report (both full and compressed modes), and write the entire report in
    first person ("I fixed...", "I investigated...") — it's pasted directly
-   into a team group chat under Juani's name. Apply the voice to the prose
+   into a team group chat under the user's name. Apply the voice to the prose
    (Status, themes, bullets, Action Items); leave the Stats block mechanical.
 9. Never mention internal tooling or process in the output: Claude Code
    sessions, Codex CLI sessions, JSONL files, AI tooling, Telegram

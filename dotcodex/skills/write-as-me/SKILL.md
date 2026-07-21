@@ -1,14 +1,14 @@
 ---
-name: write-as-juani
-description: Write in Juani's (the user's) voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing.
+name: write-as-me
+description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
 ---
 
-# Write as Juani
+# Write as me
 
-Make the text sound like Juani actually wrote it: terse, honest, warm, pragmatic,
+Make the text sound like the user actually wrote it: terse, honest, warm, pragmatic,
 thinking out loud. Never AI-polished, never corporate, never padded.
 
-Juani's voice is **one personality across a register gradient** — he dials
+His voice is **one personality across a register gradient** — he dials
 formality up or down by audience, but the constants below never change.
 
 ## The constants (every register)
@@ -95,7 +95,7 @@ unsure, aim between 2 and 3.
   what's next / open points. Frame against real completion, not aspiration.
 - **PR description:** register 3–4. The repo's template drives structure (e.g.
   What?/Why?/How?/Testing?/Anything Else? if that's the template) — but the prose
-  inside is Juani's: why-first, terse bullets, concrete identifiers in `code`,
+  inside is his: why-first, terse bullets, concrete identifiers in `code`,
   honest about untested paths and follow-ups ("in the next PR").
 - **Email / external:** register 4. Clear, warm, no fluff.
 
@@ -107,13 +107,40 @@ unsure, aim between 2 and 3.
 - No adjective inflation: "robust", "seamless", "comprehensive", "significantly
   more reliable", "powerful", "cutting-edge" — unless quoting external marketing
   copy on purpose.
-- No hedging-by-padding. Juani hedges with a single honest word ("prob", "idk"),
+- No hedging-by-padding. He hedges with a single honest word ("prob", "idk"),
   not a paragraph of qualifiers.
 - Don't restate the ask back before answering. Don't write a closing summary.
 - Don't smooth out the voice into generic-professional. Keep the contractions, the
   lowercase in casual contexts, the real questions, the honesty.
 - Don't invent certainty, test results, or numbers you don't have — say it's
   untested / unknown, the way he does.
+
+## Simplicity — ASD-STE100 (always)
+
+Aim for ASD-STE100 (Simplified Technical English) plainness so anyone, including
+non-native speakers, reads it once and gets it. This is about *sentence
+construction*, not tone: it never overrides the voice, the lowercase casual
+registers, the slang, or the abbreviations in the lexicon.
+
+- **One idea per sentence.** Split anything that needs two commas to hold together.
+- **Keep sentences short.** ~20 words max for instructions, ~25 for explanation.
+- **Active voice, real subject.** "The bot stopped hedging", not "hedging was
+  observed to have stopped".
+- **Simple tenses.** Present, simple past, simple future. Avoid "would have been
+  being" constructions.
+- **One word, one meaning.** Pick a term for a thing and reuse it in the whole
+  text. Don't alternate synonyms to sound varied.
+- **No noun stacks longer than 3 words.** "the retry limit for the hedge order",
+  not "hedge order retry limit configuration value".
+- **Keep the articles and the "that".** "The PR that fixes X", not "PR fixing X".
+- **Short paragraphs.** Max ~6 sentences, and prefer bullets or numbered steps
+  over a block of prose.
+- **No slashes as conjunctions** ("and/or"), no Latin ("e.g.", "i.e.", "etc." →
+  "for example", "that is", "and so on"), no jargon a reader outside the team
+  can't decode. Expand an acronym the first time when the audience is register 3–4.
+
+If plainness and the voice ever conflict, keep the voice, and then split the
+sentence to fix the complexity.
 
 ## Mechanics (always)
 
