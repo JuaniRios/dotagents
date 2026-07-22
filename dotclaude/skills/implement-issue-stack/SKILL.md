@@ -1,12 +1,12 @@
 ---
-name: issue-stack
+name: implement-issue-stack
 allowed-tools: Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(linear:*), Bash(codex:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(tail:*), Bash(test:*), Bash(mktemp:*), Bash(rm:*), Bash(sleep:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(find:*), Bash(basename:*), Read, Write, Agent, Skill, Workflow, AskUserQuestion, TodoWrite
-description: Opus-medium babysitter that implements a whole stack of Linear issues. Runs on Opus (medium effort) for orchestration fidelity — its context stays tiny by design so the premium model is cheap here; for each issue in order it mirrors /implement-issue autonomously via closing subagents — a Sonnet subagent plans (Codex + Opus critique the plan), then a separate Sonnet subagent implements off the plan file; the main loop then runs /review-loop (its Workflow panel exists only in the main session) with all heavy steps delegated to subagents, runs /pr-description, amends + gt ss + waits for CI, then starts the next issue from scratch stacked on top. Never spawns headless `claude -p` sessions (they bill as extra usage); subagents stay inside the subscription session.
-argument-hint: <issue-1> <issue-2> [issue-3 ...]
+description: Opus-medium babysitter that implements a whole stack of Linear issues — an ordered list of issue IDs, or a single parent issue that it expands into its sub-issues (ordered by blocked-by, then Linear's manual ordering, then issue number). Runs on Opus (medium effort) for orchestration fidelity — its context stays tiny by design so the premium model is cheap here; for each issue in order it mirrors /implement-issue autonomously via closing subagents — a Sonnet subagent plans (Codex + Opus critique the plan), then a separate Sonnet subagent implements off the plan file; the main loop then runs /review-loop (its Workflow panel exists only in the main session) with all heavy steps delegated to subagents, runs /pr-description, amends + gt ss + waits for CI, then starts the next issue from scratch stacked on top. Never spawns headless `claude -p` sessions (they bill as extra usage); subagents stay inside the subscription session.
+argument-hint: <parent-issue> | <issue-1> <issue-2> [issue-3 ...]
 disable-model-invocation: true
 ---
 
-# Issue stack
+# Implement issue stack
 
 You are the **babysitter**, not the implementer. For each issue, in order,
 you run the `/implement-issue` flow **autonomously**: glue commands in the
@@ -17,9 +17,14 @@ context must stay tiny — never read source code, diffs, or full logs.
 outside the subscription. All model work happens via the `Agent` tool (and
 the Codex CLI), inside this session.
 
-`$ARGUMENTS` is an ordered list of Linear issue IDs/links (e.g.
-`RAI-801 RAI-802 RAI-803`). Order matters: issue N+1 stacks on issue N's
-branch. If empty, ask the user for the list.
+`$ARGUMENTS` is either:
+
+- an ordered list of Linear issue IDs/links (e.g. `RAI-801 RAI-802 RAI-803`) —
+  order matters, issue N+1 stacks on issue N's branch; or
+- a **single parent issue** (e.g. `RAI-800`), which Step 0.4 expands into its
+  sub-issues and orders automatically.
+
+If empty, ask the user for the list or the parent.
 
 This command mirrors `/implement-issue`
 (`~/.claude/skills/implement-issue/SKILL.md` — read it once at the start; it is
@@ -52,7 +57,56 @@ Track per-issue progress with `TodoWrite`.
    clean (`git status --porcelain` empty). Run `gt sync` once now (never
    mid-stack); note the current branch — the stack grows from `gt top` of it.
 3. **Issues exist.** `linear issue view <ID>` for each; stop on any miss.
-4. **Confirm the plan** with the user in one shot: the ordered issue list,
+
+4. **Parent expansion.** If any argument resolves to an issue that has
+   sub-issues, expand it into its children — the parent itself is never
+   implemented as a stack entry.
+
+   - **Parent with children and no scope of its own** → replace it with its
+     children, ordered by the rules below.
+   - **Parent with children *and* real implementable scope in its own
+     description** → this is the one exception to "no user questions": ask via
+     `AskUserQuestion` whether to implement the children, the parent alone, or
+     both (parent last). Ambiguity here would build the whole stack wrong.
+   - **Issue with no children** → a normal stack entry, unchanged.
+   - **Nested children** (a child that itself has sub-issues) → expand one more
+     level in place, then stop; deeper nesting means the issue tree is not
+     stack-shaped, so report it and stop.
+   - **Mixed arguments** (a parent plus loose issue IDs) → expand the parent in
+     place and keep the surrounding argument order.
+   - Skip children already in a terminal state (Done/Canceled/Duplicate) and say
+     so in the confirmation.
+
+   **Ordering, in strict precedence:**
+
+   1. **Blocked-by relations first** — topologically sort so a child never
+      precedes an issue that blocks it. Use `linear issue relation list <ID>`
+      per child (or the GraphQL query below). A cycle among children is fatal:
+      report it and stop.
+   2. **Linear's manual ordering** — break remaining ties by the parent's own
+      sub-issue ordering (`subIssueSortOrder`, ascending; fall back to
+      `sortOrder` if the installed schema lacks it), i.e. the order shown in the
+      Linear UI when the user drags sub-issues around.
+   3. **Issue number** — ascending, as the last tiebreak only.
+
+   The `linear` CLI does not expose sort order, so fetch children in one raw
+   GraphQL call (see `/linear-cli`; run `linear schema -o
+   "${TMPDIR:-/tmp}/linear-schema.graphql"` and grep it before trusting field
+   names):
+
+   ```bash
+   linear api '{ issue(id: "RAI-800") { children { nodes {
+     identifier title subIssueSortOrder sortOrder
+     state { name type }
+     children { nodes { identifier } }
+     relations { nodes { type relatedIssue { identifier } } }
+     inverseRelations { nodes { type issue { identifier } } }
+   } } } }' | jq '.data.issue.children.nodes'
+   ```
+
+5. **Confirm the plan** with the user in one shot: the ordered issue list
+   (for an expanded parent, show the parent, the resolved child order, and the
+   rule that decided each position),
    the base branch, and that each issue's PR will be pushed and CI waited on
    without further confirmation. Then go autonomous.
 
@@ -179,6 +233,9 @@ fails, stop the whole stack — never build issue N+1 on a broken N.
 When all issues are done (or the stack stopped early), report:
 
 - Per issue: ID → branch → PR URL → CI status → result (done/partial/failed).
+- If the stack came from a parent: the parent ID, and whether every child now
+  has a merged-or-open PR. Do not move the parent to Done yourself — report its
+  state and let the user decide.
 - Where the stack stopped and why, if early.
 - Pointers to the per-issue logs and plans in `.tmp/issue-stack/` — walk the
   user through deferred decisions and ambiguous review calls on request.
@@ -209,6 +266,10 @@ When all issues are done (or the stack stopped early), report:
    in pre-flight, never mid-stack.
 8. Every skipped user checkpoint becomes a logged decision in
    `.tmp/issue-stack/<ISSUE-ID>.md`.
+9. A parent issue is expanded, never implemented as a stack entry (unless the
+   user picks "parent too" in Step 0.4). Ordering precedence is fixed:
+   blocked-by, then Linear's manual sub-issue ordering, then issue number —
+   never re-order children on your own judgement of difficulty or size.
 
 ## Failure modes
 

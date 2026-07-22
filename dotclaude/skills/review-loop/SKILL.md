@@ -1,7 +1,7 @@
 ---
 name: review-loop
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, Workflow, AskUserQuestion
-description: Cross-review the current branch with a multi-model Workflow panel, auto-fix findings, and re-review until clean. Group verified fixes that are too large or out of scope for the current PR under one Linear parent, then implement its child issues serially with /implement-issue. Pass `stack` to review the whole upstack.
+description: Cross-review the current branch with a multi-model Workflow panel, auto-fix findings, and re-review until clean. Group verified fixes that are too large or out of scope for the current PR under one Linear parent, then implement its child issues as a stacked series of PRs with /implement-issue-stack. Pass `stack` to review the whole upstack.
 argument-hint: [stack]
 ---
 
@@ -17,7 +17,8 @@ returns no new actionable findings.
 Verified findings whose proper fix would materially expand the current PR are
 not discarded. The loop collects them across all passes, groups them as child
 issues under one new Linear parent, and, after the current PR converges,
-implements those children one at a time through `/implement-issue`. The
+implements those children through `/implement-issue-stack`, which stacks one
+branch/PR per child in series. The
 parent/child issue batch still follows `/linear-cli`'s draft and approval
 rules before creation.
 
@@ -58,7 +59,8 @@ The main session keeps only glue commands, the Workflow invocations, triage
 over structured findings, and user checkpoints. On a cheap model
 (Sonnet/Haiku) inlining these steps is fine — per-subagent overhead can
 exceed the savings on small diffs — but a caller may instruct delegation
-regardless of model (`/issue-stack` does, to keep its babysitter tiny).
+regardless of model (`/implement-issue-stack` does, to keep its babysitter
+tiny).
 
 **Argument:** with no argument, the loop runs on the **current branch only**
 and never touches version control (the safe default). With `stack`, it runs
@@ -1251,37 +1253,43 @@ invocation produces at most one new follow-up parent.
 
 ## 14. Implement grouped follow-ups serially
 
-After the issue group is created, implement every child through
-`/implement-issue` **one at a time**. Never run child implementations in
-parallel.
+After the issue group is created, hand the whole group to
+`/implement-issue-stack` — do not drive a serial `/implement-issue` queue
+yourself. That skill already expands a parent into its children, orders them
+(blocked-by, then Linear's manual ordering, then issue number), and stacks one
+Graphite branch/PR per child with CI gating between them.
 
-1. Capture the branch where review-loop started. The `/implement-issue`
-   handoff requires a clean tree. If this loop applied reviewed fixes in
-   single-branch mode, invoke `/graphite` and run `gt modify -a` once to fold
-   only those fixes into the current branch before leaving it. This is the
-   sole single-branch amend exception; do not submit directly from review-loop.
-2. For each child ID in `follow-up-issues.json`, in order:
-   - invoke `/implement-issue <CHILD-ID>` and let it complete its full plan,
-     implementation, review, PR, submission, CI, and Linear workflow;
-   - wait for it to finish successfully before starting the next child; and
-   - record its branch, PR, and final status in `follow-up-issues.json`.
-3. Pass the existing parent ID as standing context. If a child's nested review
-   discovers another genuine scope-expanding finding, reuse this parent and
-   append the new child to the end of the same serial queue instead of creating
-   a nested follow-up parent. Search the parent's existing children first to
-   avoid duplicate issues or cycles.
-4. If one child blocks or fails, stop the serial queue, leave the remaining
-   children unstarted, update the parent with the blocker, and report exactly
-   where execution stopped. Never skip ahead silently.
-5. When all children finish, update the parent status to match the repository's
+1. Capture the branch where review-loop started. The handoff requires a clean
+   tree. If this loop applied reviewed fixes in single-branch mode, invoke
+   `/graphite` and run `gt modify -a` once to fold only those fixes into the
+   current branch before leaving it. This is the sole single-branch amend
+   exception; do not submit directly from review-loop.
+2. Invoke `/implement-issue-stack <PARENT-ID>` — the parent alone, not the
+   child list. Passing the parent keeps ordering authority in one place: if the
+   user re-orders sub-issues in Linear between review and implementation, the
+   stack follows Linear, not `follow-up-issues.json`. Only pass an explicit
+   ordered child list when the parent also has implementable scope of its own
+   and you already know the user wants children only.
+3. Record the branch, PR, and final status it reports for each child back into
+   `follow-up-issues.json`.
+4. If a child's nested review discovers another genuine scope-expanding
+   finding, reuse this parent and append the new child to it rather than
+   creating a nested follow-up parent. Search the parent's existing children
+   first to avoid duplicate issues or cycles.
+5. `/implement-issue-stack` stops the stack on the first child that blocks or
+   fails. Take its report as-is: update the parent with the blocker and report
+   exactly where execution stopped. Never restart the remaining children by
+   hand.
+6. When all children finish, update the parent status to match the repository's
    Linear policy and the children's actual states. Do not mark the parent Done
    while any child PR is still in a state that keeps its issue open.
-6. Return to the branch where review-loop started before printing the final
+7. Return to the branch where review-loop started before printing the final
    summary.
 
-`/implement-issue` retains its own plan-approval and architecture-decision
-checkpoints. "Serial" means the complete workflow for child N finishes before
-child N+1 begins.
+`/implement-issue-stack` runs each child through the full `/implement-issue`
+flow autonomously, so there are no per-child plan-approval checkpoints. It is
+strictly serial: child N's complete workflow (plan, implement, review, PR, CI)
+finishes before child N+1 begins.
 
 ## 15. Summarize
 
@@ -1353,8 +1361,9 @@ the wrapper must not create or implement follow-ups per branch.
 - **A follow-up child fails to create:** report the exact error, preserve the
   draft and already-created group, and stop before serial implementation so
   the parent is not silently incomplete.
-- **A child `/implement-issue` run blocks or fails:** update the parent with
-  the blocker, stop the queue, and leave later children unstarted.
+- **A child run inside `/implement-issue-stack` blocks or fails:** that skill
+  stops the stack; update the parent with the blocker and leave later children
+  unstarted.
 - **The user says "stop" mid-loop:** immediately stop, then print the
   summary with what was completed so far. Do not silently abandon the rest.
 - **Codex not installed:** warn the user and drop the codex lanes
@@ -1374,8 +1383,9 @@ the wrapper must not create or implement follow-ups per branch.
    version control. **Exceptions:** stack mode may `gt modify -a` per branch;
    and a created follow-up queue may `gt modify -a` once in single-branch mode
    to make the reviewed starting branch clean before invoking
-   `/implement-issue`. Review-loop itself never submits; each serial
-   `/implement-issue` owns its branch/PR mutations and submission.
+   `/implement-issue-stack`. Review-loop itself never submits;
+   `/implement-issue-stack` owns all branch/PR mutations and submission for the
+   follow-up children.
 5. Always use `--description-file` with `linear issue create`, never inline
    `--description`.
 6. Always re-verify findings against the current source before applying
@@ -1421,9 +1431,9 @@ the wrapper must not create or implement follow-ups per branch.
     main-context saving.
 19. Create at most one follow-up parent per review-loop invocation. Every
     verified scope-expanding finding becomes a true child issue under it.
-20. Invoke `/implement-issue` for child issues strictly in series. A child must
-    finish its complete workflow before the next starts; on failure, stop and
-    preserve the remaining queue.
+20. Hand follow-up children to `/implement-issue-stack` (passing the parent ID),
+    never to a hand-rolled serial `/implement-issue` queue. It runs children
+    strictly in series and stops on failure with the remaining queue preserved.
 21. Nested review loops from those child implementations reuse the same parent
     and append deduplicated children to the serial queue; they never create a
     hierarchy of follow-up parents.
