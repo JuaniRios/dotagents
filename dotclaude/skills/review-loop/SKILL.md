@@ -1,7 +1,7 @@
 ---
 name: review-loop
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(linear:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(find:*), Read, Write, Edit, Agent, Workflow, AskUserQuestion
-description: Cross-review the current branch with a multi-model Workflow panel, auto-fix findings, and re-review until clean. Group verified fixes that are too large or out of scope for the current PR under one Linear parent, then implement its child issues as a stacked series of PRs with /implement-issue-stack. Pass `stack` to review the whole upstack.
+description: Cross-review the current branch with a multi-model Workflow panel, auto-fix findings, and re-review until clean. If the PR grows too big, offer to decompose it into smaller stacked PRs. Group verified fixes that are too large or out of scope for the current PR under one Linear parent, then implement its child issues as a stacked series of PRs with /implement-issue-stack. Pass `stack` to review the whole upstack.
 argument-hint: [stack]
 ---
 
@@ -124,6 +124,138 @@ walk, not once per branch.
 
 ---
 
+## Size gate — decompose an oversized PR into a stack
+
+A PR that keeps growing gets worse review, not more of it: reviewer quality
+degrades on large diffs, and this loop's own fixes push the diff further up.
+So measure the branch's size at two points and offer to split when it crosses
+the line.
+
+### When to check
+
+- **At step 2**, right after writing `diff.patch` — the branch may already be
+  too big before the loop touches it.
+- **At step 12**, on the updated diff after each fix pass — the loop's fixes
+  and the tests they pull in are a common way a reasonable PR becomes an
+  unreviewable one.
+
+Measure **hand-written** size only. Exclude lockfiles, generated code,
+snapshots, vendored trees, and fixtures from the counts (they inflate the
+number without costing review effort):
+
+```bash
+git diff --numstat "$parent" -- . \
+  ':(exclude)**/*.lock' ':(exclude)**/*.snap' ':(exclude)**/generated/**' \
+  ':(exclude)**/vendor/**' ':(exclude)**/fixtures/**' \
+  | awk '{add+=$1; del+=$2; files++} END {print files" files, "add+del" lines"}'
+```
+
+### Trigger
+
+Propose decomposition when **any** of these holds:
+
+- more than **800** hand-written changed lines, or
+- more than **20** hand-written changed files, or
+- the loop's own fixes grew the diff by more than **30%** over the size
+  recorded at step 2, or
+- the diff spans **three or more unrelated concerns** that each stand alone
+  (e.g. a schema migration, an unrelated bug fix, and a new endpoint) —
+  regardless of line count.
+
+Under every threshold and one coherent concern: say nothing, keep going. A
+single-concern 900-line PR is often correctly one PR; do not split a diff
+that has no clean seam.
+
+### Propose, never split silently
+
+Splitting rewrites branches, so it is always a user decision (hard rule 4).
+Print the measured size and the seams you see, then ask with
+`AskUserQuestion`:
+
+```
+Q: This PR is <N> files / <L> lines across <K> concerns. Split it into a stack?
+   options:
+     - "Split into <K> stacked PRs" (Recommended) — show me the plan first
+     - "Keep as one PR" — proceed with the review loop unchanged
+     - "Split later" — finish the loop, remind me in the final summary
+```
+
+If triggered mid-loop (step 12), finish the current loop to convergence
+**first** and split after — never split a branch with unreviewed fixes in
+flight. Only a step-2 trigger may split before reviewing, since nothing is in
+flight yet.
+
+### Build the split plan
+
+Group the changed files into an **ordered** list of independently reviewable
+branches, bottom-up:
+
+1. Pure groundwork first — new types, traits, constants, moves/renames with no
+   behavior change.
+2. Then each behavioral concern, one branch per concern.
+3. Tests go **with the branch whose behavior they cover**, never in a
+   trailing "add tests" branch.
+
+Every branch must compile on its own (that is the ordering constraint — if
+group B does not compile without group C, they are one group). Aim for each
+branch under ~400 hand-written lines. If the seams cannot produce compiling
+branches, report that and keep the PR whole.
+
+Show the plan for approval before touching version control:
+
+```
+Split plan for <branch> (<N> files, <L> lines):
+  1. <branch>-types     ~120 lines   crates/dto/**            groundwork: new domain types
+  2. <branch>-ingest    ~310 lines   crates/ingest/** + tests behavior: checkpoint handling
+  3. <branch>           ~250 lines   (remainder)              behavior: the API surface
+```
+
+The original branch stays as the **top** of the stack so its existing PR,
+Linear link, and review history survive.
+
+### Execute the split
+
+Invoke `/graphite` for every version-control command; never raw `git` for
+branch/commit mutation.
+
+1. The tree must be clean. If this loop applied fixes, `gt modify -a` once to
+   fold them into the branch first — this is a size-gate exception to hard
+   rule 4, covered by the user's approval above.
+2. Take a safety net: `git branch backup/<branch>-predecomp`. Never delete it
+   during the session; name it in the final summary.
+3. If the branch's existing **commit boundaries already match the groups**,
+   use `gt split --by-commit` and stop here.
+4. Otherwise peel groups off the bottom, one at a time, for every group except
+   the last:
+   - `gt checkout <current parent>`
+   - stage that group's paths from the branch's tree
+     (`git checkout backup/<branch>-predecomp -- <paths>`)
+   - `gt create <new-branch> -m "<message>"`
+   - move the original branch onto the new branch and restack (`gt move
+     --onto <new-branch>`, then `gt restack`). The peeled hunks are already
+     applied, so the rebase drops them and the original commit keeps only the
+     remainder. On conflicts, invoke `/fix-conflicts`.
+5. **Verify nothing was lost.** The top of the new stack must have the same
+   tree as the backup:
+   ```bash
+   git diff --stat backup/<branch>-predecomp   # must print nothing
+   ```
+   If it prints anything, stop and tell the user — do not hand-patch the
+   difference.
+6. Each new branch is unsubmitted. Do not `gt submit` (hard rule 4); tell the
+   user the stack is ready to submit and that the original PR now carries only
+   the top branch's changes, so its description likely needs updating
+   (`/pr-description`).
+
+### After the split
+
+Continue as **stack mode** from the bottom of the new stack: `gt bottom`, then
+run steps 1–15 per branch as described in **Stack mode** above. Findings
+already fixed and dismissed on the pre-split branch carry over — do not
+re-litigate them. The 4-pass cap resets per branch.
+
+---
+
 ## 1. Preflight
 
 Verify prerequisites before doing anything:
@@ -193,6 +325,10 @@ wc -l "$out_dir/diff.patch"
 
 Refuse to proceed if the diff is empty. If it exceeds 5000 lines, warn the
 user and ask whether to proceed — reviewer quality degrades on huge diffs.
+
+Now run the **size gate** (see the section above): record the hand-written
+file/line counts as the invocation's baseline, and if the branch already
+trips a trigger, offer to decompose it into a stack before reviewing.
 
 **Ensure the artifacts folder is gitignored.** Review artifacts live under
 `.tmp/`, which is the conventional gitignored scratch dir in most repos. If
@@ -1085,6 +1221,10 @@ git diff "$parent" > "$out_dir/diff-iter${N}.patch"   # updated full diff
 git diff HEAD --stat | tail -1                          # what the loop changed
 ```
 
+Re-run the **size gate** against this updated diff, comparing with the step-2
+baseline. If it trips, note it and raise it at convergence — do not split a
+branch with unreviewed fixes in flight.
+
 Bump `diffPath` to `diff-iter${N}.patch` in the `args` (a single field — the
 script rebuilds the lanes from it), rewrite the shared `context.txt` to point
 at it, and re-pick `laneKeys` with the **step 5 adaptive sizing** rule against
@@ -1149,7 +1289,9 @@ convergence, so `/ci` must not amend separately there either.
 1. Save the result to `$out_dir/review-iter${N}.json` (audit trail).
 2. **Clean** = `findings` empty AND every `fixVerifications` entry has
    `fixed: true` with no `new_issues`. Converge per the /ci-overlap rules
-   above.
+   above. If the size gate tripped during any pass, raise it here — before
+   step 13 — and, if the user approves, execute the split and continue as
+   stack mode from the bottom of the new stack.
 3. **Not clean**: collect the panel `findings`, any `fixed: false`
    verifications (re-fix those), and `new_issues` from the verifications.
    Filter out anything substantively identical to a finding already fixed or
@@ -1316,7 +1458,7 @@ Dismissed (1):
 Reports: <paths to review.md, findings.json, review-iter*.json>
 ```
 
-Below the summary block, add two prose sections:
+Below the summary block, add these prose sections:
 
 **What changed** — for each fixed finding, a short paragraph describing the
 change actually applied, not just the finding title: what the code does now
@@ -1329,6 +1471,11 @@ them before submitting.
 **Grouped follow-ups** — name the parent and each child, with implementation
 status and PR link. If the queue stopped, identify the blocker and list the
 unstarted children. Omit this section when there were no candidates.
+
+**Decomposition** — if the size gate fired, state the final size, whether the
+PR was split, the resulting branch order, and the backup branch name. If the
+user chose "Split later", repeat the recommendation here so it is not lost.
+Omit this section when the gate never fired.
 
 Then stop. Outside stack mode and the explicit grouped-follow-up handoff in
 step 14, do not auto-run `gt modify`, `gt submit`, or any other mutation.
@@ -1368,6 +1515,12 @@ the wrapper must not create or implement follow-ups per branch.
   summary with what was completed so far. Do not silently abandon the rest.
 - **Codex not installed:** warn the user and drop the codex lanes
   (7 lanes instead of 9). Seven lanes is still valuable.
+- **The diff is oversized but has no clean seam:** report that the groups
+  cannot be made to compile independently, keep the PR whole, and continue the
+  loop. Do not force a split that produces broken intermediate branches.
+- **A split leaves the stack top differing from the backup branch:** stop
+  immediately, keep `backup/<branch>-predecomp`, and hand the user the
+  `git diff --stat` output. Never reconcile it by hand.
 
 ## Hard rules
 
@@ -1381,6 +1534,8 @@ the wrapper must not create or implement follow-ups per branch.
    materially edited drafts require renewed approval.
 4. Never amend, commit, or `gt submit` automatically — the user drives
    version control. **Exceptions:** stack mode may `gt modify -a` per branch;
+   an approved size-gate split may `gt modify -a` once to clean the tree
+   before splitting, and then rewrites branches under that same approval;
    and a created follow-up queue may `gt modify -a` once in single-branch mode
    to make the reviewed starting branch clean before invoking
    `/implement-issue-stack`. Review-loop itself never submits;
@@ -1437,3 +1592,8 @@ the wrapper must not create or implement follow-ups per branch.
 21. Nested review loops from those child implementations reuse the same parent
     and append deduplicated children to the serial queue; they never create a
     hierarchy of follow-up parents.
+22. Never split a PR without explicit user approval of the split plan, never
+    while fixes are in flight (converge first), and never without a
+    `backup/<branch>-predecomp` branch plus a verified empty
+    `git diff --stat` against it. A split that loses content is worse than an
+    oversized PR — stop and report rather than hand-patch a mismatch.
