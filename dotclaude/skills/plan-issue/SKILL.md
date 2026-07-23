@@ -1,7 +1,7 @@
 ---
 name: plan-issue
-description: Research a Linear issue and produce an implementation plan, attached to the issue as a readable Linear document with a plain-language sign-off section and a detailed implementer guide. Use whenever the user asks to plan an issue or ticket, write or draft an implementation plan for a Linear issue, or prepare an issue for /implement-issue.
-allowed-tools: Bash(linear:*), Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(grep:*), Bash(cat:*), Bash(ls:*), Bash(find:*), Bash(wc:*), Read, Write, Skill, Agent, AskUserQuestion, TodoWrite
+description: Research a Linear issue and produce a Fable-drafted, adversarially critiqued (Codex + Opus) implementation plan, attached to the issue as a readable Linear document with a plain-language sign-off section and a detailed implementer guide. Use whenever the user asks to plan an issue or ticket, write or draft an implementation plan for a Linear issue, or prepare an issue for /implement-issue.
+allowed-tools: Bash(linear:*), Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(codex:*), Bash(grep:*), Bash(cat:*), Bash(ls:*), Bash(find:*), Bash(wc:*), Read, Write, Skill, Agent, AskUserQuestion, TodoWrite
 argument-hint: <issue-link-or-number>
 ---
 
@@ -14,9 +14,15 @@ detailed guide the implementer agent follows. `/implement-issue` and
 `/implement-issue-stack` detect this document and use it instead of planning
 themselves.
 
-This is planning work: prefer running it on a frontier planning model
-(Fable). If the session model is weaker, delegate the research-and-draft to a
-`fable` subagent and only publish from the main session.
+**The drafting model is always Fable — no exceptions.** If the session runs
+on Fable, draft in the main session; otherwise delegate the
+research-and-draft to a `model: fable` subagent and only critique-orchestrate
+and publish from the main session.
+
+**Critics never share the drafter's model family.** Here the drafter is
+Fable, so the critics are one Codex CLI pass plus one Opus subagent (step 5).
+If a port of this skill ever drafts on Codex, the critique pass runs on
+Fable/Claude instead.
 
 **Read-only with respect to the repo**: never edit code or mutate git state.
 The only side effect is the Linear document.
@@ -90,6 +96,7 @@ One or two lines: what this stacks on / relates to.
 ### Test strategy                       (incl. e2e/infra gotchas found in 3)
 ### Acceptance criteria mapping
 ### Workflow                            (branch stacking, TDD, verification)
+### Critique                            (appended in step 5)
 ```
 
 Part 1 rules (this is what the human reads and approves):
@@ -114,7 +121,29 @@ Part 2 rules (this is what the implementer agent follows):
 Whole-document rules: no em dashes (use colons, semicolons, hyphens); do not
 restate what repo docs already say — link/point instead.
 
-## 5. Publish to Linear
+## 5. Adversarial critique (Codex + Opus, in parallel)
+
+Before publishing, get two **independent critiques of the draft in
+parallel** (mirrors `/implement-issue` step 5):
+
+- An **Opus subagent** (`Agent`, `model: opus`, xhigh effort): adversarial
+  critique — simpler designs, conflicts with `SPEC.md`/repo conventions,
+  missing test coverage, hidden coupling, steps that will not survive
+  contact with the code, and whether Part 1's sign-off list actually
+  contains every decision buried in Part 2.
+- A **Codex pass** (`Bash`): pipe the draft to
+  `codex exec --sandbox read-only -m gpt-5.5 -C "$repo_root" "<critique
+  prompt: same focus, plus 'what would a staff engineer push back on?'>"`.
+
+If the `Agent` tool is unavailable, run only the Codex critique and flag the
+missing Opus pass in the report.
+
+Incorporate the feedback, then append a `### Critique` section at the end of
+Part 2 noting which points were adopted and which rejected (one-line
+rationale each). This section is published with the document — it shows the
+human reviewer what was already challenged.
+
+## 6. Publish to Linear
 
 ```bash
 linear document create -t "<ISSUE-ID> Implementation Plan" --issue <ISSUE-ID> -f <scratchpad-path>
@@ -125,13 +154,15 @@ linear document create -t "<ISSUE-ID> Implementation Plan" --issue <ISSUE-ID> -f
 - Do not pass `--icon` (rejected by the current API).
 - On rewrite (step 1), use `linear document update <doc-id>` instead.
 
-## 6. Report
+## 7. Report
 
 - Verdict: does the issue make sense against the current state? Any aims
   that are stale or no-ops.
 - The document URL.
 - The sign-off decisions, restated briefly so the user can approve from the
   chat without opening Linear.
+- Critique highlights: the strongest points raised and whether they were
+  adopted.
 
 ## Hard rules
 
@@ -144,6 +175,11 @@ linear document create -t "<ISSUE-ID> Implementation Plan" --issue <ISSUE-ID> -f
 4. Ground every claim in the repo; verify the issue's assumptions against
    the code and surface conflicts in the sign-off section.
 5. Never duplicate an existing plan document — update it.
+6. The drafting model is always Fable (main session or `model: fable`
+   subagent). Critics never share the drafter's model family: exactly one
+   Codex CLI pass + one Opus subagent (`model: opus`, xhigh effort).
+7. Never publish an uncritiqued plan — step 5 runs before step 6, and the
+   published document carries the `### Critique` section.
 
 ## Failure modes
 
