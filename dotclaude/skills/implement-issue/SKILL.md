@@ -151,6 +151,14 @@ multi-task plan. It returns a **tight** summary: one line per file touched,
 test results, and any deviations (with rationale) — not full diffs. The
 subagent then closes — its research and diff context dies with it.
 
+Give the implementer this standing comment discipline: make Rust express
+intent through names, domain types, function boundaries, and control flow.
+Keep comments scarce. A code comment is justified only for non-obvious
+rationale, an invariant, a safety argument, or an external constraint that
+the code cannot express. Never narrate the code, restate a line, preserve
+implementation history, or use prose to compensate for unclear code; improve
+the code instead.
+
 **Pre-split big plans up front.** When the approved plan has more than ~6
 tasks, or spans clearly separable task groups, spawn **two implementer
 subagents by task group from the start** instead of one. This parallelizes
@@ -222,6 +230,12 @@ this session):
    (`AskUserQuestion`, batched). Apply chosen fixes via a small Sonnet
    subagent, then `gt modify -a` again.
 
+For every PR or Linear comment created during this workflow, write only what
+coordination requires: status, a blocker, a decision, or actionable review
+feedback. Keep descriptions focused on the goal, observable behavior,
+constraints, and verification. Do not leave line-by-line implementation
+walkthroughs or overly specific prose that repeats what the Rust diff says.
+
 ## 8. Submit the stack & get CI green (`/ci-fix`)
 
 Submit and wait for the GitHub CI run to finish:
@@ -289,3 +303,6 @@ Tell the user implementation is finished. Print:
 8. Don't declare done until CI is actually green — the remote run for this exact
    HEAD, or, when Graphite skipped CI (6th+ in the stack), a full local
    `nix run .#ci` pass. Never accept a stale run from a different commit as green.
+9. Keep source comments and PR/Linear comments minimal. Prefer expressive Rust
+   over explanatory prose, and never leave overly specific commentary that
+   merely repeats the implementation.

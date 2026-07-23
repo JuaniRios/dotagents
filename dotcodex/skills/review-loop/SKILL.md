@@ -606,9 +606,9 @@ If a Claude lane exits non-zero, record it as "reviewer errored" and
 continue. Skip Claude entirely when the CLI is unavailable or the user asks
 for Codex-only review.
 
-### Inspector agents — Test, Idiomatic Rust, Strong Typing, and External Contract Inspectors
+### Inspector agents — Test, Idiomatic Rust, Strong Typing, External Contract, and Comment Discipline Inspectors
 
-Alongside the five reviewers, spawn four additional specialized inspector
+Alongside the five reviewers, spawn five additional specialized inspector
 agents. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary
 input.
@@ -685,12 +685,55 @@ report. If the diff has no external touchpoints, say so and stop.
 
 Write output to `$out_dir/raw-contract-inspector.md`.
 
+**Comment Discipline Inspector**:
+
+Prompt:
+
+```
+You are reviewing comment discipline across the entire diff. Inspect every
+changed Rust source comment and the code around it, plus the author-written PR
+description or issue-facing prose in the shared context.
+
+Rust should explain intent through names, domain types, function boundaries,
+and control flow. A source comment is justified only for non-obvious
+rationale, an invariant, a safety argument, or an external constraint that
+the code cannot express. Flag comments that narrate the code, restate a line,
+preserve implementation history, give an overly specific walkthrough, or
+compensate for unclear code. Prefer improving the code and deleting or
+shortening the comment. Do not recommend more prose by default.
+
+PR or issue-facing prose should state the goal, observable behavior,
+constraints, verification, blockers, or an actionable decision. Flag
+line-by-line implementation explanations and details already clear from the
+diff. Do not flag required safety, invariant, protocol, or externally imposed
+documentation.
+
+Read all changed Rust files, not only lines with comments, so you can judge
+whether nearby code communicates intent. Return only concrete findings.
+Category is "maintainability" unless project docs explicitly make it
+"convention". Severity is low by default, medium when duplication obscures
+intent or will predictably become stale.
+```
+
+Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+
+Produce your inspection report. If there are no Rust files, source comments,
+or PR/issue-facing prose to assess, say so and stop.
+```
+
+Write output to `$out_dir/raw-comment-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (this is fine — record "no test files, skipped"). If the diff
 contains no `.rs` files, the Rust inspector will self-exit (same handling).
 If the diff has no strong-typing surface or external touchpoints, those
-inspectors will self-exit. The aggregator handles missing inspector reports
-gracefully.
+inspectors will self-exit. The comment inspector self-exits only when neither
+Rust/comment-bearing code nor PR/issue-facing prose is available. The
+aggregator handles missing inspector reports gracefully.
 
 ### Chunk splitting for large diffs
 
@@ -757,8 +800,9 @@ In one parallel batch, issue:
 7. Codex subagent call for Idiomatic Rust Inspector
 8. Codex subagent call for Strong Typing Inspector
 9. Codex subagent call for External Contract Inspector
-10. Optional `claude -p` process for Claude A
-11. Optional `claude -p` process for Claude B
+10. Codex subagent call for Comment Discipline Inspector
+11. Optional `claude -p` process for Claude A
+12. Optional `claude -p` process for Claude B
 
 ## 6. Normalize, verify, and aggregate
 
@@ -795,12 +839,13 @@ You may also have optional external raw reviews:
 - {CLAUDE_A_PATH}  (Claude A)
 - {CLAUDE_B_PATH}  (Claude B)
 
-You also have four specialized inspector reports (may be empty if no
+You also have five specialized inspector reports (may be empty if no
 relevant files were in the diff):
 - {TEST_INSPECTOR_PATH}      (Test Inspector — test quality assessment)
 - {RUST_INSPECTOR_PATH}      (Idiomatic Rust Inspector — Rust idiom assessment)
 - {TYPING_INSPECTOR_PATH}    (Strong Typing Inspector — primitive obsession and type-boundary leaks)
 - {CONTRACT_INSPECTOR_PATH}  (External Contract Inspector — unverified external-API/contract assumptions)
+- {COMMENT_INSPECTOR_PATH}   (Comment Discipline Inspector — excessive source comments and overly specific PR/issue prose)
 
 And the diff itself at:
 - {DIFF_PATH}
@@ -862,7 +907,7 @@ For each finding:
 - **Confidence:** <0-100>
 - **Found by:** [codex-a], [codex-b], [codex-c], [codex-d], [codex-e],
   [claude-a], [claude-b], [test-inspector], [rust-inspector],
-  [contract-inspector], or a list
+  [contract-inspector], [comment-inspector], or a list
 - **Issue:** <one paragraph>
 - **Why it matters:** <concrete consequence>
 - **Recommended fix:** <specific action>
@@ -912,11 +957,19 @@ their findings as follows:
   width/unit/encoding at a money or on-chain boundary, down to low for
   cosmetic shape assumptions). The recommended fix should name how to pin
   the assumption (cite the spec, or add the real-response test).
+- **Comment Discipline Inspector findings** (Rust comments that narrate or
+  restate code, explanations that belong in names/types/structure, and overly
+  specific PR/issue prose): convert each into a standard finding with category
+  "maintainability" unless an explicit project rule makes it "convention".
+  Severity is low by default and medium when the prose obscures intent or is
+  likely to become stale. Prefer clearer Rust plus deleting or shortening the
+  comment over adding more explanation.
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the reviewer
   findings — merge duplicates as you would between any two reviewers.
 - In the "Found by" field, use [test-inspector], [rust-inspector],
-  [typing-inspector], or [contract-inspector] as the attribution.
+  [typing-inspector], [contract-inspector], or [comment-inspector] as the
+  attribution.
 
 Do not include emojis, apologies, or disclaimers. Be decisive.
 ```

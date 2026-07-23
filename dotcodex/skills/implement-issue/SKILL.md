@@ -71,6 +71,13 @@ issue identifier and stop until they provide it.
    - Write or update tests before or alongside the behavior change.
    - Keep the diff scoped to the issue.
    - Follow the repository's docs, naming, and formatting conventions.
+   - Make the Rust code explain its intent through names, domain types,
+     function boundaries, and control flow. Keep comments scarce. Add a code
+     comment only when it preserves non-obvious rationale, an invariant, a
+     safety argument, or an external constraint that the code cannot express.
+     Do not narrate the code, restate what a line does, preserve implementation
+     history, or compensate for unclear code with a long explanation; improve
+     the code instead.
    - Use multi-agent tools for independent research or review only when they
      are available and useful; otherwise do the work locally.
    - Pre-split big plans up front: when the plan has more than ~6 tasks or
@@ -104,6 +111,11 @@ issue identifier and stop until they provide it.
 10. Update the PR.
     - Use `pr-description` to draft or refresh the PR title/body.
     - Ensure the Linear issue is linked.
+    - Keep PR and Linear comments to the minimum needed for coordination:
+      status, blockers, decisions, or actionable review feedback. Describe the
+      goal, user-visible behavior, constraints, and verification without a
+      line-by-line implementation walkthrough. Let the Rust diff carry details
+      that a reader can learn directly from the code.
 
 11. Amend and submit with Graphite.
     ```bash
@@ -137,3 +149,6 @@ issue identifier and stop until they provide it.
 - Do not include unrelated user changes in the commit.
 - Keep Linear and PR status current as part of the work, not as a separate
   cleanup left to the user.
+- Keep source comments and PR/Linear comments minimal. Prefer expressive Rust
+  over explanatory prose, and never leave overly specific commentary that
+  merely repeats the implementation.

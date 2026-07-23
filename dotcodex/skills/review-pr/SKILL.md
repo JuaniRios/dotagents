@@ -306,6 +306,8 @@ Default reviewer set:
 6. **Test Inspector** — Codex subagent using the test-inspector workflow
 7. **Idiomatic Rust Inspector** — Codex subagent using the Rust inspector workflow
 8. **External Contract Inspector** — Codex subagent using the external-contract-inspector workflow
+9. **Comment Discipline Inspector** — Codex subagent checking that Rust and
+   review prose express intent without excessive commentary
 
 Optional external reviewers:
 
@@ -375,9 +377,9 @@ Notes:
   in the final user-facing report or GitHub comments.
 - If Claude exits non-zero, record that lane as errored and continue.
 
-### Inspectors 6-8 — Test, Idiomatic Rust, and External Contract Inspectors
+### Inspectors 6-9 — Test, Idiomatic Rust, External Contract, and Comment Discipline Inspectors
 
-Spawn three additional Codex subagents alongside the five
+Spawn four additional Codex subagents alongside the five
 reviewers. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary input.
 
@@ -441,6 +443,50 @@ report. If the diff has no external touchpoints, say so and stop.
 
 Write output to `$out_dir/raw-contract-inspector.md`.
 
+**Comment Discipline Inspector**:
+
+Prompt:
+
+```
+You are reviewing comment discipline across the entire PR. Inspect every
+changed Rust source comment and the code around it, plus the author-written PR
+description.
+
+Rust should explain intent through names, domain types, function boundaries,
+and control flow. A source comment is justified only for non-obvious
+rationale, an invariant, a safety argument, or an external constraint that
+the code cannot express. Flag comments that narrate the code, restate a line,
+preserve implementation history, give an overly specific walkthrough, or
+compensate for unclear code. Prefer improving the code and deleting or
+shortening the comment. Do not recommend more prose by default.
+
+PR or issue-facing prose should state the goal, observable behavior,
+constraints, verification, blockers, or an actionable decision. Flag
+line-by-line implementation explanations and details already clear from the
+diff. Do not flag required safety, invariant, protocol, or externally imposed
+documentation.
+
+Read all changed Rust files, not only lines with comments, so you can judge
+whether nearby code communicates intent. Return only concrete findings.
+Category is "maintainability" unless project docs explicitly make it
+"convention". Severity is low by default, medium when duplication obscures
+intent or will predictably become stale.
+```
+
+Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+The PR is at commit <head_sha>. Read source files via
+`git show <head_sha>:<path>` — the working tree does not match the PR.
+
+Produce your inspection report. If there are no Rust files, source comments,
+or PR/issue-facing prose to assess, say so and stop.
+```
+
+Write output to `$out_dir/raw-comment-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (record "no test files, skipped"). If the diff contains no
 `.rs` files, the Rust inspector will self-exit (same handling). If the diff
@@ -471,10 +517,11 @@ continue. If all five Codex reviewer lanes error, stop.
 
 ## 7. Aggregate with review-pr-specific output
 
-The aggregator receives the five reviewer reports **plus** the three
+The aggregator receives the five reviewer reports **plus** the four
 inspector reports (`$out_dir/raw-test-inspector.md`,
 `$out_dir/raw-rust-inspector.md`, and
-`$out_dir/raw-contract-inspector.md`). Pass all eight to the aggregator.
+`$out_dir/raw-contract-inspector.md`, and
+`$out_dir/raw-comment-inspector.md`). Pass all nine to the aggregator.
 
 Inspector reports use a different format from the five reviewers. The
 aggregator should integrate their findings as follows:
@@ -497,6 +544,13 @@ aggregator should integrate their findings as follows:
   width/unit/encoding at a money or on-chain boundary, down to low for
   cosmetic shape assumptions). The recommended fix should name how to pin
   the assumption (cite the spec, or add the real-response test).
+- **Comment Discipline Inspector findings** (Rust comments that narrate or
+  restate code, explanations that belong in names/types/structure, and overly
+  specific PR/issue prose): convert each into a standard finding with category
+  "maintainability" unless an explicit project rule makes it "convention".
+  Severity is low by default and medium when the prose obscures intent or is
+  likely to become stale. Prefer clearer Rust plus deleting or shortening the
+  comment over adding more explanation.
 - If an inspector report is empty or says "no files found", ignore it.
 - Inspector findings can corroborate or conflict with the five reviewer
   findings — merge duplicates as usual.

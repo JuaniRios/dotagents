@@ -160,6 +160,11 @@ path and branch name, following `/implement-issue` step 6:
    and running **scoped** checks (`cargo check -p` / `cargo nextest run -p` or
    repo equivalent) — never the full workspace suite each iteration — to keep
    its own window lean.
+   Apply `/implement-issue`'s comment discipline on every branch: Rust must
+   express intent through names, domain types, structure, and control flow.
+   Add comments only for non-obvious rationale, invariants, safety arguments,
+   or external constraints. Do not narrate the implementation or use comments
+   to compensate for unclear code.
 2. Append every notable decision to `.tmp/issue-stack/<ISSUE-ID>.md`, return a
    **tight** summary (one line per file touched, test results, deviations with
    rationale — not full diffs), and close.
@@ -191,6 +196,11 @@ loop. Keep your context tiny by forcing review-loop's delegations:
 3. Invoke the `pr-description` skill (final description; its Codex gate
    replaces user confirmation; it pushes automatically).
 4. Append the review summary to the issue log.
+
+Keep all PR and Linear comments sparse and outcome-focused. Comment only for
+status, blockers, decisions, or actionable review feedback. Do not leave
+line-by-line implementation walkthroughs or overly specific prose that the
+Rust diff already communicates.
 
 Structured findings and triage tables will enter your context — expected
 and cheap on Sonnet. Source code, diffs, and prompt text must not.
@@ -270,6 +280,9 @@ When all issues are done (or the stack stopped early), report:
    user picks "parent too" in Step 0.4). Ordering precedence is fixed:
    blocked-by, then Linear's manual sub-issue ordering, then issue number —
    never re-order children on your own judgement of difficulty or size.
+10. Do not accumulate explanatory source comments or overly specific PR/Linear
+    comments as the stack grows. Let expressive Rust carry implementation
+    detail.
 
 ## Failure modes
 

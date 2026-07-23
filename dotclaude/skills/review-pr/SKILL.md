@@ -244,7 +244,7 @@ behavior? Are there implicit assumptions that aren't documented?
 
 ### Inspector prompts
 
-Write four inspector prompt files the same way. Each contains the full body
+Write five inspector prompt files the same way. The first four contain the full body
 of the corresponding command file (everything below the frontmatter, with
 `$ARGUMENTS` replaced by the PR reference), plus this shared context block:
 
@@ -295,6 +295,21 @@ plus per-inspector structured-output mapping rules:
   on-chain boundary, down to low for cosmetic shape assumptions. The
   recommended_fix should name how to pin the assumption (cite the spec, or
   add the real-response test)."
+- **Comment Discipline Inspector** (`prompt-comment-inspector.txt`): use a
+  dedicated prompt to inspect every changed Rust source comment and its
+  surrounding code, plus the author-written PR description. Rust should
+  express intent through names, domain types, function boundaries, and
+  control flow. A comment is justified only for non-obvious rationale, an
+  invariant, a safety argument, or an external constraint that code cannot
+  express. Flag narration, restatement, implementation history, overly
+  specific walkthroughs, and comments that compensate for unclear code.
+  Prefer clearer code plus deleting or shortening the comment, not more
+  prose. Apply the same standard to PR/issue-facing text: keep goals,
+  observable behavior, constraints, verification, blockers, and actionable
+  decisions; flag line-by-line details already clear from the diff. Return
+  category "maintainability" unless project docs explicitly make it
+  "convention"; severity low by default, medium when the prose obscures intent
+  or will predictably become stale.
 
 ## 7. Present a plain-language overview (sanity check)
 
@@ -333,7 +348,7 @@ no output-file validation, no separate aggregator agent.
 ### Lanes
 
 Build the lane list (drop the codex lanes if `codex` is not on PATH — check
-`command -v codex`; warn the user and continue with 7 lanes):
+`command -v codex`; warn the user and continue with 8 lanes):
 
 | key                | codex | model  | effort | promptPath                              |
 | ------------------ | ----- | ------ | ------ | --------------------------------------- |
@@ -346,6 +361,7 @@ Build the lane list (drop the codex lanes if `codex` is not on PATH — check
 | rust-inspector     | no    | sonnet |        | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | sonnet |        | prompt-typing-inspector.txt             |
 | contract-inspector | no    | opus   | xhigh  | prompt-contract-inspector.txt           |
+| comment-inspector  | no    | sonnet |        | prompt-comment-inspector.txt            |
 
 **Model allocation:** `opus-b` (goal evaluation) and `contract-inspector`
 run on Opus at xhigh effort — the lanes where deep reasoning demonstrably

@@ -106,6 +106,11 @@ linear api '{ issue(id: "RAI-800") { children { nodes {
 4. For each issue in order:
    - Follow the `implement-issue` workflow.
    - Keep changes scoped to that issue's branch.
+   - Preserve `implement-issue`'s comment discipline on every branch: Rust
+     should express intent through names, types, structure, and control flow;
+     code comments are only for non-obvious rationale, invariants, safety, or
+     external constraints. Keep PR and Linear comments sparse and
+     outcome-focused, never a line-by-line implementation narrative.
    - Run targeted checks and required final checks according to the session
      policy.
    - Run review before submission for substantive code.
@@ -145,3 +150,5 @@ linear api '{ issue(id: "RAI-800") { children { nodes {
 - Do not ask repeated checkpoint questions after the upfront autonomous-run
   confirmation.
 - Keep the `.tmp/issue-stack` log out of git.
+- Do not accumulate explanatory source comments or overly specific PR/Linear
+  comments as the stack grows. Let the code carry implementation detail.

@@ -271,7 +271,7 @@ Verify prerequisites before doing anything:
    command -v codex gt
    ```
    If `codex` is missing, warn the user and drop the two Codex lanes from the
-   panel (7 lanes instead of 9). Seven lanes is still valuable.
+   panel (8 lanes instead of 10). Eight lanes is still valuable.
 
 3. The working tree is clean or stashed. A dirty tree pollutes the diff
    and confuses reviewers:
@@ -499,7 +499,7 @@ Save each complete prompt (base + focus) to `$out_dir/prompt-{reviewer}.txt`.
 
 ### Inspector prompts
 
-Write four inspector prompt files the same way. Each contains the full body
+Write five inspector prompt files the same way. The first four contain the full body
 of the corresponding command file (everything below the frontmatter, with
 `$ARGUMENTS` replaced by the empty string — use the current branch), plus an
 appended context block, plus structured-output mapping rules:
@@ -574,6 +574,37 @@ cosmetic shape assumptions. The recommended_fix should name how to pin the
 assumption (cite the spec, or add the real-response test).
 ```
 
+**Comment Discipline Inspector** —
+`$out_dir/prompt-comment-inspector.txt`. This is a dedicated prompt, not a
+separate skill:
+
+```
+You are reviewing comment discipline across the entire diff. Inspect every
+changed Rust source comment and the code around it, plus the author-written PR
+description or issue-facing prose in the shared context.
+
+Rust should explain intent through names, domain types, function boundaries,
+and control flow. A source comment is justified only for non-obvious
+rationale, an invariant, a safety argument, or an external constraint that
+the code cannot express. Flag comments that narrate the code, restate a line,
+preserve implementation history, give an overly specific walkthrough, or
+compensate for unclear code. Prefer improving the code and deleting or
+shortening the comment. Do not recommend more prose by default.
+
+PR or issue-facing prose should state the goal, observable behavior,
+constraints, verification, blockers, or an actionable decision. Flag
+line-by-line implementation explanations and details already clear from the
+diff. Do not flag required safety, invariant, protocol, or externally imposed
+documentation.
+
+Read all changed Rust files, not only lines with comments, so you can judge
+whether nearby code communicates intent. Return only concrete findings via
+the structured output tool. Category is "maintainability" unless project docs
+explicitly make it "convention". Severity is low by default, medium when
+duplication obscures intent or will predictably become stale. If there is
+nothing relevant to assess, return an empty findings list with clean_reason.
+```
+
 ## 5. Run the review workflow
 
 The whole review pass — fan-out, per-lane adversarial verification, and (on
@@ -602,6 +633,7 @@ Full lane catalogue (drop the codex lanes if `codex` is not on PATH):
 | rust-inspector     | no    | sonnet |        | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | sonnet |        | prompt-typing-inspector.txt             |
 | contract-inspector | no    | opus   | xhigh  | prompt-contract-inspector.txt           |
+| comment-inspector  | no    | sonnet |        | prompt-comment-inspector.txt            |
 
 **Model allocation:** `opus-b` (goal evaluation) and `contract-inspector`
 run on Opus at xhigh effort — the lanes where deep reasoning demonstrably
@@ -614,11 +646,12 @@ premium) session model for trivial wrapper work.
 **Pass lanes compactly.** Don't hand-spell the full lane objects in `args` —
 the script expands them. The caller sends just `outDir`, `diffPath`, and
 `laneKeys` (e.g. `["sonnet-a","opus-b","sonnet","codex-a","codex-b",
-"test-inspector","rust-inspector","typing-inspector","contract-inspector"]`);
+"test-inspector","rust-inspector","typing-inspector","contract-inspector",
+"comment-inspector"]`);
 the script's `LANE_CATALOGUE` turns each key into the full
 `{key, codex, model, promptPath, diffPath, effort?}` (promptPath =
 `$out_dir/prompt-<key>.txt`, `effort` defaults to `medium` for codex lanes).
-This keeps the per-pass `args` the main session inlines tiny — re-spelling 9
+This keeps the per-pass `args` the main session inlines tiny — re-spelling 10
 objects with absolute paths every pass just burns main-session tokens for zero
 review value. Normally all lanes share `$out_dir/diff.patch`. **Chunked runs**
 (per-chunk keys like `sonnet-a-chunk-b`, per-chunk paths) are the exception:
@@ -632,9 +665,9 @@ diff to keep each pass affordable. Inspectors are always included (9–18s
 each, negligible):
 
 - **< 50 changed lines:** `opus-b` (goal eval) + one codex broad lane +
-  all four inspectors. ~5 lanes.
+  all five inspectors. ~7 lanes.
 - **50–500 lines:** the full catalogue minus one codex lane (`codex-a` and
-  `codex-b` overlap heavily). ~8 lanes.
+  `codex-b` overlap heavily). ~9 lanes.
 - **> 500 lines, or any diff touching security-sensitive paths** (auth,
   secrets, payment/financial, on-chain, migrations): the full catalogue.
 
@@ -764,7 +797,7 @@ const { repoRoot, contextPath, outDir, diffPath, laneKeys,
 // Lane catalogue: the caller passes a COMPACT { outDir, diffPath, laneKeys }
 // and the script expands each key to a full lane object here — so the per-pass
 // args the main session must inline stay tiny (the lanes are identical every
-// pass except diffPath, so re-spelling 9 objects with absolute paths each pass
+// pass except diffPath, so re-spelling 10 objects with absolute paths each pass
 // just burns main-session tokens). Chunked runs (lane keys like
 // `sonnet-a-chunk-b`, per-chunk promptPath/diffPath) pass an explicit `lanes`
 // array instead, which takes precedence.
@@ -778,6 +811,7 @@ const LANE_CATALOGUE = {
   'rust-inspector':     { codex: false, model: 'sonnet' },
   'typing-inspector':   { codex: false, model: 'sonnet' },
   'contract-inspector': { codex: false, model: 'opus',   effort: 'xhigh' },
+  'comment-inspector':  { codex: false, model: 'sonnet' },
 }
 const lanes = explicitLanes || (laneKeys || []).map(key => ({
   key, ...LANE_CATALOGUE[key],
@@ -1514,7 +1548,7 @@ the wrapper must not create or implement follow-ups per branch.
 - **The user says "stop" mid-loop:** immediately stop, then print the
   summary with what was completed so far. Do not silently abandon the rest.
 - **Codex not installed:** warn the user and drop the codex lanes
-  (7 lanes instead of 9). Seven lanes is still valuable.
+  (8 lanes instead of 10). Eight lanes is still valuable.
 - **The diff is oversized but has no clean seam:** report that the groups
   cannot be made to compile independently, keep the PR whole, and continue the
   loop. Do not force a split that produces broken intermediate branches.
