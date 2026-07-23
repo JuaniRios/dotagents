@@ -1,7 +1,7 @@
 ---
 name: implement-issue
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(linear:*), Bash(codex:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(test:*), Bash(basename:*), Bash(date:*), Bash(sleep:*), Bash(sed:*), Bash(grep:*), Bash(wc:*), Bash(find:*), Read, Write, Edit, Skill, Agent, Workflow, AskUserQuestion, TodoWrite
-description: Take a Linear issue from link to finished implementation — open a skeleton Graphite PR, cross-link Linear↔PR, plan via a Sonnet subagent critiqued by Codex + Opus, implement via closing subagents, review via /review-loop in the main session (its Workflow panel only exists there; heavy steps delegated internally), submit the stack, and get CI green.
+description: Take a Linear issue from link to finished implementation — open a skeleton Graphite PR, cross-link Linear↔PR, plan via a Fable subagent critiqued by Codex + Opus, implement via closing subagents, review via /review-loop in the main session (its Workflow panel only exists there; heavy steps delegated internally), submit the stack, and get CI green.
 argument-hint: <issue-link-or-number>
 ---
 
@@ -110,7 +110,7 @@ closes — only the refined plan returns to the main session.
 mkdir -p .tmp/implement-issue
 ```
 
-Spawn a **planner subagent** (`Agent`, `model: sonnet`) with the issue ID,
+Spawn a **planner subagent** (`Agent`, `model: fable`) with the issue ID,
 title, description, and URL, plus these instructions:
 
 1. Read the repo's project docs (`CLAUDE.md`/`AGENTS.md`, `SPEC.md`, relevant
@@ -290,7 +290,8 @@ Tell the user implementation is finished. Print:
    subagents that close when done — never in the main session. `/review-loop`
    and `/pr-description` run in the main session (the `Workflow` tool is
    unavailable inside subagents) but delegate their heavy lifting internally.
-   Pin the planner/implementer/fixer subagents to `sonnet`; the plan critics
+   Pin the planner subagent to `fable`; pin the implementer/fixer subagents to
+   `sonnet`; the plan critics
    are exactly one Opus subagent (`model: opus`, xhigh effort) + one Codex CLI
    pass.
 6. The skeleton description (step 3) may be auto-approved since it's an

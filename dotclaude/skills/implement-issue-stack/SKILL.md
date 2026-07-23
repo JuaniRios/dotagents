@@ -1,7 +1,7 @@
 ---
 name: implement-issue-stack
 allowed-tools: Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(linear:*), Bash(codex:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(tail:*), Bash(test:*), Bash(mktemp:*), Bash(rm:*), Bash(sleep:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(find:*), Bash(basename:*), Read, Write, Agent, Skill, Workflow, AskUserQuestion, TodoWrite
-description: Opus-medium babysitter that implements a whole stack of Linear issues — an ordered list of issue IDs, or a single parent issue that it expands into its sub-issues (ordered by blocked-by, then Linear's manual ordering, then issue number). Runs on Opus (medium effort) for orchestration fidelity — its context stays tiny by design so the premium model is cheap here; for each issue in order it mirrors /implement-issue autonomously via closing subagents — a Sonnet subagent plans (Codex + Opus critique the plan), then a separate Sonnet subagent implements off the plan file; the main loop then runs /review-loop (its Workflow panel exists only in the main session) with all heavy steps delegated to subagents, runs /pr-description, amends + gt ss + waits for CI, then starts the next issue from scratch stacked on top. Never spawns headless `claude -p` sessions (they bill as extra usage); subagents stay inside the subscription session.
+description: Opus-medium babysitter that implements a whole stack of Linear issues — an ordered list of issue IDs, or a single parent issue that it expands into its sub-issues (ordered by blocked-by, then Linear's manual ordering, then issue number). Runs on Opus (medium effort) for orchestration fidelity — its context stays tiny by design so the premium model is cheap here; for each issue in order it mirrors /implement-issue autonomously via closing subagents — a Fable subagent plans (Codex + Opus critique the plan), then a separate Sonnet subagent implements off the plan file; the main loop then runs /review-loop (its Workflow panel exists only in the main session) with all heavy steps delegated to subagents, runs /pr-description, amends + gt ss + waits for CI, then starts the next issue from scratch stacked on top. Never spawns headless `claude -p` sessions (they bill as extra usage); subagents stay inside the subscription session.
 argument-hint: <parent-issue> | <issue-1> <issue-2> [issue-3 ...]
 disable-model-invocation: true
 ---
@@ -136,7 +136,7 @@ context ("Prompt is too long") on a non-trivial issue, since it has to hold
 research + plan + critique + the full implementation at once. The plan flows
 between them through the plan file, not a shared window.
 
-**Step 2a — Planner subagent** (`Agent`, `model: sonnet`) with the issue ID,
+**Step 2a — Planner subagent** (`Agent`, `model: fable`) with the issue ID,
 title, description, and URL, following `/implement-issue` step 5 with no
 approval gate:
 
@@ -266,7 +266,7 @@ When all issues are done (or the stack stopped early), report:
    green.
 5. Keep main-loop context tiny: no source, no diffs, no full logs; `tail`
    only when diagnosing a failure.
-6. Pin the work subagents (planner 2a, implementer 2b, fixers) to `sonnet`;
+6. Pin the planner (2a) to `fable`; pin the implementer (2b) and fixers to `sonnet`;
    plan and implement are **separate** subagents (Step 2), never merged, so
    neither overflows. Plan critics are exactly one Opus subagent (`model:
    opus`, xhigh effort) + one Codex CLI pass (mirrors `/implement-issue` hard
