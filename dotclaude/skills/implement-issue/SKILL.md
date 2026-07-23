@@ -1,7 +1,7 @@
 ---
 name: implement-issue
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(linear:*), Bash(codex:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(test:*), Bash(basename:*), Bash(date:*), Bash(sleep:*), Bash(sed:*), Bash(grep:*), Bash(wc:*), Bash(find:*), Read, Write, Edit, Skill, Agent, Workflow, AskUserQuestion, TodoWrite
-description: Take a Linear issue from link to finished implementation — open a skeleton Graphite PR, cross-link Linear↔PR, plan via a Fable subagent critiqued by Codex + Opus, implement via closing subagents, review via /review-loop in the main session (its Workflow panel only exists there; heavy steps delegated internally), submit the stack, and get CI green.
+description: Take a Linear issue from link to finished implementation — open a skeleton Graphite PR, cross-link Linear↔PR, plan via a Fable subagent critiqued by Codex + Opus (or use a /plan-issue document attached to the issue instead of planning, when one exists), implement via closing subagents, review via /review-loop in the main session (its Workflow panel only exists there; heavy steps delegated internally), submit the stack, and get CI green.
 argument-hint: <issue-link-or-number>
 ---
 
@@ -103,12 +103,31 @@ Confirm both directions are linked before continuing.
 
 ## 5. Plan via a planner subagent (Codex + Opus critique)
 
-Planning happens in a subagent that researches, drafts, gets critiqued, and
-closes — only the refined plan returns to the main session.
-
 ```bash
 mkdir -p .tmp/implement-issue
 ```
+
+**5.0 — Use an attached plan document if one exists.** Check the issue for a
+`/plan-issue` document:
+
+```bash
+linear api '{ issue(id: "<ISSUE-ID>") { documents { nodes { id title url } } } }'
+```
+
+If a document titled `<ISSUE-ID> Implementation Plan` exists, save it as the
+plan and skip the planner subagent and the critique panel entirely:
+
+```bash
+linear document view <doc-id> > .tmp/implement-issue/<issue-id>-plan.md
+```
+
+Present its "Decisions that need your sign-off" section and confirm with the
+user (`AskUserQuestion`: use this plan / adjust / plan from scratch). On
+approval, go straight to step 6. Only when no such document exists (or the
+user picks "plan from scratch") run the planner flow below.
+
+Planning happens in a subagent that researches, drafts, gets critiqued, and
+closes — only the refined plan returns to the main session.
 
 Spawn a **planner subagent** (`Agent`, `model: fable`) with the issue ID,
 title, description, and URL, plus these instructions:
@@ -281,7 +300,8 @@ Tell the user implementation is finished. Print:
 
 1. Never use raw `git` to mutate state — all commits/amends/submits go through
    `gt` (see the `graphite` skill).
-2. Never implement before the user approves the plan in step 5.
+2. Never implement before the user approves the plan in step 5 (an attached
+   plan document still gets the quick confirm in 5.0).
 3. The Linear issue must be a markdown hyperlink in the PR body, and the PR URL
    must be attached to the Linear issue — both directions, every time.
 4. Assignee is `JuaniRios`; reviewers are `0xgleb` and `findolor` — except in

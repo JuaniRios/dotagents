@@ -1,7 +1,7 @@
 ---
 name: implement-issue-stack
 allowed-tools: Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(linear:*), Bash(codex:*), Bash(cargo:*), Bash(nix:*), Bash(mkdir:*), Bash(cat:*), Bash(tail:*), Bash(test:*), Bash(mktemp:*), Bash(rm:*), Bash(sleep:*), Bash(grep:*), Bash(wc:*), Bash(date:*), Bash(find:*), Bash(basename:*), Read, Write, Agent, Skill, Workflow, AskUserQuestion, TodoWrite
-description: Opus-medium babysitter that implements a whole stack of Linear issues — an ordered list of issue IDs, or a single parent issue that it expands into its sub-issues (ordered by blocked-by, then Linear's manual ordering, then issue number). Runs on Opus (medium effort) for orchestration fidelity — its context stays tiny by design so the premium model is cheap here; for each issue in order it mirrors /implement-issue autonomously via closing subagents — a Fable subagent plans (Codex + Opus critique the plan), then a separate Sonnet subagent implements off the plan file; the main loop then runs /review-loop (its Workflow panel exists only in the main session) with all heavy steps delegated to subagents, runs /pr-description, amends + gt ss + waits for CI, then starts the next issue from scratch stacked on top. Never spawns headless `claude -p` sessions (they bill as extra usage); subagents stay inside the subscription session.
+description: Opus-medium babysitter that implements a whole stack of Linear issues — an ordered list of issue IDs, or a single parent issue that it expands into its sub-issues (ordered by blocked-by, then Linear's manual ordering, then issue number). Runs on Opus (medium effort) for orchestration fidelity — its context stays tiny by design so the premium model is cheap here; for each issue in order it mirrors /implement-issue autonomously via closing subagents — a Fable subagent plans (Codex + Opus critique the plan) unless the issue carries a /plan-issue document (then that document is the plan, no machine planning), then a separate Sonnet subagent implements off the plan file; the main loop then runs /review-loop (its Workflow panel exists only in the main session) with all heavy steps delegated to subagents, runs /pr-description, amends + gt ss + waits for CI, then starts the next issue from scratch stacked on top. Never spawns headless `claude -p` sessions (they bill as extra usage); subagents stay inside the subscription session.
 argument-hint: <parent-issue> | <issue-1> <issue-2> [issue-3 ...]
 disable-model-invocation: true
 ---
@@ -57,6 +57,10 @@ Track per-issue progress with `TodoWrite`.
    clean (`git status --porcelain` empty). Run `gt sync` once now (never
    mid-stack); note the current branch — the stack grows from `gt top` of it.
 3. **Issues exist.** `linear issue view <ID>` for each; stop on any miss.
+   For each issue, also check for an attached `/plan-issue` document:
+   `linear api '{ issue(id: "<ID>") { documents { nodes { id title url } } } }'`
+   — record any document titled `<ISSUE-ID> Implementation Plan` (id + url);
+   those issues skip machine planning in Step 2a.
 
 4. **Parent expansion.** If any argument resolves to an issue that has
    sub-issues, expand it into its children — the parent itself is never
@@ -107,6 +111,8 @@ Track per-issue progress with `TodoWrite`.
 5. **Confirm the plan** with the user in one shot: the ordered issue list
    (for an expanded parent, show the parent, the resolved child order, and the
    rule that decided each position),
+   which issues will use their attached plan document as-is and which will be
+   machine-planned,
    the base branch, and that each issue's PR will be pushed and CI waited on
    without further confirmation. Then go autonomous.
 
@@ -138,7 +144,18 @@ between them through the plan file, not a shared window.
 
 **Step 2a — Planner subagent** (`Agent`, `model: fable`) with the issue ID,
 title, description, and URL, following `/implement-issue` step 5 with no
-approval gate:
+approval gate.
+
+**If the issue has an attached plan document** (recorded in Step 0.3), skip
+the planner subagent and the critique panel entirely — the document is
+human-authored and reviewed. Cheap main-loop glue:
+
+```bash
+linear document view <doc-id> > .tmp/issue-stack/<ISSUE-ID>-plan.md
+```
+
+Log `used attached plan doc <url>` in the issue log and go straight to 2b.
+Otherwise:
 
 1. Research repo docs + source; write the ordered plan to
    `.tmp/issue-stack/<ISSUE-ID>-plan.md`.
@@ -266,7 +283,8 @@ When all issues are done (or the stack stopped early), report:
    green.
 5. Keep main-loop context tiny: no source, no diffs, no full logs; `tail`
    only when diagnosing a failure.
-6. Pin the planner (2a) to `fable`; pin the implementer (2b) and fixers to `sonnet`;
+6. Pin the planner (2a) to `fable` (skipped entirely when the issue carries
+   an attached plan document); pin the implementer (2b) and fixers to `sonnet`;
    plan and implement are **separate** subagents (Step 2), never merged, so
    neither overflows. Plan critics are exactly one Opus subagent (`model:
    opus`, xhigh effort) + one Codex CLI pass (mirrors `/implement-issue` hard
