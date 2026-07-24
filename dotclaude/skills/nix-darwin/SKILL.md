@@ -14,22 +14,39 @@ know which file to touch before you touch it.
 
 ## Repo Layout
 
+The repo is **multi-host**: the mac (`juanrios-m2`, nix-darwin) and the
+always-on dev server (`juan-dev-server`, NixOS in a Hyper-V VM on the gaming
+PC). Anything under `home/` that is not explicitly gated applies to BOTH.
+
 ```
 ~/Github/nix-darwin-config/
-├── flake.nix                      # inputs: nixpkgs-unstable, nix-darwin, home-manager
+├── flake.nix                      # darwinConfigurations + nixosConfigurations
 ├── flake.lock
-├── hosts/juanrios-m2.nix          # system wiring, imports modules
+├── hosts/
+│   ├── juanrios-m2.nix            # mac system wiring, imports modules/darwin/*
+│   └── juan-dev-server/
+│       ├── default.nix            # server system wiring, user juan, authorized keys
+│       ├── hardware-configuration.nix  # disk layout (mounts by label)
+│       └── README.md              # Hyper-V install runbook
 ├── modules/
-│   ├── nix.nix                    # nix.enable=false (Lix) + /etc/nix/nix.custom.conf
-│   ├── homebrew.nix               # casks, brews (w/ taps), masApps
-│   ├── system-defaults.nix        # dock, TouchID sudo, etc.
-│   └── tailscale-cli.nix          # activation script: wrapper for tailscale CLI
+│   ├── darwin/                    # macOS-only system modules
+│   │   ├── nix.nix                # nix.enable=false (Lix) + /etc/nix/nix.custom.conf
+│   │   ├── homebrew.nix           # casks, brews (w/ taps), masApps
+│   │   ├── system-defaults.nix    # dock, TouchID sudo, etc.
+│   │   └── tailscale-cli.nix      # activation script: wrapper for tailscale CLI
+│   └── nixos/                     # server-only system modules
+│       ├── nix.nix                # daemon settings, idle sched, GC
+│       ├── server.nix             # sshd, tailscale, firewall, zram, shells
+│       └── hyperv.nix             # Hyper-V guest + systemd-boot
 ├── home/
-│   ├── default.nix                # home-manager entry, imports submodules
-│   ├── packages.nix               # CLI tools from nixpkgs
+│   ├── common.nix                 # home-manager entry shared by BOTH hosts
+│   ├── darwin.nix                 # mac entry: common + ghostty, username/homedir
+│   ├── server.nix                 # server entry: common + zellij/codex/build deps
+│   ├── packages.nix               # CLI tools from nixpkgs (both hosts)
 │   ├── shell.nix                  # zsh, nushell, starship, zoxide, yazi, direnv
 │   ├── git.nix                    # git identity
-│   ├── ghostty.nix                # ghostty terminal config
+│   ├── ghostty.nix                # ghostty terminal config (mac only)
+│   ├── claude-code.nix            # installer on darwin, pkgs.claude-code on linux
 │   ├── dotfiles.nix               # xdg.configFile wiring
 │   └── dotfiles/
 │       ├── starship.toml          # gruvbox-dark powerline prompt
@@ -41,23 +58,31 @@ know which file to touch before you touch it.
 
 ## Decision Tree: Where Does It Go?
 
+First ask **which host(s)** it is for. A tool wanted on both goes in the shared
+file; a tool wanted on one goes in that host's entry point.
+
 | What you're adding | File | Section |
 |---|---|---|
-| GUI app (any .app) | `modules/homebrew.nix` | `homebrew.casks` |
-| Mac App Store app | `modules/homebrew.nix` | `homebrew.masApps` (needs numeric ID) |
-| CLI tool (check nixpkgs first!) | `home/packages.nix` | `home.packages` |
-| CLI tool NOT in nixpkgs | `modules/homebrew.nix` | `homebrew.brews` (fully qualified tap name) |
-| Homebrew tap | `modules/homebrew.nix` | `homebrew.taps` |
+| GUI app (any .app) | `modules/darwin/homebrew.nix` | `homebrew.casks` |
+| Mac App Store app | `modules/darwin/homebrew.nix` | `homebrew.masApps` (needs numeric ID) |
+| CLI tool, BOTH hosts (check nixpkgs first!) | `home/packages.nix` | `home.packages` |
+| CLI tool, mac only | `home/darwin.nix` | `home.packages` |
+| CLI tool, server only | `home/server.nix` | `home.packages` |
+| CLI tool NOT in nixpkgs | `modules/darwin/homebrew.nix` | `homebrew.brews` (fully qualified tap name) |
+| Homebrew tap | `modules/darwin/homebrew.nix` | `homebrew.taps` |
+| Server service (systemd, sshd, tailscale…) | `modules/nixos/server.nix` | NixOS options |
+| Server user/host setting | `hosts/juan-dev-server/default.nix` | `users.users.juan`, hostname, timezone |
 | Nushell alias | `home/shell.nix` | `programs.nushell.shellAliases` |
 | Nushell config | `home/shell.nix` | `programs.nushell.extraConfig` |
 | Nushell PATH entry | `home/shell.nix` | `programs.nushell.extraEnv` |
 | Starship prompt | `home/dotfiles/starship.toml` | (see starship caveat below) |
 | Karabiner rule/device | `home/dotfiles/karabiner.json` | (validate JSON after edit) |
 | Ghostty setting | `home/ghostty.nix` | `home.file...text` (nix string interpolation) |
-| macOS system default | `modules/system-defaults.nix` | `system.defaults.*` |
-| Nix/Lix setting | `modules/nix.nix` | `environment.etc."nix/nix.custom.conf".text` |
-| System activation script | new module in `modules/` | `system.activationScripts.*` (+ import in hosts/) |
-| New home-manager module | new file in `home/` | (+ import in home/default.nix) |
+| macOS system default | `modules/darwin/system-defaults.nix` | `system.defaults.*` |
+| Nix/Lix setting (mac) | `modules/darwin/nix.nix` | `environment.etc."nix/nix.custom.conf".text` |
+| System activation script | new module in `modules/darwin/` | `system.activationScripts.*` (+ import in hosts/juanrios-m2.nix) |
+| Nix daemon setting (server) | `modules/nixos/nix.nix` | `nix.settings.*` |
+| New home-manager module | new file in `home/` | (+ import in `home/common.nix` for both hosts, or `home/darwin.nix` / `home/server.nix` for one) |
 
 ## Adding a CLI Tool — Always Check nixpkgs First
 
@@ -68,7 +93,7 @@ nix eval --raw nixpkgs#<package-name>.meta.description
 ```
 
 - **If found**: add to `home/packages.nix` → `home.packages` list. Preferred.
-- **If NOT found**: add to `modules/homebrew.nix` → `homebrew.brews`. If it
+- **If NOT found**: add to `modules/darwin/homebrew.nix` → `homebrew.brews`. If it
   comes from a custom tap, add the tap to `homebrew.taps` and use the fully
   qualified name in brews (e.g. `"schpet/tap/linear"` not `"linear"`) to avoid
   name collisions with homebrew-core.
@@ -165,7 +190,7 @@ Commit the `.age` file, add the plaintext filename to `.gitignore`.
 
 ## Removing Things
 
-- **Cask/brew/masApp**: delete the line from `modules/homebrew.nix`. `cleanup = "zap"` handles the actual uninstall on next rebuild.
+- **Cask/brew/masApp**: delete the line from `modules/darwin/homebrew.nix`. `cleanup = "zap"` handles the actual uninstall on next rebuild.
 - **nixpkgs CLI tool**: delete from `home/packages.nix`.
 - **Nushell alias**: delete from `programs.nushell.shellAliases` in `home/shell.nix`.
-- **Entire module**: delete the `.nix` file AND remove its import from `hosts/juanrios-m2.nix` (system modules) or `home/default.nix` (home-manager modules).
+- **Entire module**: delete the `.nix` file AND remove its import from `hosts/juanrios-m2.nix` / `hosts/juan-dev-server/default.nix` (system modules) or `home/common.nix` (home-manager modules).
