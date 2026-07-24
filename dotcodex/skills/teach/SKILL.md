@@ -1,6 +1,6 @@
 ---
 name: teach
-description: "Use when the user asks to be taught a topic, codebase area, workflow, or what happened in the session. Builds a lightweight teaching plan, explains incrementally, and checks understanding."
+description: "Use when the user asks to be taught a topic, codebase area, workflow, a PR or Graphite stack, or what happened in the session. Builds a lightweight teaching plan (plus a study file for PR stacks), explains incrementally, and checks understanding."
 ---
 
 # teach
@@ -16,6 +16,9 @@ understanding, not a single dump of information.
    - If the user named a topic, use it.
    - If they ask about the current session, summarize from visible context and
      local artifacts.
+   - If they named a PR (URL, `#number`, or branch name), the target is the
+     **entire Graphite stack** containing that PR, never the single PR. See
+     the stack mode section below.
    - If the target is ambiguous, ask one concise question before proceeding.
 
 2. Create a lightweight teaching note under `.tmp/`:
@@ -35,6 +38,26 @@ understanding, not a single dump of information.
    - For current or external topics, browse the web when freshness or exact
      sources matter, and cite sources in the final answer.
    - Do not rely on memory for facts likely to have changed.
+
+   Stack mode (PR targets):
+   - Resolve the full stack with the `gh` CLI: walk each PR's base branch
+     downward until trunk (`gh pr view <n> --json baseRefName,headRefName,author,title,body,url`)
+     and find children upward (`gh pr list --base <head-branch>`). Use
+     `gt log` instead when the stack is checked out locally.
+   - Collect each PR's title, body, author, linked issue, and diff. For large
+     stacks, summarize per PR rather than holding every full diff at once.
+   - Frame by author. If the user authored the stack (usually an agent they
+     left running), teach it as "know this code as if you wrote it": the
+     design decisions made, alternatives rejected, and anything surprising or
+     risky — collect the risky items into a "worth double-checking" list. If
+     someone else authored it, frame for review and collaboration readiness.
+   - Before quizzing, write a study file at `.tmp/teach-<slug>-guide.md`: a
+     plain-language TL;DR, the stack's architecture, per-PR sections ordered
+     bottom-up (what, why, depends-on), a glossary, and "questions to hold in
+     mind" (priming prompts, never quiz answers). Ask the user to read it and
+     wait until they say they are ready.
+   - Teach bottom-up: start at the base PR; upper PRs build on types and
+     decisions the lower ones introduce.
 
 4. Teach in small chunks.
    - Start with the mental model.
