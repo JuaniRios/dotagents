@@ -157,7 +157,7 @@ early claims vs later claims, terminology that drifts mid-document. If the
 document says a thing twice, check the two statements agree exactly.
 ```
 
-**opus-b - Goal evaluation (opus, xhigh):**
+**opus-b - Goal evaluation (fable, xhigh):**
 ```
 YOUR FOCUS: Be adversarial about the stated goal. If the plan claims the
 rollout is risk-free, construct the scenario where it is not. If it claims
@@ -230,7 +230,7 @@ Category "scope". Severity: misplaced decision-bearing content = medium,
 duplication that can drift = medium, missing non-goals = low.
 ```
 
-**grounding-inspector** (opus, xhigh) (`prompt-grounding-inspector.txt`):
+**grounding-inspector** (fable, xhigh) (`prompt-grounding-inspector.txt`):
 ```
 You inspect factual grounding. Inventory every claim the document(s) make
 about external reality: code behavior, repo contents, contract interfaces,
@@ -265,28 +265,32 @@ verification (pipelined, no barrier), fix-verification on re-passes,
 deterministic assembly by the caller. Reuse `/review-loop`'s workflow
 script structure with these substitutions:
 
-- **Lane catalogue** (same shape - drop codex lanes if `codex` missing):
+- **Lane catalogue** (same shape - drop codex lanes if `codex` missing).
+  The model column is the lane agent's model; for codex lanes it is the
+  thin wrapper only - the reviewer intelligence is gpt-5.6-sol via the CLI:
 
   | key                   | codex | model  | effort |
   | --------------------- | ----- | ------ | ------ |
   | sonnet-a              | no    | sonnet |        |
-  | opus-b                | no    | opus   | xhigh  |
+  | opus-b                | no    | fable  | xhigh  |
   | sonnet                | no    | sonnet |        |
   | codex-a               | yes   | sonnet | medium |
   | codex-b               | yes   | sonnet | medium |
   | feasibility-inspector | no    | sonnet |        |
   | clarity-inspector     | no    | sonnet |        |
   | scope-inspector       | no    | sonnet |        |
-  | grounding-inspector   | no    | opus   | xhigh  |
+  | grounding-inspector   | no    | fable  | xhigh  |
   | style-inspector       | no    | sonnet |        |
 
 - **Finding schema**: replace `file`/`line_start`/`line_end` with
   `doc`/`section`/`quote`, the category enum with `consistency | goal |
   grounding | completeness | feasibility | clarity | scope | style`, and
   add required boolean `decision_changing`.
-- **Codex lane command**: same `codex exec --sandbox read-only -m gpt-5.5
-  -c model_reasoning_effort=... -c service_tier="fast"` pattern, but pipe
-  the document(s) instead of a diff (`cat` the doc paths in order).
+- **Codex lane command**: same `codex exec --sandbox read-only` pattern,
+  but with `-m gpt-5.6-sol -c model_reasoning_effort="high"` (both codex
+  lanes run gpt-5.6-sol at high effort; fall back to `-m gpt-5.5` if
+  5.6-sol is unavailable for the auth in use), piping the document(s)
+  instead of a diff (`cat` the doc paths in order).
 - **Adversarial verify prompt**: "Read the actual document at the finding's
   quote and section - never judge from the finding text alone. For
   grounding findings, also read the cited source. Classify valid | likely |

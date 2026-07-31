@@ -625,21 +625,21 @@ Full lane catalogue (drop the codex lanes if `codex` is not on PATH):
 | key                | codex | model  | effort | promptPath                              |
 | ------------------ | ----- | ------ | ------ | --------------------------------------- |
 | sonnet-a           | no    | sonnet |        | prompt-sonnet-a.txt (concurrency)       |
-| opus-b             | no    | opus   | xhigh  | prompt-opus-b.txt (goal evaluation)     |
+| opus-b             | no    | fable  | xhigh  | prompt-opus-b.txt (goal evaluation)     |
 | sonnet             | no    | sonnet |        | prompt-sonnet.txt (error handling)      |
 | codex-a            | yes   | sonnet | medium | prompt-codex-a.txt (edge cases)         |
 | codex-b            | yes   | sonnet | medium | prompt-codex-b.txt (broad sweep)        |
 | test-inspector     | no    | sonnet |        | prompt-test-inspector.txt               |
 | rust-inspector     | no    | sonnet |        | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | sonnet |        | prompt-typing-inspector.txt             |
-| contract-inspector | no    | opus   | xhigh  | prompt-contract-inspector.txt           |
+| contract-inspector | no    | fable  | xhigh  | prompt-contract-inspector.txt           |
 | comment-inspector  | no    | sonnet |        | prompt-comment-inspector.txt            |
 
 **Model allocation:** `opus-b` (goal evaluation) and `contract-inspector`
-run on Opus at xhigh effort — the lanes where deep reasoning demonstrably
+run on Fable at xhigh effort — the lanes where deep reasoning demonstrably
 finds unique high-severity issues (intent-vs-implementation gaps, unpinned
-external assumptions at money boundaries). All other non-Codex lanes run
-on Sonnet. The codex lanes' model applies to the WRAPPER agent that shells
+external assumptions at money boundaries). Fable is reserved for exactly
+these two lanes; all other non-Codex lanes run on Sonnet. The codex lanes' model applies to the WRAPPER agent that shells
 out to the codex CLI — pin it to sonnet, or it inherits the (possibly
 premium) session model for trivial wrapper work.
 
@@ -803,14 +803,14 @@ const { repoRoot, contextPath, outDir, diffPath, laneKeys,
 // array instead, which takes precedence.
 const LANE_CATALOGUE = {
   'sonnet-a':           { codex: false, model: 'sonnet' },
-  'opus-b':             { codex: false, model: 'opus',   effort: 'xhigh' },
+  'opus-b':             { codex: false, model: 'fable',  effort: 'xhigh' },
   'sonnet':             { codex: false, model: 'sonnet' },
   'codex-a':            { codex: true,  model: 'sonnet', effort: 'medium' },
   'codex-b':            { codex: true,  model: 'sonnet', effort: 'medium' },
   'test-inspector':     { codex: false, model: 'sonnet' },
   'rust-inspector':     { codex: false, model: 'sonnet' },
   'typing-inspector':   { codex: false, model: 'sonnet' },
-  'contract-inspector': { codex: false, model: 'opus',   effort: 'xhigh' },
+  'contract-inspector': { codex: false, model: 'fable',  effort: 'xhigh' },
   'comment-inspector':  { codex: false, model: 'sonnet' },
 }
 const lanes = explicitLanes || (laneKeys || []).map(key => ({
