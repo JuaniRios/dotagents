@@ -1,6 +1,6 @@
 ---
 name: feedback-review
-description: "Triage and address review feedback on the current branch's PR. Use whenever CodeRabbit or a human reviewer has left comments, or the user says address the review, handle the feedback, respond to the comments, or CodeRabbit found things. Summarizes each comment (CodeRabbit inline, out-of-diff, and human) with severity and an opinion, asks which to implement, fixes those, and drafts replies for the rest."
+description: "Triage and address review feedback on the current branch's PR. Use whenever CodeRabbit or a human reviewer has left comments, or the user says address the review, handle the feedback, respond to the comments, or CodeRabbit found things. Summarizes each comment (CodeRabbit inline, out-of-diff, and human) with severity and an opinion, asks which to implement, fixes those, drafts replies for the rest, and resolves every human thread it answers."
 ---
 
 # feedback-review
@@ -63,6 +63,7 @@ gh api graphql -f query='
         reviewThreads(first: 100) {
           pageInfo { hasNextPage endCursor }
           nodes {
+            id
             isResolved
             isOutdated
             comments(first: 50) {
@@ -113,7 +114,9 @@ print(json.dumps(unresolved, indent=2))
 ```
 
 Then read `/tmp/pr-unresolved-threads.json` to get the filtered list. Each
-thread's first comment is the root; subsequent comments are replies.
+thread's first comment is the root; subsequent comments are replies. Keep each
+thread's `id` (the GraphQL node ID, not `databaseId`) -- the reply step needs it
+to resolve human threads after replying.
 
 Also fetch top-level issue comments (for non-inline discussion):
 
@@ -325,6 +328,8 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
 Show the user what you'll post before posting. Batch the confirmations -- show
 all planned replies, ask once for approval, then post.
 
+Then resolve the thread (see "Resolving human threads" below).
+
 ### Comments that were skipped ("Reply & skip")
 
 For each skipped comment, draft a reply that:
@@ -368,6 +373,42 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments \
   -F in_reply_to=<original-comment-id>
 ```
 
+Then resolve human threads (see below).
+
+### Resolving human threads
+
+**Every human reviewer thread you replied to gets resolved** -- both the ones
+you fixed and the ones you declined with an explanation. A reply without a
+resolve leaves the thread sitting in the reviewer's queue as if it were still
+open, and they have to re-read it to discover it is handled. Answering the
+point is what closes it; the reviewer can always unresolve if they disagree.
+
+Resolve immediately after the reply posts, using the thread's `id` from step 2:
+
+```bash
+gh api graphql -f query='
+  mutation($threadId: ID!) {
+    resolveReviewThread(input: {threadId: $threadId}) {
+      thread { isResolved }
+    }
+  }
+' -f threadId=<thread-node-id>
+```
+
+Do NOT resolve:
+- **CodeRabbit threads.** It detects its own resolved suggestions after a push
+  and marks them itself, and it may want to respond to a declined explanation
+  first.
+- **Threads you did not reply to.** No reply means the reviewer has had no
+  answer, so the thread is still genuinely open.
+- **Deferred-to-issue threads,** unless the reply names the issue. If it does,
+  resolve -- the tracking has moved to Linear.
+
+Out-of-diff findings from a review body have no thread, so there is nothing to
+resolve; a top-level PR comment is the whole answer.
+
+Report which threads you resolved in the final summary.
+
 ## 10. Check for stacked PRs
 
 After replies are handled (or skipped), check if there is a PR stacked on top
@@ -403,8 +444,8 @@ Feedback review complete -- PR #<N>
 
 Fixed (3):
   #1  high   coderabbit   Add bounds check           (auto-resolves on push)
-  #2  medium human:alice  Rename variable             -> replied: fixed in abc1234
-  #4  nit    human:bob    Fix typo                    -> replied: fixed in abc1234
+  #2  medium human:alice  Rename variable             -> replied + resolved
+  #4  nit    human:bob    Fix typo                    -> replied + resolved
 
 Deferred to issue (1):
   #5  medium coderabbit   Surface load failures       -> RAI-223
@@ -414,7 +455,7 @@ Replied & skipped (1):
 
 Remaining:
   Push your changes. CodeRabbit comments will auto-resolve.
-  Human reviewer comments have been replied to.
+  Human reviewer threads are replied to and resolved.
 ```
 
 ## Hard rules
@@ -430,7 +471,10 @@ Remaining:
 5. Always verify comments are still applicable before implementing fixes --
    the code may have changed since the review.
 6. For human reviewer replies about fixes, always include the commit SHA.
-7. Stay in the session after the summary -- the user may want to adjust
+7. Every human thread you reply to gets resolved -- fixed or declined alike.
+   Never leave an answered human thread open. Never resolve a thread you did
+   not reply to, and never resolve a CodeRabbit thread.
+8. Stay in the session after the summary -- the user may want to adjust
    replies or fix more.
 
 ## Failure modes
