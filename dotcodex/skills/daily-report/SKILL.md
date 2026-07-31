@@ -33,6 +33,7 @@ the output to ~10-15 lines max:
 - No Action Items section (unless 🔴 items exist)
 - "What Was Done" becomes 3-5 one-line bullets (one per theme, no sub-bullets)
 - "Continued / Refined" becomes a single line listing PR numbers touched
+- "Up Next" becomes a single line with the user's stated next focus
 - No theme sub-headings — just a flat list
 
 Compressed format example:
@@ -48,6 +49,8 @@ Compressed format example:
 - [st0x.liquidity] Deployed 3 new tokens to prod, fixed crash-loop, PR #642 open (RAI-367)
 
 🔄 <b>Refined:</b> Restacked PRs #633–#635, addressed review feedback on PR #640
+
+⬆️ <b>Up Next:</b> Merge #642, finish the hedge config, and review the open dashboard stack.
 
 ⚡ <b>Urgent</b>
 - 🔴 Merge #642 — prod crashes on non-USDC TakeOrder events
@@ -512,7 +515,9 @@ extract:
 - **Decisions made** (and by whom) that explain or redirect today's work
 - **Asks directed at the user** — with a guess whether they were addressed
 - **Incidents discussed** — corroborate with session/git data
-- **Commitments the user made** ("I'll ship X tomorrow") → Action Items
+- **Commitments the user made** ("I'll ship X tomorrow") → Up Next; also
+  include them in Action Items when they are urgent, blocked, or operationally
+  important
 - **Context** that explains *why* work happened, which sessions alone miss
 
 ## Step 4 — User review before writing
@@ -617,6 +622,10 @@ Before writing, answer from the collected data (and Step 4 corrections):
    today's Action Items marked as carried over.
 6. **Telegram asks**: For each ask directed at the user, state whether
    today's work addressed it. Unaddressed asks become Action Items.
+7. **Next focus**: Capture what the user says they plan to focus on next,
+   plus clear commitments from the collected context. Keep this distinct
+   from Action Items: Up Next is the planned focus; Action Items are risks,
+   blockers, and follow-ups that need tracking.
 
 ### Classifying work: new vs continued
 
@@ -653,6 +662,11 @@ deployment state for fixes. Reviews of teammates' PRs count as work.}
 PR/branch, stating what changed ("addressed review feedback", "restacked
 on latest main", "fixed CI failures"). Close the loop on yesterday's
 pending items here or in Status.}
+
+⬆️ <b>Up Next</b>
+{1-3 concise first-person bullets describing what I plan to focus on next.
+Prefer the user's explicit stated plan over inferred follow-ups. This section
+is required even when there are no Action Items.}
 
 ⚡ <b>Action Items</b>
 {Priority-ordered. Markers:
@@ -701,6 +715,7 @@ Make references clickable using `<a href="...">`:
 ### Emoji conventions
 
 - 📋 Title · 🚦 Status · ✅ What Was Done · 🔄 Continued / Refined
+- ⬆️ Up Next
 - 🔧 Bug fix / reliability theme · 🏗 Architecture / infrastructure theme
 - 🚀 Feature / capability theme · 🧹 Cleanup / tech debt theme
 - 📦 Other / miscellaneous theme · ⚡ Action Items
@@ -827,7 +842,7 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
    report (both full and compressed modes), and write the entire report in
    first person ("I fixed...", "I investigated...") — it's pasted directly
    into a team group chat under the user's name. Apply the voice to the prose
-   (Status, themes, bullets, Action Items); leave the Stats block mechanical.
+   (Status, themes, bullets, Up Next, Action Items); leave the Stats block mechanical.
 9. Never mention internal tooling or process in the output: Claude Code
    sessions, Codex CLI sessions, JSONL files, AI tooling, Telegram
    exports, traces, cross-reviews, feedback-reviews, review loops, slash
