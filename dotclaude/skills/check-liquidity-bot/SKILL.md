@@ -28,6 +28,41 @@ at the source -- never pull the full journal.
 > `prod-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'`.
 > Unquoted parentheses and semicolons in the SQL will otherwise break.
 
+## 0. Connectivity gate (MANDATORY -- before any other remote command)
+
+SSH goes through the 1Password SSH agent. If the user is AFK they cannot
+approve the agent prompt, and **each failed attempt counts toward fail2ban**.
+Spamming probes will ban the IP and make recovery harder.
+
+**Run exactly one probe first -- never parallelize it with other remote calls:**
+
+```bash
+<env>-remote 'echo ok'
+```
+
+- **Success** (prints `ok`): proceed to section 1. Parallel remote queries are
+  fine only after this gate passes.
+- **Any failure** (non-zero exit, `agent refused operation`, `Permission
+  denied`, `Connection refused`, timeout, or a hang you have to kill):
+  **STOP immediately.**
+
+On failure:
+
+1. Report the exact error from that **single** probe.
+2. Tell the user to come back, approve 1Password if prompted, unban the IP if
+   already fail2ban'd, then re-run `/check-liquidity-bot <env>` once SSH works.
+3. **FORBIDDEN after a failed probe** (until the user re-runs the skill or
+   explicitly confirms SSH works again):
+   - any second `<env>-remote` / `ssh` attempt
+   - retries, "one more try", verbose `ssh -v` diagnostics
+   - key scanning (`ssh-add -l`, alternate identities, `IdentityAgent` tricks)
+   - port scans (`nc`, checking 22/2222/public IP)
+   - extra Tailscale diagnostics (do **not** run `tailscale status` /
+     `tailscale ping` as a follow-up -- just report the probe error)
+
+Do not try to "help fix" connectivity with more SSH. One probe, stop, wait for
+the user.
+
 ## Inspecting the codebase to interpret behavior
 
 Whenever you need to read the bot's source code to explain its behavior --
@@ -243,8 +278,10 @@ Filter at the source and pull only what you need.
 3. Never read secret files (`.env`, credentials, keys, the decrypted
    `/run/agenix/*`). Read the plaintext config (`/run/st0x/st0x-hedge.config`)
    only for operational flags, never secrets.
-4. If `<env>-remote` cannot reach the server, help the user fix connectivity
-   (SSH identity, Tailscale `tailscale status`) -- do not guess credentials.
+4. **One SSH probe, then stop on failure.** After section 0 fails, do not open
+   any more SSH sessions -- extra attempts risk fail2ban while 1Password is
+   unapproved. Report the single error and wait for the user. Do not guess
+   credentials.
 5. Never use `Read` on the `.db` file -- always use `sqlite3` queries via the
    remote shim.
 6. Report findings honestly -- don't minimize issues or speculate beyond what
@@ -256,8 +293,10 @@ Filter at the source and pull only what you need.
 
 ## Failure modes
 
-- **`<env>-remote` unreachable**: SSH or Tailscale is down. Help the user
-  restore connectivity; do not try to SSH manually with guessed credentials.
+- **`<env>-remote` unreachable / agent refused / permission denied**: section 0
+  already failed. Report that one error and stop. Do **not** retry, key-scan,
+  port-scan, or open more SSH sessions -- that is how fail2ban bans the IP when
+  the user is AFK and cannot approve 1Password.
 - **Empty DB / no events**: the bot may have just been deployed or the DB reset.
   Note this rather than reporting "everything is broken."
 - **Dashboard looks fine but hedging is broken**: remember the blind spot in
