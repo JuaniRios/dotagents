@@ -1,6 +1,6 @@
 ---
 name: edit-skill
-description: "Modify, update, or refactor an existing Claude command, Claude skill, Codex skill, or paired workflow in the dotagents repo. Use when the user asks to edit, change, update, fix, improve, or tweak a skill or command. Supports \"/edit-skill improve\" to auto-diagnose and fix the last skill/command that ran in this session."
+description: "Modify, update, or refactor an existing Claude skill, Codex skill, or paired Claude/Codex skill in the dotagents repo. Use when the user asks to edit, change, update, fix, improve, or tweak a skill or slash command. Supports \"/edit-skill improve\" to auto-diagnose and fix the last skill/command that ran in this session."
 ---
 
 # edit-skill
@@ -14,7 +14,7 @@ Compatibility notes:
 - Ignore Claude `allowed-tools`, `argument-hint`, `TodoWrite`, and `Skill` tool references as tool-permission metadata.
 - When the workflow mentions another slash command, use the corresponding Codex skill or follow that workflow directly.
 
-# Edit skill / command
+# Edit skill
 
 Modify an existing Claude Code command/skill or Codex skill in
 `~/Github/dotagents`, which is git-tracked and symlinked into `~/.claude/` or
@@ -25,14 +25,9 @@ Modify an existing Claude Code command/skill or Codex skill in
 ```
 ~/Github/dotagents/          # git repo (source of truth)
   dotclaude/
-    commands/                # Claude slash commands — one .md file each
-    ci.md                    #   invoked as the ci skill
-    pr-description.md        #   invoked as /pr-description
-    review-loop.md
-    review-pr.md
-    worktree.md
-    new-skill.md
     skills/                  # Claude skills — subdirectory with SKILL.md each
+      ci/SKILL.md            #   invoked as the ci skill
+      pr-description/SKILL.md
       graphite/SKILL.md
       linear-cli/SKILL.md
       edit-skill/SKILL.md    #   this skill
@@ -64,16 +59,13 @@ verification. **If the request turns out to be creating a skill rather than
 editing one, stop and use `new-skill`** instead of hand-rolling the file,
 the symlink, and the commit here.
 
-### File formats
+`dotclaude/commands/` still exists but holds only a `.gitkeep`. Claude Code
+merged custom slash commands into skills, so there are no command files and
+nothing symlinks that directory. A skill at `dotclaude/skills/<name>/SKILL.md`
+both creates `/<name>` and can be invoked on its own when the `description`
+matches. Everything on the Claude side is a skill.
 
-**Claude commands** — `dotclaude/commands/<name>.md`:
-```yaml
----
-allowed-tools: <tools>
-description: <one-line>
-argument-hint: <hint>  # optional
----
-```
+### File formats
 
 **Claude skills** — `dotclaude/skills/<name>/SKILL.md`:
 ```yaml
@@ -156,9 +148,6 @@ Determine which skill or command the user wants to edit from the
 conversation context. If ambiguous, list what's available and ask:
 
 ```bash
-echo "Claude commands:"
-ls ~/Github/dotagents/dotclaude/commands/*.md 2>/dev/null | xargs -I{} basename {} .md
-echo ""
 echo "Claude skills:"
 ls -d ~/Github/dotagents/dotclaude/skills/*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {}
 echo ""
@@ -169,24 +158,21 @@ ls -d ~/Github/dotagents/dotcodex/skills/*/SKILL.md 2>/dev/null | xargs -I{} dir
 Then ask the user which one to edit using `ask the user`.
 
 Resolve the file path:
-- Claude command `<name>`: `~/Github/dotagents/dotclaude/commands/<name>.md`
 - Claude skill `<name>`: `~/Github/dotagents/dotclaude/skills/<name>/SKILL.md`
 - Codex skill `<name>`: `~/Github/dotagents/dotcodex/skills/<name>/SKILL.md`
 
 **Always probe for a paired counterpart.** After resolving the target file,
-check whether a same-named file exists in the other agent's tree (Claude
-`commands/<name>.md` or `skills/<name>/SKILL.md` ↔ Codex `skills/<name>/SKILL.md`):
+check whether a same-named skill exists in the other agent's tree:
 
 ```bash
-ls ~/Github/dotagents/dotclaude/commands/<name>.md \
-   ~/Github/dotagents/dotclaude/skills/<name>/SKILL.md \
+ls ~/Github/dotagents/dotclaude/skills/<name>/SKILL.md \
    ~/Github/dotagents/dotcodex/skills/<name>/SKILL.md 2>/dev/null
 ```
 
 If a paired file exists, edit **both by default** — skills with the same name
 are kept in sync, and the user expects a change to apply everywhere. Only edit
 one side when the user explicitly scopes the request ("only the Claude
-version", "Codex only", "just the command", etc.). When editing both, preserve
+version", "Codex only", etc.). When editing both, preserve
 each agent's idioms (Claude frontmatter and tool references on the Claude
 side; plain language on the Codex side); do not force identical text.
 

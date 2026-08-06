@@ -1,11 +1,11 @@
 ---
 name: edit-skill
-description: Modify, update, or refactor an existing Claude command, Claude skill, Codex skill, or paired workflow in the dotagents repo. Use when the user asks to edit, change, update, fix, improve, or tweak a skill or command. Supports "/edit-skill improve" to auto-diagnose and fix the last skill/command that ran in this session.
+description: Modify, update, or refactor an existing Claude skill, Codex skill, or paired Claude/Codex skill in the dotagents repo. Use when the user asks to edit, change, update, fix, improve, or tweak a skill or slash command. Supports "/edit-skill improve" to auto-diagnose and fix the last skill/command that ran in this session.
 allowed-tools: Bash(git:*), Bash(test:*), Bash(ls:*), Read, Edit, Write, Grep, Glob, AskUserQuestion
 argument-hint: "improve | <command-or-skill> [change description]"
 ---
 
-# Edit skill / command
+# Edit skill
 
 Modify an existing Claude Code command/skill or Codex skill in
 `~/Github/dotagents`, which is git-tracked and symlinked into `~/.claude/` or
@@ -50,9 +50,10 @@ verification. **If the request turns out to be creating a skill rather than
 editing one, stop and use `/new-skill`** instead of hand-rolling the file,
 the symlink, and the commit here.
 
-There is no `dotclaude/commands/` directory. Claude Code merged custom slash
-commands into skills, so a skill at `dotclaude/skills/<name>/SKILL.md` both
-creates `/<name>` and can be invoked by Claude on its own when the
+`dotclaude/commands/` still exists but holds only a `.gitkeep`. Claude Code
+merged custom slash commands into skills, so there are no command files and
+nothing symlinks that directory. A skill at `dotclaude/skills/<name>/SKILL.md`
+both creates `/<name>` and can be invoked by Claude on its own when the
 `description` matches. Everything on the Claude side is a skill.
 
 ### File formats
@@ -164,7 +165,7 @@ ls ~/Github/dotagents/dotclaude/skills/<name>/SKILL.md \
 If a paired file exists, edit **both by default** — skills with the same name
 are kept in sync, and the user expects a change to apply everywhere. Only edit
 one side when the user explicitly scopes the request ("only the Claude
-version", "Codex only", "just the command", etc.). When editing both, preserve
+version", "Codex only", etc.). When editing both, preserve
 each agent's idioms (Claude `allowed-tools`/`argument-hint`/`AskUserQuestion`
 on the Claude side; plain language on the Codex side); do not force identical
 text.
