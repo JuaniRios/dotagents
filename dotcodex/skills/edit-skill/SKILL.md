@@ -42,12 +42,27 @@ Modify an existing Claude Code command/skill or Codex skill in
       graphite/SKILL.md
 
 ~/.claude/
-  commands -> ~/Github/dotagents/dotclaude/commands
-  skills   -> ~/Github/dotagents/dotclaude/skills
+  skills/                  # REAL dir, one symlink PER skill directory
+    <name>  -> ~/Github/dotagents/dotclaude/skills/<name>
 
 ~/.codex/
-  skills   -> ~/Github/dotagents/dotcodex/skills
+  skills   -> ~/Github/dotagents/dotcodex/skills   # whole-dir symlink
 ```
+
+The two sides are not symmetric, and editing an existing skill hides the
+difference because both are already linked. It only bites when a file is
+added:
+
+- `~/.claude/skills` is a real directory. A new Claude skill does **not**
+  appear until you create its per-entry symlink.
+- `~/.codex/skills` is a whole-directory symlink, so a new Codex skill is
+  reachable immediately. Do **not** run `ln -s` into it. That writes a stray
+  self-referential symlink inside the repo, which then gets committed.
+
+The `new-skill` skill owns this: it has the per-entry symlink step and the
+verification. **If the request turns out to be creating a skill rather than
+editing one, stop and use `new-skill`** instead of hand-rolling the file,
+the symlink, and the commit here.
 
 ### File formats
 
@@ -247,9 +262,17 @@ switch):
 ```bash
 cd ~/Github/dotagents
 git checkout main
-git add <path(s)>
+git status --short          # look before you stage
+git add <path(s)>           # only the files you edited
 git commit -m "refactor: update /<name> <type>"
 ```
+
+**Stage by explicit path, never `git add -A` or `git add .`.** This repo
+often carries unrelated in-flight edits to other skills. Run `git status
+--short` first, and if it shows files you did not touch, leave them
+unstaged and say so in your report. Sweeping someone else's work into your
+commit is worse than a missing file, since it is invisible in the diff you
+present.
 
 If `git checkout main` is blocked because the edited file differs between
 branches, `git stash`, `git checkout main`, `git stash pop`, then stage.
