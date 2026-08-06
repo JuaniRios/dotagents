@@ -45,6 +45,14 @@ headers when appropriate.
 Print the formatted message to the terminal so the user can review it.
 Ask for approval or edits before sending.
 
+Ask about the **content only**. Never ask which chat, group, or person the
+message goes to — there is one destination, always (see Step 4). This holds
+even when the message is addressed to a named person. The bot chat is a
+staging area: the user copies the message out of it, pastes it where it
+belongs, and edits before sending. Because he edits after pasting, favour
+drafts that are easy to trim — no destination-specific greeting unless he
+asked for one.
+
 ## Step 4 — Send via Telegram
 
 Credentials are in `~/.config/telegram-bot.env` (contains
