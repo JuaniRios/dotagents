@@ -232,6 +232,11 @@ Some commands have non-obvious required flags. Hit `--help` before running:
 
 - `linear issue list` and `linear issue mine` both require a sort order — pass `--sort priority` or `--sort manual`, or set `issue_sort` in `.linear.toml`, or export `LINEAR_ISSUE_SORT`. They also need `--team <key>` unless the team can be inferred from the directory (e.g. via `.linear.toml`). If unknown, run `linear team list` first to find the key.
 - `--no-pager` is supported on `issue list`, `issue mine`, and `issue query` — it will error on `project list` and friends.
+- `linear issue list --project "<name>"` can report "No issues found" for a
+  project that in fact holds dozens, so do not read an empty result as an
+  empty project. To survey what is in a project, use
+  `linear issue query --search "<term>" --team RAI --json` and read the
+  `project` field on each issue.
 - Many commands infer the current issue from the branch name (via the VCS
   integration). If the branch doesn't encode an ID, pass the ID explicitly.
 - `linear issue create` gotchas:
@@ -265,6 +270,23 @@ fields with the user in a single concise question (batch all four):
 1. **Project** (required — an issue without a project is not allowed). If the
    user didn't name one, run `linear project list --team RAI` and offer the
    options. Never create an issue with no `--project`.
+
+   **Always verify the project before proposing it**, including when you
+   inherited it from a related issue. A related issue's project may have been
+   chosen on grounds that do not apply to the new work: an incident issue is
+   often filed under the product that lost money, not the repo being changed.
+   Survey where sibling work actually lives and tally it:
+
+   ```bash
+   linear issue query --search "<repo-or-component>" --team RAI --json --no-pager \
+     | jq -r '..|.project?//empty|.name' | sort | uniq -c | sort -rn | head
+   ```
+
+   Recursive descent keeps this working whichever way the CLI nests its
+   output. Propose the project with the strongest tally and name the sibling
+   issues that put it there, so the user can sanity-check the choice. If the
+   tally is ambiguous, offer the top two. Never present an inherited project
+   as the recommended option without running this first.
 2. **Milestone** (optional). If the chosen project has milestones, run
    `linear milestone list --project <id>` and offer them, plus a "none" choice.
 3. **Assignee** — **default to this user** (`--assignee self`). Present "me

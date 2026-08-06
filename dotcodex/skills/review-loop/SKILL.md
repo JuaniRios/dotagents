@@ -687,42 +687,20 @@ Write output to `$out_dir/raw-contract-inspector.md`.
 
 **Comment Discipline Inspector**:
 
-Prompt:
-
-```
-You are reviewing comment discipline across the entire diff. Inspect every
-changed Rust source comment and the code around it, plus the author-written PR
-description or issue-facing prose in the shared context.
-
-Rust should explain intent through names, domain types, function boundaries,
-and control flow. A source comment is justified only for non-obvious
-rationale, an invariant, a safety argument, or an external constraint that
-the code cannot express. Flag comments that narrate the code, restate a line,
-preserve implementation history, give an overly specific walkthrough, or
-compensate for unclear code. Prefer improving the code and deleting or
-shortening the comment. Do not recommend more prose by default.
-
-PR or issue-facing prose should state the goal, observable behavior,
-constraints, verification, blockers, or an actionable decision. Flag
-line-by-line implementation explanations and details already clear from the
-diff. Do not flag required safety, invariant, protocol, or externally imposed
-documentation.
-
-Read all changed Rust files, not only lines with comments, so you can judge
-whether nearby code communicates intent. Return only concrete findings.
-Category is "maintainability" unless project docs explicitly make it
-"convention". Severity is low by default, medium when duplication obscures
-intent or will predictably become stale.
-```
-
-Append:
+Prompt: the full content of the Codex `comment-inspector` skill
+(`~/Github/dotagents/dotcodex/skills/comment-inspector/SKILL.md`, everything
+below the frontmatter). Append:
 
 ```
 The diff is at: {DIFF_PATH}
 Repo root: {REPO_ROOT}
 
-Produce your inspection report. If there are no Rust files, source comments,
-or PR/issue-facing prose to assess, say so and stop.
+Read the diff to identify source files with added or modified comments. Run
+the volume measurement in step 2 first, against {DIFF_PATH}, and report the
+ratio in every report even when it is within bounds. Severity: medium for a
+ticket or PR reference, change history, a narrating comment block, or a
+comment ratio above 15%; low only for a single wordy line. If the diff adds
+no comments, say so and stop.
 ```
 
 Write output to `$out_dir/raw-comment-inspector.md`.

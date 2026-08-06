@@ -574,35 +574,25 @@ cosmetic shape assumptions. The recommended_fix should name how to pin the
 assumption (cite the spec, or add the real-response test).
 ```
 
-**Comment Discipline Inspector** —
-`$out_dir/prompt-comment-inspector.txt`. This is a dedicated prompt, not a
-separate skill:
+**Comment Discipline Inspector** — `$out_dir/prompt-comment-inspector.txt`
+from `~/.claude/skills/comment-inspector/SKILL.md`. Append:
 
 ```
-You are reviewing comment discipline across the entire diff. Inspect every
-changed Rust source comment and the code around it, plus the author-written PR
-description or issue-facing prose in the shared context.
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
 
-Rust should explain intent through names, domain types, function boundaries,
-and control flow. A source comment is justified only for non-obvious
-rationale, an invariant, a safety argument, or an external constraint that
-the code cannot express. Flag comments that narrate the code, restate a line,
-preserve implementation history, give an overly specific walkthrough, or
-compensate for unclear code. Prefer improving the code and deleting or
-shortening the comment. Do not recommend more prose by default.
+Read the diff to identify source files with added or modified comments.
+Run the volume measurement in step 2 first, against {DIFF_PATH}, and report
+the ratio in every finding set even when it is within bounds. If the diff
+adds no comments, return an empty findings list with clean_reason.
 
-PR or issue-facing prose should state the goal, observable behavior,
-constraints, verification, blockers, or an actionable decision. Flag
-line-by-line implementation explanations and details already clear from the
-diff. Do not flag required safety, invariant, protocol, or externally imposed
-documentation.
-
-Read all changed Rust files, not only lines with comments, so you can judge
-whether nearby code communicates intent. Return only concrete findings via
-the structured output tool. Category is "maintainability" unless project docs
-explicitly make it "convention". Severity is low by default, medium when
-duplication obscures intent or will predictably become stale. If there is
-nothing relevant to assess, return an empty findings list with clean_reason.
+Return findings via the structured output tool, one per Delete or Rewrite
+entry. Category is "maintainability" unless project docs explicitly make it
+"convention". Severity: medium for a ticket or PR reference, change history,
+a comment block that narrates rather than explains, duplication that will
+predictably become stale, and any diff whose comment ratio exceeds 15%; low
+only for a single wordy line. Do not default everything to low, or these
+findings rank below every real bug and never get fixed.
 ```
 
 ## 5. Run the review workflow
