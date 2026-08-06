@@ -50,10 +50,9 @@ verification. **If the request turns out to be creating a skill rather than
 editing one, stop and use `/new-skill`** instead of hand-rolling the file,
 the symlink, and the commit here.
 
-`dotclaude/commands/` still exists but holds only a `.gitkeep`. Claude Code
-merged custom slash commands into skills, so there are no command files and
-nothing symlinks that directory. A skill at `dotclaude/skills/<name>/SKILL.md`
-both creates `/<name>` and can be invoked by Claude on its own when the
+There is no `dotclaude/commands/` directory. Claude Code merged custom slash
+commands into skills, so a skill at `dotclaude/skills/<name>/SKILL.md` both
+creates `/<name>` and can be invoked by Claude on its own when the
 `description` matches. Everything on the Claude side is a skill.
 
 ### File formats

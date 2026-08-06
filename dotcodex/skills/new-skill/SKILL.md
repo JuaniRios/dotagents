@@ -39,20 +39,19 @@ agent config.
       graphite/SKILL.md
 
 ~/.claude/
-  commands -> ~/Github/dotagents/dotclaude/commands
-  skills   -> ~/Github/dotagents/dotclaude/skills
+  skills/                  # REAL dir, one symlink PER skill directory
+    <name>  -> ~/Github/dotagents/dotclaude/skills/<name>
 
 ~/.codex/
-  skills   -> ~/Github/dotagents/dotcodex/skills
+  skills   -> ~/Github/dotagents/dotcodex/skills   # whole-dir symlink
 ```
 
-### Claude commands vs Claude skills vs Codex skills
+There is no `dotclaude/commands/` directory. Claude Code merged custom slash
+commands into skills, so a skill at `dotclaude/skills/<name>/SKILL.md` both
+creates `/<name>` and can be auto-invoked when its `description` matches.
+Never create a `.md` under `dotclaude/commands/`.
 
-**Claude commands** (slash commands):
-- Live at `dotclaude/commands/<name>.md`
-- Invoked explicitly by the user as `/<name>`
-- Single `.md` file with frontmatter + instructions
-- Frontmatter fields: `allowed-tools`, `description`, `argument-hint` (optional)
+### Claude skills vs Codex skills
 
 **Claude skills**:
 - Live at `dotclaude/skills/<name>/SKILL.md`
@@ -133,12 +132,6 @@ they're satisfied.
 
 ## Step 4 — Create the file
 
-For a **Claude command**:
-
-```
-~/Github/dotagents/dotclaude/commands/<name>.md
-```
-
 With frontmatter:
 
 ```yaml
@@ -194,7 +187,6 @@ Write the file using the `Write` tool.
 1. Confirm the file exists and is reachable through the symlink:
 
    ```bash
-   test -f ~/.claude/commands/<name>.md && echo "Claude command linked"
    test -f ~/.claude/skills/<name>/SKILL.md && echo "Claude skill linked"
    test -f ~/.codex/skills/<name>/SKILL.md && echo "Codex skill linked"
    ```
@@ -211,8 +203,6 @@ switch):
 ```bash
 cd ~/Github/dotagents
 git checkout main
-git add dotclaude/commands/<name>.md
-# or
 git add dotclaude/skills/<name>/SKILL.md
 # or
 git add dotcodex/skills/<name>/SKILL.md
