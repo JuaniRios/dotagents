@@ -7,7 +7,7 @@ allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(sqlite3:*), 
 # Add issuance assets
 
 Register newly deployed tokenized assets in production issuance, initialize
-their receipt-backfill checkpoints at the current chain head, restart issuance,
+their per-vault poller checkpoints at the current chain head, restart issuance,
 and verify persistence and monitoring.
 
 ## Production layout
@@ -50,24 +50,38 @@ The receipt address is not an API field. Issuance discovers it by calling
    - Present the exact table before mutation.
    - Require explicit authorization to add the batch.
 
-2. Confirm the no-history prerequisite.
-   - The standard checkpoint workflow intentionally skips historical scanning
-     before the onboarding block.
-   - Require explicit confirmation that the new vaults have had no mints,
-     deposits, receipt transfers, or other receipt activity.
-   - If historical receipts may exist, do not seed to the current head. Run a
-     complete backfill instead.
+2. Prove the no-history prerequisite on-chain.
+   - Seeding at the current head intentionally skips every earlier block, so
+     any pre-existing activity would be silently and permanently dropped.
+   - Do not rely on assertion alone. Prove it for each vault and receipt:
+     - `cast code <address> --block <B>` returns `0x` for some block `B`
+       chosen before deployment;
+     - `cast logs --from-block <B> --to-block latest --address <address>`
+       returns zero logs.
+   - Zero logs across a window that begins before the contract existed proves
+     zero activity over its entire lifetime. That is the standard of evidence.
+   - `vault.totalSupply() == 0` is corroborating but not sufficient on its own:
+     shares could have been minted and later burned.
+   - If any history exists, do not seed to the current head. Run a complete
+     backfill instead.
 
 3. Establish one multiplexed SSH connection.
    - Use `ControlMaster`, `ControlPersist`, and one fixed `ControlPath`.
+   - Keep the `ControlPath` short, e.g. `/tmp/.ssh-<tag>.sock`. A long path
+     (such as one under a session scratchpad) exceeds the ~104-character Unix
+     domain socket limit and the connection fails outright.
    - Reuse it for every command and batch loops inside the remote shell.
    - Close it when finished.
 
 4. Preflight production.
    - Record the deployed revision and service state.
    - Require the service to be active/running.
-   - Query `GET /tokenized-assets/<UNDERLYING>`.
+   - Query `GET /tokenized-assets/<UNDERLYING>?network=<network>`.
+   - The `network` query parameter is **required**. Without it the route
+     returns `422`, which is not evidence that the asset is absent.
    - Require `404` for every genuinely new asset.
+   - Also query one known-existing asset and require `200`, so a uniform `404`
+     caused by a malformed request cannot be mistaken for a clean preflight.
    - Stop if an existing listing differs; never overwrite it implicitly.
    - Adding an asset enables it immediately. Never freeze unless requested.
 
@@ -104,23 +118,33 @@ The receipt address is not an API field. Issuance discovers it by calling
    - Convert it exactly to an unsigned integer; never use floating point.
    - Record the head in the report.
 
-8. Determine the deployed checkpoint-key format.
-   - Inspect existing `poll_checkpoints` rows and the deployed revision.
-   - Older/Base deployments use:
+8. Determine the deployed checkpoint families and key format.
+   - `poll_checkpoints` is `(name, block_number, updated_at)`, keyed by `name`.
+   - Production maintains **two independent per-vault families**. Seeding only
+     one leaves the other to scan from the global start block:
 
-     `receipt_backfill:<lowercase-vault>`
+     `receipt_backfill:<network>:<lowercase-vault>` — receipt backfiller
+     `transfer_poll:<network>:<lowercase-vault>` — redemption transfer poller
 
-   - Network-keyed deployments use:
-
-     `receipt_backfill:<network>:<lowercase-vault>`
-
-   - Use the exact format expected by the running revision. Never invent or
-     mix formats.
+   - Older Base-only deployments also carry legacy vault-only names
+     (`receipt_backfill:<lowercase-vault>`), which the code may consult as a
+     fallback for Base. A genuinely new vault has no legacy row, so seed the
+     network-keyed name.
+   - Census the existing rows by prefix and confirm against the deployed
+     revision which names it actually loads. Never invent or mix formats.
+   - Record `BACKFILL_START_BLOCK` — it is what an unseeded vault will scan
+     from, and the size of that window drives the restart cost.
 
 9. Stop issuance and seed the new checkpoints.
    - Stop `st0x-issuance.service` to avoid a periodic-backfill race.
-   - In one SQLite transaction, insert one checkpoint per new vault at the
-     exact captured chain head.
+   - In one SQLite transaction, insert one row per new vault **per family** at
+     the exact captured chain head.
+   - Seed `transfer_poll` only when step 2 proved the vault has never emitted a
+     share `Transfer`. Unseeded, the poller scans from `BACKFILL_START_BLOCK`
+     by deliberate design, so a runtime-added vault never inherits a cursor
+     already past its history and silently drops redemptions beneath it.
+     Seeding at head defeats that safety unless zero history is proven; when it
+     is not proven, leave `transfer_poll` unseeded and accept the longer scan.
    - Use monotonic upsert semantics: never lower an existing checkpoint.
    - Verify all inserted rows before starting the service.
    - Modify only `poll_checkpoints`. Never edit events or projections.
@@ -138,21 +162,26 @@ The receipt address is not an API field. Issuance discovers it by calling
     - Require each checkpoint to advance normally beyond the seeded head.
 
 11. Final verification.
-    - Service is active/running with no new errors.
+    - Service is active/running with no new errors and no added restarts.
     - Every internal detail endpoint returns the exact enabled listing.
     - One `TokenizedAssetEvent::Added` event exists per asset.
     - One live projection exists per asset.
     - Live asset count increased by the batch size.
     - Receipt mappings match the registry.
-    - New checkpoints advanced normally.
+    - Every seeded checkpoint, in **both** families, advanced past the seeded
+      head. A family that is still sitting exactly at the seed is not
+      progressing — diagnose before declaring success.
     - Where possible, verify the Alpaca-facing list from an allowlisted source.
+      The internal `GET /tokenized-assets` list route is IP-restricted and
+      returns `403` from `127.0.0.1`; use the per-asset detail route instead of
+      treating that `403` as a failure.
 
 12. Report:
     - deployed revision;
     - assets added and enabled/frozen state;
     - vault and receipt mappings;
     - captured checkpoint block;
-    - checkpoint key format and inserted rows;
+    - checkpoint families, key format, and inserted rows;
     - API/event/view verification;
     - service and backfill status;
     - database backup path;
@@ -161,7 +190,10 @@ The receipt address is not an API field. Issuance discovers it by calling
 ## Failure modes
 
 - `401`: missing or invalid API key.
-- `403`: source IP is not allowed for that route.
+- `403`: source IP is not allowed for that route. Expected from `127.0.0.1` on
+  the Alpaca-facing list route; not a fault.
+- `422` on a detail query: the required `network` query parameter is missing or
+  unsupported. Re-query correctly — never read it as "asset absent".
 - Non-`201` POST: stop the batch.
 - Vault call failure: do not register.
 - Receipt mismatch: stop; registry and deployment disagree.
@@ -180,6 +212,10 @@ The receipt address is not an API field. Issuance discovers it by calling
 - Never add assets outside the approved source set.
 - Never freeze unless explicitly requested.
 - Never seed a current-head checkpoint if historical receipt activity may exist.
+- Never seed `transfer_poll` at the head without on-chain proof that the vault
+  has never emitted a share `Transfer`; an unproven seed can silently skip
+  redemptions forever.
+- Never treat a `422` detail response as proof that an asset is absent.
 - Never edit domain events or projections directly.
 - Never lower an existing checkpoint.
 - Never leave issuance in a restart loop.
