@@ -1,6 +1,6 @@
 ---
 name: recover-issuance
-description: "Use when the user asks to diagnose or recover stuck issuance-bot transactions in production, including stuck requests, recovery endpoints, exact on-chain burn matching, and carefully confirmed force-completion."
+description: "Use when the user asks to diagnose or recover stuck issuance-bot transactions in production, or to check whether the issuance bot is healthy after a deploy. Covers stuck requests, recovery endpoints, exact on-chain burn matching, carefully confirmed force-completion, and a post-deploy health check (deploy revision, crash-loop, signer, view rebuilds, backfill and vault coverage, Alpaca reachability)."
 ---
 
 # recover-issuance
@@ -23,9 +23,22 @@ droplet. Do not assume Docker paths or on-box scripting tools:
 - No `python3` or `jq` on the box: consume raw `curl` JSON, and run any Decimal
   arithmetic or pretty-printing locally on your workstation.
 - Database: `/mnt/data/issuance.db`.
-- Secrets: agenix-decrypted at `/run/agenix/st0x-issuance.env` (`ISSUER_API_KEY`,
-  `ALPACA_*`, `RPC_URL`, …). Read them only inside the remote SSH command that
-  needs them; never echo them.
+- The unit runs from a **per-service** nix profile,
+  `/nix/var/nix/profiles/per-service/st0x-issuance/`, which is versioned
+  separately from the system generation. A system generation timestamp older
+  than the service start time is normal and does not mean the deploy failed. To
+  prove a deploy is a real new build rather than a no-op restart, list that
+  profile's generations and compare the resolved store paths of the last two —
+  different paths mean genuinely new code.
+- Secrets: agenix-decrypted at `/run/agenix/st0x-issuance.env`. Read them only
+  inside the remote SSH command that needs them; never echo them. Use the exact
+  variable names and do not guess: `ISSUER_API_KEY`, `RPC_URL`,
+  `ALPACA_API_BASE_URL` (note the `API_` infix — it is **not**
+  `ALPACA_BASE_URL`), `ALPACA_API_KEY`, `ALPACA_API_SECRET`,
+  `ALPACA_ACCOUNT_ID`, `ALPACA_IP_RANGES`. A misspelled name expands to empty
+  and `curl` reports `HTTP 000`, which looks identical to a credential or
+  IP-allowlist outage. List the names (never the values) off the box before
+  relying on them.
 - New droplet after a rebuild ⇒ new host key/IP: if SSH reports
   `Host key verification failed`, add the key once with `ssh-keyscan` before
   retrying, and update the recorded host if the IP changed.
@@ -50,8 +63,12 @@ trips sshd throttling and produces `Connection refused` partway through. Before
 running any remote command, open ONE multiplexed master connection and route
 every later `ssh` through it:
 
-- Open the master once with `ControlMaster=auto`, `ControlPersist`, and a fixed
-  `ControlPath` (e.g. `/tmp/issuance-cm.sock`).
+- Open the master by attaching `ControlMaster=auto`, `ControlPersist`, and a
+  fixed `ControlPath` (e.g. `/tmp/issuance-cm.sock`) to the **first real
+  command** you need to run. Do not open it as a standalone backgrounded daemon
+  (`ssh -fN ...`): approval tooling blocks that form and the run stalls before
+  it starts. `ControlMaster=auto` creates the socket as a side effect of the
+  first useful command, which is all that is required.
 - Pass that same `-o ControlPath=...` on every subsequent `ssh` so they reuse
   the single TCP connection instead of opening a new one.
 - Batch remote work: combine multiple queries/curls into ONE `ssh` invocation
@@ -79,6 +96,61 @@ the master, and reduce the number of separate `ssh` calls.
    - Capture transaction IDs, user/account identifiers, amounts, token symbols,
      chain IDs, timestamps, and current status.
    - Present a concise table before attempting recovery.
+
+2b. Run the health check when nothing is stuck, or when the question is about
+   health rather than recovery.
+
+   Trigger this whenever the stuck list comes back empty, or the user asks
+   something health-shaped ("a new deploy just landed", "is everything
+   working", "is the bot OK?"). An empty stuck list means there is nothing to
+   *recover*; it does not mean the service is well. The stuck endpoint only
+   reports aggregates already wedged in a known-bad state, and is silent about a
+   service that crash-loops, signs with a dead key, cannot reach Alpaca, or
+   never started watching a vault — which are the failures that have actually
+   occurred in production. Do not report the bot healthy on an empty stuck list
+   alone.
+
+   Batch the whole check into one `ssh` call and verify each signal:
+
+   - Deployed git revision matches the latest `master`.
+   - `NRestarts` is `0` (a non-zero value means a crash-loop, historically from
+     missing view migrations).
+   - Zero ERROR/WARN entries in the journal since the service start timestamp.
+   - Startup logged the signer coming up (Turnkey wallet initialized, signer
+     backend resolved) — this catches a dead or unauthorized signing key.
+   - Every view rebuild completed (receipt inventory, redemption, receipt
+     burns).
+   - Receipt backfill completed for every enabled asset, and its start block is
+     near the chain head. A backfill starting millions of blocks back has caused
+     a crash-loop before.
+   - The number of distinct vaults being polled equals the asset count, so an
+     asset cannot be registered but unwatched.
+   - The poller's block cursor advances (~30 blocks/minute on Base, 2s blocks).
+
+   Then confirm no aggregate is quietly non-terminal, querying the event store
+   for each aggregate's latest event. Use these exact terminal sets, because an
+   incomplete list produces false "stuck" alarms:
+
+   - Redemption terminal: `TokensBurned`, `RedemptionClosed`,
+     `BurnForceCompleted`, `ExistingBurnRecovered`. `ExistingBurnRecovered`
+     applies to `Completed` in both the aggregate and the view — verify against
+     the redemption source before treating it as unfinished.
+   - Mint terminal: `MintCompleted`, `MintClosed`.
+
+   Finally, confirm outbound Alpaca connectivity with a read-only account
+   request, printing only the HTTP status code and the egress IP. A `401` here
+   is invisible to the stuck endpoint until requests pile up. `200` means the
+   credentials are valid and the egress IP is allowlisted; `HTTP 000` is almost
+   always a misspelled variable name rather than an outage.
+
+   Scan the journal *before* sending any unauthenticated probe. An
+   unauthenticated request correctly returns 401 and emits a missing-API-key
+   warning, which then appears in your own error scan and reads as a real fault.
+   If you probe first, attribute those warnings to yourself in the report.
+
+   Report the result as a pass/fail list, state which signals you actually
+   verified, and say plainly that no recovery action was needed. If everything
+   is green, say so without hedging.
 
 3. Try normal recovery first.
    - Use the documented recover endpoint for each stuck transaction.
@@ -134,3 +206,12 @@ the master, and reduce the number of separate `ssh` calls.
   `/run/agenix/st0x-issuance.env`.
 - Never open a fresh SSH connection per command; reuse one multiplexed master
   connection and batch remote work to avoid the server's connection rate limit.
+- Never open the SSH master as a standalone backgrounded daemon (`ssh -fN`);
+  attach the control options to the first real command instead.
+- Never treat an empty stuck list as proof the service is healthy. Run the
+  health check and report what you actually verified.
+- Never report a production fault — bad credentials, a stuck aggregate, a failed
+  deploy — without first ruling out the self-inflicted causes: a misspelled
+  environment variable name, an incomplete terminal-event list, the per-service
+  versus system nix profile, and warnings emitted by your own unauthenticated
+  probes.

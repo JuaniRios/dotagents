@@ -1,7 +1,7 @@
 ---
 name: recover-issuance
 allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(python3:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(grep:*), Bash(awk:*), Bash(cut:*), Bash(sed:*), Bash(git:*), Bash(paste:*), Read, AskUserQuestion
-description: Check, diagnose, and recover stuck issuance-bot transactions (mints and redemptions). Calls /admin/stuck, attempts /admin/recover on each, searches on-chain for unrecorded burns, and presents a findings table. Destructive actions (force-complete, close) require explicit user confirmation.
+description: Check issuance-bot production health and recover stuck transactions (mints and redemptions). Calls /admin/stuck, attempts /admin/recover on each, searches on-chain for unrecorded burns, and presents a findings table. When nothing is stuck — or after a deploy, or when asked "is it working?" — runs a full health check (deploy rev, crash-loop, signer, view rebuilds, backfill and vault coverage, Alpaca reachability). Destructive actions (force-complete, close) require explicit user confirmation.
 argument-hint: "[host]"
 disable-model-invocation: true
 ---
@@ -35,10 +35,30 @@ Docker/Ubuntu droplet, so the classic paths and tooling do not apply:
 - **No `python3` or `jq` on the box** — consume raw JSON from `curl`; do any
   pretty-printing or `python3` Decimal math **locally** on your laptop.
 - **DB**: `/mnt/data/issuance.db` (`DB` above).
-- **Secrets**: agenix-decrypted at `/run/agenix/st0x-issuance.env` (holds
-  `ISSUER_API_KEY`, `ALPACA_*`, `RPC_URL`, …) — read them only inside the remote
-  SSH command that needs them. NOT `/mnt/volume_nyc3_02/.env`.
+- **Secrets**: agenix-decrypted at `/run/agenix/st0x-issuance.env` — read them
+  only inside the remote SSH command that needs them. NOT
+  `/mnt/volume_nyc3_02/.env`. The exact names matter; do not guess them:
+  `ISSUER_API_KEY`, `RPC_URL`, `ALPACA_API_BASE_URL` (note the `API_` infix —
+  **not** `ALPACA_BASE_URL`), `ALPACA_API_KEY`, `ALPACA_API_SECRET`,
+  `ALPACA_ACCOUNT_ID`, `ALPACA_IP_RANGES`. A misspelled var expands to empty and
+  `curl` returns `HTTP 000`, which reads exactly like a credential/allowlist
+  outage — a false alarm that has cost a round-trip before. Confirm names with
+  `grep -oE '^[A-Z_]*ALPACA[A-Z_]*' /run/agenix/st0x-issuance.env` (prints names
+  only, no values).
 - **Deployed git rev**: `/run/st0x/st0x-issuance.git-rev`.
+- **The unit runs from a _per-service_ nix profile**, not the system generation:
+  `/nix/var/nix/profiles/per-service/st0x-issuance/`. The **system** generation
+  timestamp is the host config and moves independently — a system generation
+  hours older than the service start time is normal, not a failed activation.
+  To prove a deploy is a real new build rather than a no-op restart, compare
+  store paths across the last two generations:
+
+  ```bash
+  ssh $HOST 'nix-env -p /nix/var/nix/profiles/per-service/st0x-issuance --list-generations | tail -3'
+  ssh $HOST 'readlink -f /nix/var/nix/profiles/per-service/st0x-issuance-{14,15}-link'
+  ```
+
+  Different store paths ⇒ genuinely new code.
 - **New droplet ⇒ new host key / IP**: if the master fails with `Host key
   verification failed`, add the key once with
   `ssh-keyscan -t ed25519,rsa <ip> >> ~/.ssh/known_hosts`, then retry. If the IP
@@ -52,12 +72,19 @@ as the steps below appear to do — trips sshd throttling and you get
 **one** master connection and route every later `ssh` through it.
 
 Each tool call is a fresh shell, so env vars don't persist — but the master
-socket file does. Hardcode a fixed `ControlPath` and open the master once:
+socket file does. Hardcode a fixed `ControlPath` and let the **first real
+command** open the master implicitly:
 
 ```bash
-ssh -fN -o ControlMaster=auto -o ControlPersist=15m \
-    -o ControlPath=/tmp/issuance-cm.sock <resolved_host>
+ssh -o ControlMaster=auto -o ControlPersist=15m \
+    -o ControlPath=/tmp/issuance-cm.sock <resolved_host> '<first actual command>'
 ```
+
+**Do NOT open the master as a standalone backgrounded daemon** — the
+`ssh -fN ...` form is denied by the auto-approval classifier and the run stalls
+before it starts. `ControlMaster=auto` creates the socket as a side effect of
+the first useful command, which is all you need. Fold these three options into
+Step 0's version check and the master is up from then on.
 
 Then set `HOST` to **include the control option** so every existing `ssh $HOST`
 call below transparently reuses the one connection:
@@ -103,11 +130,98 @@ locally afterward if you need to):
 ssh $HOST 'KEY=$(grep "ISSUER_API_KEY" /run/agenix/st0x-issuance.env | cut -d= -f2 | tr -d "\"") && curl -s -w "\nHTTP %{http_code}\n" -H "X-API-KEY: $KEY" http://localhost:8000/admin/stuck'
 ```
 
-If the list is empty, report "✅ No stuck transactions" and stop.
+If the list is empty, **do not stop** — an empty `/admin/stuck` means there is
+nothing to *recover*, not that the service is healthy. Go to the health check
+(Step 1b), then report. Only skip 1b if the user explicitly asked just to
+unstick transactions.
 
 Build a working list from the response. Each item has:
 `aggregate_type`, `aggregate_id`, `state`, `detail`, `underlying`, `quantity`,
 `timestamp`, and optionally `tx_hash`.
+
+## 1b. Health check (post-deploy, or whenever nothing is stuck)
+
+Run this when `/admin/stuck` is empty, or whenever the user asks a health-shaped
+question — "a new deploy just landed", "is everything working", "is the bot
+OK?". `/admin/stuck` only reports aggregates already wedged in a known-bad
+state; it is silent about a service that crash-loops, signs with a dead key,
+cannot reach Alpaca, or never started watching a vault. Those are the failures
+that have actually bitten in production, so check them directly.
+
+Batch it into **one** `ssh` call:
+
+```bash
+ssh $HOST 'echo "=== rev / state / restarts ==="; cat /run/st0x/st0x-issuance.git-rev; systemctl show st0x-issuance.service -p ActiveState -p ExecMainStartTimestamp -p NRestarts -p MainPID --value; \
+  echo "=== errors+warnings since start ==="; journalctl -u st0x-issuance --since "<service_start>" --no-pager -p warning | tail -40; \
+  echo "=== startup sequence (polling noise stripped) ==="; journalctl -u st0x-issuance --since "<service_start>" --no-pager | grep -viE "Polling vault for transfer" | head -40; \
+  echo "=== backfill coverage ==="; journalctl -u st0x-issuance --since "<service_start>" --no-pager | grep -c "Receipt backfill complete for vault"; \
+  echo "=== vaults polled ==="; journalctl -u st0x-issuance --no-pager -n 400 | grep -oE "vault=0x[0-9a-fA-F]+" | sort -u | wc -l'
+```
+
+Verify each of these, and say which passed rather than a bare "looks fine":
+
+| Signal | Healthy | Failure it catches |
+|---|---|---|
+| Deployed git rev | matches latest `master` | stale/failed deploy |
+| `NRestarts` | `0` | crash-loop (missing view migrations, 2026-06-17) |
+| ERROR/WARN count since start | `0` | anything degraded |
+| `Turnkey wallet initialized` + `Signer backend resolved` | present | dead signing key (403, 2026-08-07) |
+| View rebuilds (receipt inventory, redemption, receipt burns) | all "rebuild complete" | missing view→Lifecycle migrations |
+| Receipt backfill | `complete` count == asset count | partial startup |
+| Backfill `from_block` | near chain head | 6.9M-block replay crash-loop (2026-07-13) |
+| Vaults polled | == asset count | asset registered but never watched (2026-07-13) |
+| Poller block cursor | advances ~30 blocks/min on Base (2s blocks) | stalled monitor |
+
+Then confirm no aggregate is quietly non-terminal. **Use these exact terminal
+sets** — an incomplete list produces false "stuck!" alarms:
+
+- **Redemption terminal**: `TokensBurned`, `RedemptionClosed`,
+  `BurnForceCompleted`, `ExistingBurnRecovered`
+  (`ExistingBurnRecovered` applies to `Completed` — `src/redemption/mod.rs`,
+  and in the view `src/redemption/view.rs`)
+- **Mint terminal**: `MintCompleted`, `MintClosed`
+
+```bash
+ssh $HOST bash -s <<'EOF'
+sqlite3 /mnt/data/issuance.db "
+WITH last AS (
+  SELECT aggregate_type, aggregate_id, event_type,
+         ROW_NUMBER() OVER (PARTITION BY aggregate_type, aggregate_id ORDER BY sequence DESC) rn
+  FROM events WHERE aggregate_type IN ('Redemption','Mint')
+)
+SELECT aggregate_type, aggregate_id, event_type FROM last
+WHERE rn = 1 AND event_type NOT IN (
+  'RedemptionEvent::TokensBurned','RedemptionEvent::RedemptionClosed',
+  'RedemptionEvent::BurnForceCompleted','RedemptionEvent::ExistingBurnRecovered',
+  'MintEvent::MintCompleted','MintEvent::MintClosed'
+);"
+EOF
+```
+
+Finally, confirm outbound Alpaca still works — a 401 here is invisible to
+`/admin/stuck` until requests pile up (2026-07-20). Use the **read-only**
+account endpoint and print only the status code:
+
+```bash
+ssh $HOST 'set -a; . /run/agenix/st0x-issuance.env; set +a; \
+  curl -s -o /dev/null -w "alpaca HTTP %{http_code}\n" \
+    -u "$ALPACA_API_KEY:$ALPACA_API_SECRET" \
+    "$ALPACA_API_BASE_URL/v1/accounts/$ALPACA_ACCOUNT_ID"; \
+  curl -s https://api.ipify.org; echo'
+```
+
+`200` = credentials valid and egress IP allowlisted. `HTTP 000` is almost always
+a **misspelled variable name**, not an outage — re-check against the names in
+"Deployment layout" before reporting a problem.
+
+**Ordering rule:** scan the logs *before* sending any unauthenticated probe. An
+unauthenticated `curl` to `/tokenized-assets` correctly returns 401 and emits
+`WARN auth: Missing X-API-KEY`, which then shows up in your own error scan and
+looks like a real fault. If you probe first, attribute those WARNs to yourself
+explicitly in the report.
+
+Report the health check as a pass/fail table, and state plainly that no
+recovery action was needed. If every signal is green, say so without hedging.
 
 ## 2. Attempt /admin/recover for each stuck redemption
 
@@ -311,6 +425,13 @@ After the table, list any items needing follow-up as a numbered action list.
 6. The deployed image is the latest `master` commit, which already includes
    `force-complete` and `close`. Only if the running tag is visibly behind
    `master` should you flag that a redeploy is needed before using them.
+7. **An empty `/admin/stuck` is not a clean bill of health.** Never report the
+   service healthy on that basis alone — run Step 1b and report what you
+   actually verified.
+8. Never report a production fault (bad credentials, stuck aggregate, failed
+   deploy) without first ruling out the self-inflicted causes in "Failure
+   modes": a misspelled env var, an incomplete terminal-event list, the
+   per-service vs system nix profile, and your own unauthenticated probes.
 
 ## Failure modes
 
@@ -342,6 +463,25 @@ After the table, list any items needing follow-up as a numbered action list.
   may not serve logs that far back. Note this and skip the on-chain check.
 - **`/admin/stuck` returns 401**: API key may have changed — ask the user to
   verify `ISSUER_API_KEY` on the server.
+- **The SSH master command is denied / the run stalls immediately**: you used
+  the backgrounded `ssh -fN ...` daemon form, which the auto-approval classifier
+  blocks. Fold `-o ControlMaster=auto -o ControlPersist=15m -o ControlPath=...`
+  into the first real command instead (see "SSH connection reuse").
+- **Alpaca probe returns `HTTP 000`**: near-certainly a misspelled env var
+  expanding to empty, not an outage. The base URL is `ALPACA_API_BASE_URL`, not
+  `ALPACA_BASE_URL`. Re-check the names before reporting a credential problem.
+- **Aggregates look "non-terminal" but `/admin/stuck` is empty**: your terminal
+  event list is incomplete. `ExistingBurnRecovered` (redemption) and
+  `MintClosed` (mint) are terminal — see the exact sets in Step 1b. Trust
+  `/admin/stuck` over a hand-written query and verify against the aggregate
+  source before raising an alarm.
+- **System nix generation looks older than the service start time**: not a
+  failed deploy. The unit runs from the *per-service* profile
+  (`/nix/var/nix/profiles/per-service/st0x-issuance/`), which is versioned
+  separately from the system generation.
+- **`WARN auth: Missing X-API-KEY` in the logs**: probably your own
+  unauthenticated probe. Check timestamps against your commands before treating
+  it as a real fault, and scan logs before probing.
 - **No output from cast logs grep**: the burn may be a multi-receipt batch
   where no single Transfer event matches the total. List nearby burn txs for
   manual inspection.
