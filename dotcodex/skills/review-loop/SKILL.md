@@ -57,8 +57,9 @@ runs **concurrently** with the re-review.
 on glue commands, parallel subagent launches, triage over structured
 findings, and user checkpoints. Do not wrap the entire loop in another
 orchestrator/subagent; nested orchestration makes tool availability and state
-tracking brittle. On a premium model, or when the caller asks for delegation,
-push context-heavy work into closing cheaper subagents:
+tracking brittle. Push context-heavy work into closing subagents (they run
+on the same full-strength models as the reviewer lanes; delegation is for
+context, not for cost):
 
 - **Prompt building (step 4)** — a setup subagent authors the prompt files.
 - **Report assembly (step 5)** — a subagent renders `review.md` from
@@ -362,8 +363,7 @@ their context and can mislead the goal-evaluation lane.
 Every reviewer gets a **shared base prompt** plus a **per-reviewer focus
 paragraph** that biases each toward a different class of bugs.
 
-On premium models, or when the caller asked for delegation, do not author
-these files in the main session. Spawn one setup subagent with this skill's
+Unless the diff is tiny, do not author these files in the main session. Spawn one setup subagent with this skill's
 path, `$out_dir`, the chosen lane keys, the project-doc paths, and the
 stripped PR description; it writes `prompt-base.txt`, every
 `prompt-{reviewer}.txt`, the inspector prompts, and the step-5 `context.txt`
@@ -579,13 +579,12 @@ Suggested lanes:
 
 - **Claude A**: `$out_dir/prompt-claude-a.txt` (goal evaluation & domain logic)
 - **Claude B**: `$out_dir/prompt-claude-b.txt` (error handling & failure modes)
-  — run this lane with `--model sonnet`
 
-At most ONE Claude lane (the goal-evaluation one) may run on the premium
-default model: measured runs show the goal-evaluation focus is where the
-premium Claude model finds unique high-severity issues, while additional
-premium lanes mostly duplicate Codex/Sonnet findings and burn the Anthropic
-usage limit ~3x faster per token than Sonnet (2x Opus).
+Run both Claude lanes with `--model opus`. Every lane in this panel runs on
+the Codex model (`gpt-5.6-sol`) or on Claude Opus: never pin a lane to a
+smaller model, because a weak reviewer returns noise and costs a whole pass.
+Claude lanes stay optional because they burn the Anthropic usage limit fast,
+not because a cheaper model would do.
 
 ```bash
 cat "$out_dir/diff.patch" | claude -p \
@@ -606,9 +605,9 @@ If a Claude lane exits non-zero, record it as "reviewer errored" and
 continue. Skip Claude entirely when the CLI is unavailable or the user asks
 for Codex-only review.
 
-### Inspector agents — Test, Idiomatic Rust, Strong Typing, External Contract, and Comment Discipline Inspectors
+### Inspector agents — Test, Idiomatic Rust, Strong Typing, External Contract, Comment Discipline, and Simplicity Inspectors
 
-Alongside the five reviewers, spawn five additional specialized inspector
+Alongside the five reviewers, spawn six additional specialized inspector
 agents. These produce structured reports in their own format (not the
 reviewer finding format) and feed into the aggregator as supplementary
 input.
@@ -705,13 +704,45 @@ no comments, say so and stop.
 
 Write output to `$out_dir/raw-comment-inspector.md`.
 
+**Simplicity Inspector**:
+
+Prompt: the full content of the Codex `simplicity-inspector` skill
+(`~/Github/dotagents/dotcodex/skills/simplicity-inspector/SKILL.md`,
+everything below the frontmatter).
+
+Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+
+The PR author describes the change as:
+{PR_DESCRIPTION}
+
+Measure the budget first, then read the changed files whole, not only the
+hunks: you cannot tell that an abstraction has one user from the hunk that
+adds it. Search the repo before you claim an existing mechanism already
+covers the case, and name it with a path. Category is always
+"maintainability". Severity: a different, materially smaller approach that
+still meets the stated goal = high; removable machinery (one-user
+abstraction, unused knob, stored derived state, forwarding wrapper,
+impossible branch, dead-on-arrival code, copy-paste bulk) = medium; local
+verbosity = low. Every finding carries the line count it removes and the
+written-out smaller form. If the diff is already minimal, say which two or
+three things you tried to cut and why each is load-bearing, then stop.
+```
+
+Write output to `$out_dir/raw-simplicity-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (this is fine — record "no test files, skipped"). If the diff
 contains no `.rs` files, the Rust inspector will self-exit (same handling).
 If the diff has no strong-typing surface or external touchpoints, those
 inspectors will self-exit. The comment inspector self-exits only when neither
 Rust/comment-bearing code nor PR/issue-facing prose is available. The
-aggregator handles missing inspector reports gracefully.
+simplicity inspector never self-exits: a diff that adds no lines still gets a
+budget line and a verdict. The aggregator handles missing inspector reports
+gracefully.
 
 ### Chunk splitting for large diffs
 
@@ -779,8 +810,9 @@ In one parallel batch, issue:
 8. Codex subagent call for Strong Typing Inspector
 9. Codex subagent call for External Contract Inspector
 10. Codex subagent call for Comment Discipline Inspector
-11. Optional `claude -p` process for Claude A
-12. Optional `claude -p` process for Claude B
+11. Codex subagent call for Simplicity Inspector
+12. Optional `claude -p` process for Claude A
+13. Optional `claude -p` process for Claude B
 
 ## 6. Normalize, verify, and aggregate
 
@@ -817,13 +849,14 @@ You may also have optional external raw reviews:
 - {CLAUDE_A_PATH}  (Claude A)
 - {CLAUDE_B_PATH}  (Claude B)
 
-You also have five specialized inspector reports (may be empty if no
+You also have six specialized inspector reports (may be empty if no
 relevant files were in the diff):
 - {TEST_INSPECTOR_PATH}      (Test Inspector — test quality assessment)
 - {RUST_INSPECTOR_PATH}      (Idiomatic Rust Inspector — Rust idiom assessment)
 - {TYPING_INSPECTOR_PATH}    (Strong Typing Inspector — primitive obsession and type-boundary leaks)
 - {CONTRACT_INSPECTOR_PATH}  (External Contract Inspector — unverified external-API/contract assumptions)
 - {COMMENT_INSPECTOR_PATH}   (Comment Discipline Inspector — excessive source comments and overly specific PR/issue prose)
+- {SIMPLICITY_INSPECTOR_PATH} (Simplicity Inspector — a materially smaller change that would meet the same goal, and code that can be deleted)
 
 And the diff itself at:
 - {DIFF_PATH}
@@ -885,7 +918,8 @@ For each finding:
 - **Confidence:** <0-100>
 - **Found by:** [codex-a], [codex-b], [codex-c], [codex-d], [codex-e],
   [claude-a], [claude-b], [test-inspector], [rust-inspector],
-  [contract-inspector], [comment-inspector], or a list
+  [contract-inspector], [comment-inspector], [simplicity-inspector], or a
+  list
 - **Issue:** <one paragraph>
 - **Why it matters:** <concrete consequence>
 - **Recommended fix:** <specific action>
@@ -946,8 +980,8 @@ their findings as follows:
 - Inspector findings can corroborate or conflict with the reviewer
   findings — merge duplicates as you would between any two reviewers.
 - In the "Found by" field, use [test-inspector], [rust-inspector],
-  [typing-inspector], [contract-inspector], or [comment-inspector] as the
-  attribution.
+  [typing-inspector], [contract-inspector], [comment-inspector], or
+  [simplicity-inspector] as the attribution.
 
 Do not include emojis, apologies, or disclaimers. Be decisive.
 ```
@@ -1101,6 +1135,14 @@ pre-existing defect), assign **Grouped follow-up** instead of auto-fix. Add it
 to `$follow_up_candidates_path`; do not force scope creep into the current PR.
 Critical issues still qualify when they are genuinely separate—the serial
 implementation phase handles them first.
+
+**Simplicity findings** (from the simplicity inspector) follow the same table
+with one exception: a finding whose fix is a **different approach** — one
+that rewrites how the PR solves the problem rather than deleting a piece of
+it — is always **Discuss**, whatever its severity. Deleting a one-user
+abstraction, an unused knob, or copy-paste bulk is an ordinary auto-fix and
+should just happen; re-architecting the branch mid-loop is the user's call.
+Show the line counts both ways when you ask.
 
 **Grouped follow-up** is also used when the user explicitly defers a finding.
 It is not a way to avoid a surgical in-scope fix. When in doubt about scope,

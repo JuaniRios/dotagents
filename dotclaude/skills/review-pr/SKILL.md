@@ -1,7 +1,7 @@
 ---
 name: review-pr
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(codex:*), Bash(mkdir:*), Bash(wc:*), Bash(date:*), Bash(basename:*), Bash(test:*), Bash(grep:*), Read, Write, Agent, Workflow, Skill
-description: Cross-review a pull request by number or URL without checking it out. Opens with a plain-language TL;DR of what the PR is trying to achieve and why, runs a multi-model Workflow panel (3x Sonnet, 2x Codex gpt-5.5 + inspectors) with per-finding verification, closes with a summary of what changed, then starts a conversation so you can decide which findings (if any) to comment on the PR.
+description: Cross-review a pull request by number or URL without checking it out. Opens with a plain-language TL;DR of what the PR is trying to achieve and why, runs a multi-model Workflow panel (Opus lanes, 2x Codex gpt-5.6-sol + inspectors) with per-finding verification, closes with a summary of what changed, then starts a conversation so you can decide which findings (if any) to comment on the PR.
 argument-hint: <pr-number | pr-url>
 ---
 
@@ -196,7 +196,7 @@ lane agent converts to structured output.)
 
 Append one of these to the base prompt for each reviewer:
 
-**Sonnet A — Concurrency & async ordering:**
+**`concurrency` — Concurrency & async ordering:**
 ```
 YOUR FOCUS: Pay special attention to the ordering of async operations
 during setup, teardown, and reconnection. When two async steps happen in
@@ -206,7 +206,7 @@ setup sequences, concurrent writers to shared state, and assumptions about
 which operation completes first.
 ```
 
-**Opus B — Goal evaluation & domain logic:**
+**`goal-eval` — Goal evaluation & domain logic:**
 ```
 YOUR FOCUS: Read the PR description carefully, then evaluate whether the
 implementation actually achieves what it claims. If the PR says "events
@@ -216,7 +216,7 @@ adversarial about the stated goals — your job is to find the gap between
 intent and implementation.
 ```
 
-**Sonnet — Error handling & failure modes:**
+**`failure-modes` — Error handling & failure modes:**
 ```
 YOUR FOCUS: Trace every error path and failure mode. What happens when a
 database write fails mid-operation? When a background job exhausts its
@@ -225,7 +225,7 @@ for silent failures, missing error propagation, and recovery paths that
 leave the system in an inconsistent state.
 ```
 
-**Codex A — Edge cases & boundary conditions:**
+**`codex-a` — Edge cases & boundary conditions:**
 ```
 YOUR FOCUS: Look for edge cases at boundaries. What happens at block 0?
 When a range is empty? When both inputs are equal? When an optional value
@@ -233,7 +233,7 @@ is None for the first time? When a counter overflows? Find the inputs
 that the author probably didn't test.
 ```
 
-**Codex B — Broad general sweep:**
+**`codex-b` — Broad general sweep:**
 ```
 YOUR FOCUS: Do a broad, unbiased review. Don't focus on any particular
 category — instead, try to find anything the other reviewers might miss.
@@ -244,9 +244,10 @@ behavior? Are there implicit assumptions that aren't documented?
 
 ### Inspector prompts
 
-Write five inspector prompt files the same way. The first four contain the full body
-of the corresponding command file (everything below the frontmatter, with
-`$ARGUMENTS` replaced by the PR reference), plus this shared context block:
+Write six inspector prompt files the same way. All but the comment inspector
+contain the full body of the corresponding skill file (everything below the
+frontmatter, with `$ARGUMENTS` replaced by the PR reference), plus this
+shared context block:
 
 ```
 The diff is at: {DIFF_PATH}
@@ -310,6 +311,24 @@ plus per-inspector structured-output mapping rules:
   category "maintainability" unless project docs explicitly make it
   "convention"; severity low by default, medium when the prose obscures intent
   or will predictably become stale.
+- **Simplicity Inspector**
+  (`~/.claude/skills/simplicity-inspector/SKILL.md` →
+  `prompt-simplicity-inspector.txt`): append the author's PR description
+  (`{PR_DESCRIPTION}`) so the lane knows the stated goal, then: "Measure the
+  budget first, then read the changed files whole (not only the hunks) — you
+  cannot tell that an abstraction has one user from the hunk that adds it.
+  Search the repo before claiming an existing mechanism already covers the
+  case, and name it with a path. If the diff is already minimal, return an
+  empty findings list and set clean_reason to the two or three things you
+  tried to cut and why each is load-bearing. Return findings via the
+  structured output tool. Category is always 'maintainability'. Severity
+  mapping: a different, materially smaller approach that still meets the
+  stated goal = high; removable machinery (one-user abstraction, unused
+  knob, stored derived state, forwarding wrapper, impossible branch,
+  dead-on-arrival code, copy-paste bulk) = medium; local verbosity = low.
+  Put the line count you would remove in why_it_matters, and the written-out
+  smaller form in recommended_fix — a finding without a concrete replacement
+  is not a finding."
 
 ## 7. Present a plain-language overview (sanity check)
 
@@ -348,27 +367,29 @@ no output-file validation, no separate aggregator agent.
 ### Lanes
 
 Build the lane list (drop the codex lanes if `codex` is not on PATH — check
-`command -v codex`; warn the user and continue with 8 lanes):
+`command -v codex`; warn the user and continue with 9 lanes):
 
 | key                | codex | model  | effort | promptPath                              |
 | ------------------ | ----- | ------ | ------ | --------------------------------------- |
-| sonnet-a           | no    | sonnet |        | prompt-sonnet-a.txt (concurrency)       |
-| opus-b             | no    | opus   | xhigh  | prompt-opus-b.txt (goal evaluation)     |
-| sonnet             | no    | sonnet |        | prompt-sonnet.txt (error handling)      |
-| codex-a            | yes   | sonnet | medium | prompt-codex-a.txt (edge cases)         |
-| codex-b            | yes   | sonnet | medium | prompt-codex-b.txt (broad sweep)        |
-| test-inspector     | no    | sonnet |        | prompt-test-inspector.txt               |
-| rust-inspector     | no    | sonnet |        | prompt-rust-inspector.txt               |
-| typing-inspector   | no    | sonnet |        | prompt-typing-inspector.txt             |
+| concurrency        | no    | opus   |        | prompt-concurrency.txt (async ordering) |
+| goal-eval          | no    | opus   | xhigh  | prompt-goal-eval.txt (goal evaluation)  |
+| failure-modes      | no    | opus   |        | prompt-failure-modes.txt (error paths)  |
+| codex-a            | yes   | opus   | medium | prompt-codex-a.txt (edge cases)         |
+| codex-b            | yes   | opus   | medium | prompt-codex-b.txt (broad sweep)        |
+| test-inspector     | no    | opus   |        | prompt-test-inspector.txt               |
+| rust-inspector     | no    | opus   |        | prompt-rust-inspector.txt               |
+| typing-inspector   | no    | opus   |        | prompt-typing-inspector.txt             |
 | contract-inspector | no    | opus   | xhigh  | prompt-contract-inspector.txt           |
-| comment-inspector  | no    | sonnet |        | prompt-comment-inspector.txt            |
+| comment-inspector  | no    | opus   |        | prompt-comment-inspector.txt            |
+| simplicity-inspector | no  | opus   | xhigh  | prompt-simplicity-inspector.txt         |
 
-**Model allocation:** `opus-b` (goal evaluation) and `contract-inspector`
-run on Opus at xhigh effort — the lanes where deep reasoning demonstrably
-finds unique high-severity issues. All other non-Codex lanes run on Sonnet.
-The codex lanes' model applies to the WRAPPER agent that shells out to the
-codex CLI — pin it to sonnet, or it inherits the session model for trivial
-wrapper work.
+**Model allocation:** every lane runs on Opus or the Codex CLI
+(`gpt-5.6-sol`). Never put a lane on a smaller model. `goal-eval`,
+`contract-inspector`, and `simplicity-inspector` run at xhigh effort — the
+lanes where deep reasoning finds unique high-severity issues, and where the
+model must hold the whole change at once to name the smaller design that was
+available. The codex lanes' model applies to the WRAPPER agent that shells
+out to the codex CLI — it is Opus too, and does only trivial wrapper work.
 
 Each lane object: `{key, codex, model, promptPath, diffPath}`. All lanes
 share `$out_dir/diff.patch`.
@@ -451,7 +472,7 @@ const laneResults = await parallel(lanes.map(lane => () => {
 
   const prompt = lane.codex
     ? `Use Bash to run exactly this command (one call, 10 minute timeout):\n` +
-      `cat "${lane.diffPath}" | codex exec --sandbox read-only -m gpt-5.5 ` +
+      `cat "${lane.diffPath}" | codex exec --sandbox read-only -m gpt-5.6-sol ` +
       `-c service_tier="fast" -C "${repoRoot}" "$(cat "${lane.promptPath}")"\n` +
       `(service_tier="fast" cuts latency but needs ChatGPT sign-in; if codex ` +
       `errors that the fast/priority tier is unavailable for the auth in ` +
@@ -528,7 +549,7 @@ const verified = await parallel(merged.map(finding => () =>
     `with concrete evidence from the code; do not dismiss ` +
     `uncertain-but-plausible findings. Re-score severity and confidence ` +
     `from your own reading (confidence 100 = you verified it yourself).`,
-    { label: `verify:${finding.file}`, phase: 'Verify', model: 'sonnet',
+    { label: `verify:${finding.file}`, phase: 'Verify', model: 'opus',
       schema: VERDICT_SCHEMA },
   ).then(verdict => verdict && ({ ...finding, ...verdict }))
 ))

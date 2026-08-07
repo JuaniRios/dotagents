@@ -308,17 +308,19 @@ Default reviewer set:
 8. **External Contract Inspector** — Codex subagent using the external-contract-inspector workflow
 9. **Comment Discipline Inspector** — Codex subagent checking that Rust and
    review prose express intent without excessive commentary
+10. **Simplicity Inspector** — Codex subagent using the simplicity-inspector
+    workflow, asking whether a materially smaller change would have met the
+    same goal
 
 Optional external reviewers:
 
-- **Claude A** — run `claude -p` with the goal-evaluation prompt
-- **Claude B** — run `claude -p` with the failure-mode prompt, pinned to
-  `--model sonnet`
+- **Claude A** — run `claude -p --model opus` with the goal-evaluation prompt
+- **Claude B** — run `claude -p --model opus` with the failure-mode prompt
 
-At most ONE Claude lane (goal evaluation) may run on the premium default
-model — measured runs show that is the only focus where the premium model
-finds unique high-severity issues, and it burns the Anthropic usage limit
-~3x faster per token than Sonnet (2x Opus).
+Every lane runs on the Codex model (`gpt-5.6-sol`) or on Claude Opus. Never
+pin a lane to a smaller model: a weak reviewer returns noise and costs a
+whole pass. Claude lanes stay optional because they burn the Anthropic usage
+limit fast, not because a cheaper model would do.
 
 Skip the Claude lanes if `claude` is not installed, the user asks for
 Codex-only review, or the diff is small enough that five Codex lanes are
@@ -377,7 +379,7 @@ Notes:
   in the final user-facing report or GitHub comments.
 - If Claude exits non-zero, record that lane as errored and continue.
 
-### Inspectors 6-9 — Test, Idiomatic Rust, External Contract, and Comment Discipline Inspectors
+### Inspectors 6-10 — Test, Idiomatic Rust, External Contract, Comment Discipline, and Simplicity Inspectors
 
 Spawn four additional Codex subagents alongside the five
 reviewers. These produce structured reports in their own format (not the
@@ -487,11 +489,45 @@ or PR/issue-facing prose to assess, say so and stop.
 
 Write output to `$out_dir/raw-comment-inspector.md`.
 
+**Simplicity Inspector**:
+
+Prompt: the full content of the Codex `simplicity-inspector` skill
+(`~/Github/dotagents/dotcodex/skills/simplicity-inspector/SKILL.md`,
+everything below the frontmatter).
+
+Append:
+
+```
+The diff is at: {DIFF_PATH}
+Repo root: {REPO_ROOT}
+The PR is at commit <head_sha>. Read source files via
+`git show <head_sha>:<path>` — the working tree does not match the PR.
+
+The PR author describes the change as:
+{PR_DESCRIPTION}
+
+Measure the budget first, then read the changed files whole, not only the
+hunks: you cannot tell that an abstraction has one user from the hunk that
+adds it. Search the repo before you claim an existing mechanism already
+covers the case, and name it with a path. Category is always
+"maintainability". Severity: a different, materially smaller approach that
+still meets the stated goal = high; removable machinery (one-user
+abstraction, unused knob, stored derived state, forwarding wrapper,
+impossible branch, dead-on-arrival code, copy-paste bulk) = medium; local
+verbosity = low. Every finding carries the line count it removes and the
+written-out smaller form. If the diff is already minimal, say which two or
+three things you tried to cut and why each is load-bearing, then stop.
+```
+
+Write output to `$out_dir/raw-simplicity-inspector.md`.
+
 **Skip conditions**: If the diff contains no test files, the test inspector
 will self-exit (record "no test files, skipped"). If the diff contains no
 `.rs` files, the Rust inspector will self-exit (same handling). If the diff
 has no external touchpoints, the external contract inspector will self-exit
-(same handling). The aggregator handles missing inspector reports gracefully.
+(same handling). The simplicity inspector never self-exits: a diff that adds
+no lines still gets a budget line and a verdict. The aggregator handles
+missing inspector reports gracefully.
 
 ### Output validation
 
@@ -519,9 +555,9 @@ continue. If all five Codex reviewer lanes error, stop.
 
 The aggregator receives the five reviewer reports **plus** the four
 inspector reports (`$out_dir/raw-test-inspector.md`,
-`$out_dir/raw-rust-inspector.md`, and
-`$out_dir/raw-contract-inspector.md`, and
-`$out_dir/raw-comment-inspector.md`). Pass all nine to the aggregator.
+`$out_dir/raw-rust-inspector.md`, `$out_dir/raw-contract-inspector.md`,
+`$out_dir/raw-comment-inspector.md`, and
+`$out_dir/raw-simplicity-inspector.md`). Pass all ten to the aggregator.
 
 Inspector reports use a different format from the five reviewers. The
 aggregator should integrate their findings as follows:
