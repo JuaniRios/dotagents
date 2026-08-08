@@ -81,28 +81,43 @@ force an existing tag.
 Warn (do not block) if `$last_tag` uses a different prefix convention than the
 `v` you are about to publish.
 
-## 4. Confirm
+## 4. Build the body, then confirm
 
-Print, in one block:
-
-- repo, new tag, target SHA (short) and its subject
-- baseline tag and its publish date
-- PR count and commit count from the draft
-- the **entire release body** you are about to publish
-
-Then `AskUserQuestion`: publish this release, or abort. Only "publish" proceeds.
-If the user wants edits to the wording, edit the `.tmp` notes file, re-print,
-and re-confirm.
-
-## 5. Publish
-
-Strip the `# Release notes: ...` H1 line from the drafted file into a body file,
-keeping everything else (Summary, Highlights, Pull requests, Technical
-changelog):
+Build the body file **before** you print anything. The drafted notes open with a
+`# Release notes: <last_tag> -> <head>` H1 that must never reach GitHub — the
+release already carries `$version` as its title, so publishing the H1 puts a
+second, differently-worded heading above it. Strip it, keep everything else
+(Summary, Highlights, Pull requests, Technical changelog):
 
 ```bash
 body="$repo_root/.tmp/release-body-$version.md"
 sed '1{/^# Release notes/d}' "$notes_file" | sed '1{/^$/d}' > "$body"
+```
+
+Then print, in one block:
+
+- repo, new tag, target SHA (short) and its subject
+- baseline tag and its publish date
+- PR count and commit count from the draft
+- the **entire contents of `$body`** — the exact bytes you are about to publish,
+  H1 already gone. Never print the raw notes file here; showing a line that
+  never publishes invites the user to spend a decision on it.
+
+Then `AskUserQuestion`: publish this release, or abort. Only "publish" proceeds.
+If the user wants edits to the wording, edit the `.tmp` notes file, rebuild
+`$body`, re-print, and re-confirm.
+
+If the user comments on the stripped H1 anyway (they may have seen it in
+`draft-release`'s own printout in step 2), tell them plainly that the line does
+not publish and carry on. Do not offer to keep it, and do not add a question
+about it.
+
+## 5. Publish
+
+Publish `$body` as built in step 4 — do not rebuild it, and do not re-add the
+H1:
+
+```bash
 gh release create "$version" \
   --target "$head_sha" \
   --title "$version" \
@@ -130,11 +145,14 @@ user asks — that is a separate step.
    PRs.
 3. **Always target `origin/master`'s head SHA**, never local HEAD or the
    current branch.
-4. **Tags are always `v`-prefixed** and always semver.
-5. **Never overwrite, move, or delete an existing tag or release.** If the tag
+4. **The `# Release notes: ...` H1 is always stripped from the body.** It is not
+   a choice, so never offer to keep it and never ask about it. GitHub renders
+   `$version` as the title already.
+5. **Tags are always `v`-prefixed** and always semver.
+6. **Never overwrite, move, or delete an existing tag or release.** If the tag
    exists, stop and report.
-6. Never create a release for an empty commit range.
-7. Never push commits, merge, or otherwise change `master` as part of this —
+7. Never create a release for an empty commit range.
+8. Never push commits, merge, or otherwise change `master` as part of this —
    the release is cut from what is already on `origin/master`.
 
 ## Failure modes
