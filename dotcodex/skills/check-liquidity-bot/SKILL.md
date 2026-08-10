@@ -1,6 +1,6 @@
 ---
 name: check-liquidity-bot
-description: "Use when the user asks to run the check-liquidity-bot workflow: diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) by querying the live server directly via `staging-remote`/`prod-remote`."
+description: "Use when the user asks to run the check-liquidity-bot workflow: diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) by querying the live server through the managed Nushell `staging-remote`/`prod-remote` accessors."
 ---
 
 # check-liquidity-bot
@@ -28,13 +28,37 @@ Set the remote shim based on the environment:
 - `staging` -> `staging-remote`
 - `prod` -> `prod-remote`
 
+These names are managed Nushell functions, not ordinary commands to invoke
+from the agent's non-interactive zsh tool shell. They call
+`st0x-remote-identity`, which retrieves the approved 1Password identity into a
+0600 cache and passes it as `SSH_IDENTITY` to the underlying remote helper.
+This prevents OpenSSH from offering every agent key and triggering fail2ban.
+
+From the liquidity repo, load the generated Nushell config inside the repo's
+dev shell and define a local adapter for the current tool call:
+
+```bash
+nu_config=$(nu -c '$nu.config-path')
+remote_shim='<validated prod-remote or staging-remote>'
+run_remote() {
+  REMOTE_COMMAND="$1" nix develop --command nu -c \
+    "source '$nu_config'; $remote_shim \$env.REMOTE_COMMAND"
+}
+```
+
+Every `<env>-remote ...` example below means `run_remote '<remote command>'`.
+Never call raw `ssh`, the underlying external shim (`^prod-remote` /
+`^staging-remote`), a direct flake remote app, or SSH-agent inspection/key
+selection. If the managed accessor cannot be loaded, stop and report that
+local configuration problem without attempting SSH.
+
 All DB queries go through `<env>-remote sqlite3 /mnt/data/st0x-hedge.db "..."`
 and all log queries through `<env>-remote journalctl -u st0x-hedge ...`. Filter
 at the source -- never pull the full journal.
 
 Note on sqlite3 quoting through the shim: the SSH shim re-splits arguments, so
-wrap the whole `sqlite3 ... "SELECT ..."` invocation in single quotes:
-`prod-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'`.
+pass the whole `sqlite3 ... "SELECT ..."` invocation as one string:
+`run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'`.
 Unquoted parentheses and semicolons in the SQL will otherwise break.
 
 ## 0. Connectivity gate (MANDATORY -- before any other remote command)
@@ -46,11 +70,11 @@ Spamming probes will ban the IP and make recovery harder.
 **Run exactly one probe first -- never parallelize it with other remote calls:**
 
 ```bash
-<env>-remote 'echo ok'
+run_remote 'echo ok'
 ```
 
-- **Success** (prints `ok`): proceed to section 1. Parallel remote queries are
-  fine only after this gate passes.
+- **Success** (prints `ok`): proceed to section 1. Batch subsequent queries into
+  as few `run_remote` calls as possible; do not parallelize SSH calls.
 - **Any failure** (non-zero exit, `agent refused operation`, `Permission
   denied`, `Connection refused`, timeout, or a hang you have to kill):
   **STOP immediately.**
@@ -292,11 +316,14 @@ Filter at the source and pull only what you need.
    any more SSH sessions -- extra attempts risk fail2ban while 1Password is
    unapproved. Report the single error and wait for the user. Do not guess
    credentials.
-5. Never read the `.db` file as a whole -- always use `sqlite3` queries via the
+5. Use only the managed Nushell remote accessor through `run_remote`. Raw SSH,
+   direct flake remote apps, underlying external shims, and SSH-agent key
+   discovery are forbidden.
+6. Never read the `.db` file as a whole -- always use `sqlite3` queries via the
    remote shim.
-6. Report findings honestly -- don't minimize issues or speculate beyond what
+7. Report findings honestly -- don't minimize issues or speculate beyond what
    the data shows.
-7. When inspecting source code to explain behavior, read the code at the
+8. When inspecting source code to explain behavior, read the code at the
    deployed commit, never the current working-tree branch (see "Inspecting the
    codebase to interpret behavior"). Never `git checkout` -- use
    `git show <commit>:<path>` / `git grep <commit>`.

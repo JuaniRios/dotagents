@@ -1,28 +1,55 @@
 ---
 name: recover-issuance
-allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(python3:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(grep:*), Bash(awk:*), Bash(cut:*), Bash(sed:*), Bash(git:*), Bash(paste:*), Read, AskUserQuestion
-description: Check issuance-bot production health and recover stuck transactions (mints and redemptions). Calls /admin/stuck, attempts /admin/recover on each, searches on-chain for unrecorded burns, and presents a findings table. When nothing is stuck — or after a deploy, or when asked "is it working?" — runs a full health check (deploy rev, crash-loop, signer, view rebuilds, backfill and vault coverage, Alpaca reachability). Destructive actions (force-complete, close) require explicit user confirmation.
-argument-hint: "[host]"
+allowed-tools: Bash(nu:*), Bash(nix:*), Bash(curl:*), Bash(python3:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(grep:*), Bash(awk:*), Bash(cut:*), Bash(sed:*), Bash(git:*), Bash(paste:*), Read, AskUserQuestion
+description: Check issuance-bot production health and recover stuck transactions (mints and redemptions) through the managed Nushell `prod-remote` accessor. Calls /admin/stuck, attempts /admin/recover on each, searches on-chain for unrecorded burns, and presents a findings table. When nothing is stuck — or after a deploy, or when asked "is it working?" — runs a full health check (deploy rev, crash-loop, signer, view rebuilds, backfill and vault coverage, Alpaca reachability). Destructive actions (force-complete, close) require explicit user confirmation.
 disable-model-invocation: true
 ---
 
 Check and recover stuck issuance-bot transactions on the production server.
 
-## Resolve host
+## Managed production access (CRITICAL — set up first)
 
-Read the SSH target from `~/Github/dotagents/.env`:
+Use the `prod-remote` function from the user's managed Nushell config. It calls
+`st0x-remote-identity`, which retrieves the approved 1Password identity into a
+0600 cache and passes it as `SSH_IDENTITY` to the issuance flake's remote
+helper. The helper decrypts the production host and uses that same identity for
+SSH. This avoids offering every key in the SSH agent and triggering fail2ban.
+
+Bash tool calls are non-interactive and do not automatically expose Nushell
+custom commands. From the issuance repo, load the generated config explicitly
+inside its dev shell and define a local adapter for that Bash call:
 
 ```bash
-grep "ISSUANCE_HOST" ~/Github/dotagents/.env | cut -d= -f2
+nu_config=$(nu -c '$nu.config-path')
+run_prod() {
+  REMOTE_COMMAND="$1" nix develop --command nu -c \
+    "source '$nu_config'; prod-remote \$env.REMOTE_COMMAND"
+}
 ```
 
-If an argument was passed to this command, use it instead. If neither the file
-nor an argument provides a host, tell the user:
-"No host configured. Either pass it as an argument or add `ISSUANCE_HOST=root@<ip>` to `~/Github/dotagents/.env`."
-and stop.
+Every `ssh $HOST '<remote command>'` example below describes a remote payload;
+execute it as `run_prod '<remote command>'`. Never execute the literal raw SSH
+form. For heredocs, include the complete remote script in one `REMOTE_COMMAND`
+value and pass it through one `run_prod` invocation. Combine all remote payloads
+needed for the current diagnostic phase before invoking `run_prod`; do not turn
+each legacy example into a separate accessor call.
 
-Set `DB=/mnt/data/issuance.db` for all commands below, then set up a
-**multiplexed SSH connection** (next section) before running anything remote.
+Treat `prod-remote` as the only production transport:
+
+- Never read `ISSUANCE_HOST`, decrypt `.remote-prod.age` yourself, call raw
+  `ssh`, call `nix run .#prodRemote`, or inspect/try SSH-agent identities.
+- Build the first useful diagnostic command before connecting. Do not run a
+  separate connectivity probe and then reconnect for the real work.
+- Batch the entire uninterrupted diagnostic phase into one accessor call. Loop
+  over aggregate IDs inside the remote shell; never call the accessor once per
+  item and never parallelize accessor calls.
+- If that first accessor call fails, hangs, times out, or is refused, stop
+  immediately and report the exact error. Do not retry or try alternate access
+  until the user explicitly says access is restored.
+- A later accessor call is allowed when the workflow genuinely pauses for the
+  user's required confirmation before a mutating recovery action.
+
+Set `DB=/mnt/data/issuance.db` for the remote payloads below.
 
 ## Deployment layout (NixOS — read before running remote commands)
 
@@ -59,51 +86,9 @@ Docker/Ubuntu droplet, so the classic paths and tooling do not apply:
   ```
 
   Different store paths ⇒ genuinely new code.
-- **New droplet ⇒ new host key / IP**: if the master fails with `Host key
-  verification failed`, add the key once with
-  `ssh-keyscan -t ed25519,rsa <ip> >> ~/.ssh/known_hosts`, then retry. If the IP
-  itself changed, update `ISSUANCE_HOST` in `~/Github/dotagents/.env` first.
-
-## SSH connection reuse (CRITICAL — set up first)
-
-The server rate-limits new SSH connections. Opening a fresh `ssh` per command —
-as the steps below appear to do — trips sshd throttling and you get
-`ssh: connect to host ... port 22: Connection refused` partway through. Open
-**one** master connection and route every later `ssh` through it.
-
-Each tool call is a fresh shell, so env vars don't persist — but the master
-socket file does. Hardcode a fixed `ControlPath` and let the **first real
-command** open the master implicitly:
-
-```bash
-ssh -o ControlMaster=auto -o ControlPersist=15m \
-    -o ControlPath=/tmp/issuance-cm.sock <resolved_host> '<first actual command>'
-```
-
-**Do NOT open the master as a standalone backgrounded daemon** — the
-`ssh -fN ...` form is denied by the auto-approval classifier and the run stalls
-before it starts. `ControlMaster=auto` creates the socket as a side effect of
-the first useful command, which is all you need. Fold these three options into
-Step 0's version check and the master is up from then on.
-
-Then set `HOST` to **include the control option** so every existing `ssh $HOST`
-call below transparently reuses the one connection:
-
-```text
-HOST="-o ControlPath=/tmp/issuance-cm.sock <resolved_host>"
-```
-
-So `ssh $HOST '...'` expands to
-`ssh -o ControlPath=/tmp/issuance-cm.sock <resolved_host> '...'` — no new TCP
-handshake. **Every** `ssh` (and `sqlite3`/`curl`-over-ssh) in the steps below
-MUST go through `$HOST`.
-
-**Also batch remote work:** when you need several queries/curls, combine them
-into ONE `ssh` invocation (heredoc or `&&`-joined), and loop over aggregate IDs
-*inside* the remote shell — never `ssh` once per iteration.
-
-When finished, close the master:
-`ssh -O exit -o ControlPath=/tmp/issuance-cm.sock <resolved_host>`.
+- **New droplet ⇒ new host key / IP**: if the managed accessor reports `Host
+  key verification failed`, stop and tell the user the recorded host key must
+  be updated. Do not bypass the accessor or retry with `ssh-keyscan`.
 
 ## 0. Check deployed version
 
@@ -412,34 +397,41 @@ After the table, list any items needing follow-up as a numbered action list.
 
 ## Hard rules
 
-1. **Never run `force-complete` or `close` without explicit user confirmation.**
-2. Only suggest `force-complete` when an exact-amount `Transfer(to=0x0)` match
+1. Use only the managed Nushell `prod-remote` accessor through `run_prod`.
+   Raw SSH, direct flake remote apps, host-file decryption, and SSH-agent key
+   discovery are forbidden.
+2. Make one batched accessor call per uninterrupted phase. After any failed
+   accessor call, stop without retries until the user explicitly confirms
+   access is restored.
+3. **Never run `force-complete` or `close` without explicit user confirmation.**
+4. Only suggest `force-complete` when an exact-amount `Transfer(to=0x0)` match
    was found on-chain — approximate matches are not sufficient.
-3. Always use `from decimal import Decimal` for share amount computation —
+5. Always use `from decimal import Decimal` for share amount computation —
    never `float` (precision loss corrupts 18-decimal amounts).
-4. Never read secret files locally — evaluate `$ISSUER_API_KEY` and `$RPC_URL`
-   only on the remote server (from `/run/agenix/st0x-issuance.env`) within a
-   single SSH command.
-5. Never run destructive DB operations (DROP, DELETE, UPDATE) on the remote
+6. Never read secret files locally — evaluate `$ISSUER_API_KEY` and `$RPC_URL`
+   only on the remote server (from `/run/agenix/st0x-issuance.env`) within the
+   single batched accessor call.
+7. Never run destructive DB operations (DROP, DELETE, UPDATE) on the remote
    SQLite database.
-6. The deployed image is the latest `master` commit, which already includes
+8. The deployed image is the latest `master` commit, which already includes
    `force-complete` and `close`. Only if the running tag is visibly behind
    `master` should you flag that a redeploy is needed before using them.
-7. **An empty `/admin/stuck` is not a clean bill of health.** Never report the
+9. **An empty `/admin/stuck` is not a clean bill of health.** Never report the
    service healthy on that basis alone — run Step 1b and report what you
    actually verified.
-8. Never report a production fault (bad credentials, stuck aggregate, failed
+10. Never report a production fault (bad credentials, stuck aggregate, failed
    deploy) without first ruling out the self-inflicted causes in "Failure
    modes": a misspelled env var, an incomplete terminal-event list, the
    per-service vs system nix profile, and your own unauthenticated probes.
 
 ## Failure modes
 
-- **SSH permission denied**: check SSH key access to the server.
+- **Managed accessor permission denied / refused / timed out**: report the
+  exact error and stop. Do not inspect identities, use raw SSH, or retry until
+  the user explicitly confirms access is restored.
 - **`Host key verification failed`** (new droplet after a migration/rebuild):
-  add the key once with `ssh-keyscan -t ed25519,rsa <ip> >> ~/.ssh/known_hosts`,
-  then re-open the master. If the IP changed too, update `ISSUANCE_HOST` in
-  `~/Github/dotagents/.env` first.
+  stop and tell the user the accessor's recorded host key must be updated. Do
+  not run `ssh-keyscan` or retry through another transport.
 - **`docker: command not found` / `/mnt/volume_nyc3_02/...: No such file`**:
   you're on the NixOS box — use the paths in "Deployment layout" above
   (`st0x-issuance.service`, `/mnt/data/issuance.db`,
@@ -449,12 +441,10 @@ After the table, list any items needing follow-up as a numbered action list.
 - **`sqlite3` error `no such column: "Redemption"`**: the SQL string literals
   got mangled by nested shell quoting — run the query through the single-quoted
   `<<'EOF'` heredoc to `bash -s` shown in Step 3a.
-- **`ssh: connect to host ... port 22: Connection refused`**: you opened too
-  many separate SSH connections and tripped the server's rate limit. Ensure the
-  multiplexed master from "SSH connection reuse" is up and that every `ssh` goes
-  through `$HOST` (the `ControlPath` option). Wait ~30s for the throttle to
-  clear, re-open the master, and batch remaining commands into fewer `ssh`
-  calls.
+- **`ssh: connect to host ... port 22: Connection refused`**: the accessor's
+  single connection was refused. Stop immediately; do not probe or retry. Tell
+  the user access may be throttled or fail2ban-blocked and wait for explicit
+  confirmation that it is restored.
 - **`cast` not found**: `cast` is from the Foundry toolchain — run `nix develop`
   in the issuance repo first.
 - **RPC rate limit or timeout**: retry `cast logs` once. If it fails again,
@@ -463,10 +453,9 @@ After the table, list any items needing follow-up as a numbered action list.
   may not serve logs that far back. Note this and skip the on-chain check.
 - **`/admin/stuck` returns 401**: API key may have changed — ask the user to
   verify `ISSUER_API_KEY` on the server.
-- **The SSH master command is denied / the run stalls immediately**: you used
-  the backgrounded `ssh -fN ...` daemon form, which the auto-approval classifier
-  blocks. Fold `-o ControlMaster=auto -o ControlPersist=15m -o ControlPath=...`
-  into the first real command instead (see "SSH connection reuse").
+- **The managed accessor cannot be loaded**: verify that the generated Nushell
+  config was sourced inside `nix develop` exactly as shown in "Managed
+  production access". Do not fall back to raw SSH or the direct flake app.
 - **Alpaca probe returns `HTTP 000`**: near-certainly a misspelled env var
   expanding to empty, not an outage. The base URL is `ALPACA_API_BASE_URL`, not
   `ALPACA_BASE_URL`. Re-check the names before reporting a credential problem.

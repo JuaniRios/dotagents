@@ -1,6 +1,6 @@
 ---
 name: recover-issuance
-description: "Use when the user asks to diagnose or recover stuck issuance-bot transactions in production, or to check whether the issuance bot is healthy after a deploy. Covers stuck requests, recovery endpoints, exact on-chain burn matching, carefully confirmed force-completion, and a post-deploy health check (deploy revision, crash-loop, signer, view rebuilds, backfill and vault coverage, Alpaca reachability)."
+description: "Use when the user asks to diagnose or recover stuck issuance-bot transactions in production, or to check whether the issuance bot is healthy after a deploy. Uses the managed Nushell `prod-remote` accessor for safe production access. Covers stuck requests, recovery endpoints, exact on-chain burn matching, carefully confirmed force-completion, and a post-deploy health check (deploy revision, crash-loop, signer, view rebuilds, backfill and vault coverage, Alpaca reachability)."
 ---
 
 # recover-issuance
@@ -39,45 +39,49 @@ droplet. Do not assume Docker paths or on-box scripting tools:
   and `curl` reports `HTTP 000`, which looks identical to a credential or
   IP-allowlist outage. List the names (never the values) off the box before
   relying on them.
-- New droplet after a rebuild ⇒ new host key/IP: if SSH reports
-  `Host key verification failed`, add the key once with `ssh-keyscan` before
-  retrying, and update the recorded host if the IP changed.
+- New droplet after a rebuild ⇒ new host key/IP: if the managed accessor reports
+  `Host key verification failed`, stop and tell the user the recorded host key
+  must be updated. Do not bypass the accessor or retry with `ssh-keyscan`.
 - Run remote `sqlite3` queries through a single-quoted heredoc piped to
   `bash -s` so SQL string literals survive shell quoting, rather than nesting
-  double-quoted SQL inside a quoted `ssh "..."` argument.
+  double-quoted SQL inside another quoted remote-command argument.
 
-## Host Resolution
+## Managed Production Access (mandatory — do this first)
 
-Resolve the production host from, in order:
-1. An explicit host argument from the user.
-2. The `ISSUANCE_HOST` entry in `~/Github/dotagents/.env`.
+Use the `prod-remote` function from the user's managed Nushell config. It calls
+`st0x-remote-identity`, which retrieves the approved 1Password identity into a
+0600 cache and passes it as `SSH_IDENTITY` to the issuance flake's remote
+helper. The helper decrypts the production host and uses that same identity for
+SSH. This avoids offering every key in the SSH agent and triggering fail2ban.
 
-Only read the host key needed for this workflow. Do not print secrets. Remote
-API keys, RPC URLs, and database URLs must be read only inside the remote SSH
-command that needs them, and must not be echoed.
+Agent tool shells are non-interactive and do not automatically expose Nushell
+custom commands. From the issuance repo, load the generated config explicitly
+inside its dev shell:
 
-## SSH Connection Reuse (do this first)
+```bash
+nu_config=$(nu -c '$nu.config-path')
+REMOTE_COMMAND='<one batched remote command>' \
+  nix develop --command nu -c \
+  "source '$nu_config'; prod-remote \$env.REMOTE_COMMAND"
+```
 
-The server rate-limits new SSH connections. Opening a fresh `ssh` per command
-trips sshd throttling and produces `Connection refused` partway through. Before
-running any remote command, open ONE multiplexed master connection and route
-every later `ssh` through it:
+Treat `prod-remote` as the only production transport for this workflow:
 
-- Open the master by attaching `ControlMaster=auto`, `ControlPersist`, and a
-  fixed `ControlPath` (e.g. `/tmp/issuance-cm.sock`) to the **first real
-  command** you need to run. Do not open it as a standalone backgrounded daemon
-  (`ssh -fN ...`): approval tooling blocks that form and the run stalls before
-  it starts. `ControlMaster=auto` creates the socket as a side effect of the
-  first useful command, which is all that is required.
-- Pass that same `-o ControlPath=...` on every subsequent `ssh` so they reuse
-  the single TCP connection instead of opening a new one.
-- Batch remote work: combine multiple queries/curls into ONE `ssh` invocation
-  and loop over aggregate IDs inside the remote shell — never one `ssh` per
-  item.
-- Close the master with `ssh -O exit -o ControlPath=...` when done.
+- Never read `ISSUANCE_HOST`, decrypt `.remote-prod.age` yourself, call raw
+  `ssh`, call `nix run .#prodRemote`, or inspect/try SSH-agent identities.
+- Build the first useful diagnostic command before connecting. Do not run a
+  separate connectivity probe and then reconnect for the real work.
+- Batch the entire uninterrupted diagnostic phase into one accessor call. Loop
+  over aggregate IDs inside the remote shell; never call the accessor once per
+  item and never parallelize accessor calls.
+- If that first accessor call fails, hangs, times out, or is refused, stop
+  immediately and report the exact error. Do not retry or try alternate access
+  until the user explicitly says access is restored.
+- A later accessor call is allowed when the workflow genuinely pauses for the
+  user's required confirmation before a mutating recovery action.
 
-If you still hit `Connection refused`, wait for the throttle to clear, re-open
-the master, and reduce the number of separate `ssh` calls.
+Remote API keys, RPC URLs, and database URLs must be read only inside the
+remote command that needs them and must never be echoed.
 
 ## Workflow
 
@@ -193,6 +197,12 @@ the master, and reduce the number of separate `ssh` calls.
 
 ## Hard Rules
 
+- Use only the managed Nushell `prod-remote` accessor for production access.
+  Raw `ssh`, direct flake remote apps, host-file decryption, and SSH-agent key
+  discovery are forbidden.
+- Make one batched accessor call per uninterrupted phase. After any failed
+  accessor call, stop without retries until the user explicitly confirms
+  access is restored.
 - Never force-complete, close, or otherwise finalize a transaction without
   explicit user confirmation in the current session.
 - Never treat approximate amount/address/token matches as sufficient burn
@@ -204,10 +214,8 @@ the master, and reduce the number of separate `ssh` calls.
 - Never assume the old Docker/Ubuntu layout; the box is NixOS/systemd with no
   `docker`, `python3`, or `jq`, DB at `/mnt/data/issuance.db`, and secrets at
   `/run/agenix/st0x-issuance.env`.
-- Never open a fresh SSH connection per command; reuse one multiplexed master
-  connection and batch remote work to avoid the server's connection rate limit.
-- Never open the SSH master as a standalone backgrounded daemon (`ssh -fN`);
-  attach the control options to the first real command instead.
+- Never call the remote accessor once per command or item; batch remote work in
+  the accessor's single SSH session to avoid the server's connection limits.
 - Never treat an empty stuck list as proof the service is healthy. Run the
   health check and report what you actually verified.
 - Never report a production fault — bad credentials, a stuck aggregate, a failed
