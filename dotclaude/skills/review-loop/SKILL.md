@@ -60,7 +60,7 @@ over structured findings, and user checkpoints. On a very small diff you
 may inline these steps, since per-subagent overhead can exceed the savings,
 but a caller may instruct delegation regardless (`/implement-issue-stack`
 does, to keep its babysitter tiny). Every agent this command spawns runs on
-Opus, Fable, or the Codex CLI — never a smaller model.
+Opus or the Codex CLI — never a smaller model.
 
 **Argument:** with no argument, the loop runs on the **current branch only**
 and never touches version control (the safe default). With `stack`, it runs
@@ -642,21 +642,21 @@ Full lane catalogue (drop the codex lanes if `codex` is not on PATH):
 | key                | codex | model  | effort | promptPath                              |
 | ------------------ | ----- | ------ | ------ | --------------------------------------- |
 | concurrency        | no    | opus   |        | prompt-concurrency.txt (async ordering) |
-| goal-eval          | no    | fable  | xhigh  | prompt-goal-eval.txt (goal evaluation)  |
+| goal-eval          | no    | opus   | xhigh  | prompt-goal-eval.txt (goal evaluation)  |
 | failure-modes      | no    | opus   |        | prompt-failure-modes.txt (error paths)  |
 | codex-a            | yes   | opus   | medium | prompt-codex-a.txt (edge cases)         |
 | codex-b            | yes   | opus   | medium | prompt-codex-b.txt (broad sweep)        |
 | test-inspector     | no    | opus   |        | prompt-test-inspector.txt               |
 | rust-inspector     | no    | opus   |        | prompt-rust-inspector.txt               |
 | typing-inspector   | no    | opus   |        | prompt-typing-inspector.txt             |
-| contract-inspector | no    | fable  | xhigh  | prompt-contract-inspector.txt           |
+| contract-inspector | no    | opus   | xhigh  | prompt-contract-inspector.txt           |
 | comment-inspector  | no    | opus   |        | prompt-comment-inspector.txt            |
-| simplicity-inspector | no  | fable  | xhigh  | prompt-simplicity-inspector.txt         |
+| simplicity-inspector | no  | opus   | xhigh  | prompt-simplicity-inspector.txt         |
 
-**Model allocation:** every lane runs on Opus, Fable, or the Codex CLI
+**Model allocation:** every lane runs on Opus or the Codex CLI
 (`gpt-5.6-sol`). Never put a lane on a smaller model — a weak reviewer costs
 a whole pass and returns noise. `goal-eval`, `contract-inspector`, and
-`simplicity-inspector` run on Fable at xhigh effort: they are the lanes that
+`simplicity-inspector` run on Opus at xhigh effort: they are the lanes that
 must hold the whole change at once (intent-vs-implementation gaps, unpinned
 external assumptions at money boundaries, and the smaller design that was
 available). All other non-Codex lanes run on Opus. The codex lanes' model
@@ -823,16 +823,16 @@ const { repoRoot, contextPath, outDir, diffPath, laneKeys,
 // array instead, which takes precedence.
 const LANE_CATALOGUE = {
   'concurrency':          { codex: false, model: 'opus' },
-  'goal-eval':            { codex: false, model: 'fable', effort: 'xhigh' },
+  'goal-eval':            { codex: false, model: 'opus', effort: 'xhigh' },
   'failure-modes':        { codex: false, model: 'opus' },
   'codex-a':              { codex: true,  model: 'opus',  effort: 'medium' },
   'codex-b':              { codex: true,  model: 'opus',  effort: 'medium' },
   'test-inspector':       { codex: false, model: 'opus' },
   'rust-inspector':       { codex: false, model: 'opus' },
   'typing-inspector':     { codex: false, model: 'opus' },
-  'contract-inspector':   { codex: false, model: 'fable', effort: 'xhigh' },
+  'contract-inspector':   { codex: false, model: 'opus', effort: 'xhigh' },
   'comment-inspector':    { codex: false, model: 'opus' },
-  'simplicity-inspector': { codex: false, model: 'fable', effort: 'xhigh' },
+  'simplicity-inspector': { codex: false, model: 'opus', effort: 'xhigh' },
 }
 const lanes = explicitLanes || (laneKeys || []).map(key => ({
   key, ...LANE_CATALOGUE[key],
@@ -1636,7 +1636,7 @@ the wrapper must not create or implement follow-ups per branch.
     session. Never run it inside a subagent and never wrap it in an
     orchestrator subagent. Delegate prompt building, report assembly, and
     fix application to closing `opus` subagents (steps 4, 5, 11); every
-    agent runs on Opus, Fable, or Codex, never smaller. The Workflow
+    agent runs on Opus or Codex, never smaller. The Workflow
     invocations, triage, and user checkpoints always stay in the main
     session.
 18. **Keep large generated artifacts out of the main context.** Pass lanes
