@@ -160,14 +160,14 @@ Commit the `.age` file, add the plaintext filename to `.gitignore`.
 
 1. **Read** the file(s) you'll edit
 2. **Edit** them
-3. **Commit directly on `master` with raw `git`**. Do not create a Graphite
+3. **Commit directly on `main` with raw `git`**. Do not create a Graphite
    branch, do not use `gt`, and do not open a PR for
    `~/Github/nix-darwin-config` changes. First verify the branch:
    ```bash
    cd ~/Github/nix-darwin-config
    git rev-parse --abbrev-ref HEAD
    ```
-   If not on `master`, stop and ask before switching branches.
+   If not on `main`, stop and ask before switching branches.
 4. **Stage and commit** with the user's identity:
    ```bash
    cd ~/Github/nix-darwin-config
@@ -176,10 +176,10 @@ Commit the `.age` file, add the plaintext filename to `.gitignore`.
    ```
    For new files, ensure they are included in `git add <files>`. Use a normal
    `git commit` after staging if `commit -am` is not appropriate.
-5. **Push straight to `master`** with raw `git`:
+5. **Push straight to `main`** with raw `git`:
    ```bash
    cd ~/Github/nix-darwin-config
-   git push origin master
+   git push origin main
    ```
 6. **Tell the user** to run `rebuild` (Claude cannot `sudo` — no TTY for
    password/TouchID).
