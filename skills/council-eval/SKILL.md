@@ -140,11 +140,15 @@ grok -p --prompt-file "$out_dir/prompt.txt" \
   --disallowed-tools Agent \
   > "$out_dir/raw-review-grok.json"
 
-# agy — -p last; detach stdin or print mode hangs on a non-TTY
+# agy — -p last; detach stdin or print mode hangs on a non-TTY.
+# Headless sandbox denies read_file unless allowed. Either inline the
+# artifact in the prompt and tell the lane not to read files, or pass
+# --dangerously-skip-permissions.
 agy --sandbox --disable-slash-commands \
   --model gemini-3.7-flash-high --effort high \
   --output-format json --json-schema "$schema" \
   --print-timeout 10m \
+  --dangerously-skip-permissions \
   -p "$(cat "$out_dir/prompt.txt")" \
   < /dev/null \
   > "$out_dir/raw-review-agy.json"
