@@ -1,20 +1,16 @@
 # skills/
 
-Agent-neutral skills. One `SKILL.md` per workflow, served to every harness.
+Agent-neutral skills. One `SKILL.md` per workflow.
 
+Install links into every harness:
+
+```nu
+nu ~/Github/dotagents/scripts/install-skills.nu
 ```
-~/Github/dotagents/skills/<name>/SKILL.md   # source of truth
-```
 
-Wired as:
+Multi-lab panels: read `panel-runtime.md` in this directory. Do not
+fork a second lane catalogue.
 
-| Harness | How it sees this tree |
-|---|---|
-| Claude | per-entry symlink `~/.claude/skills/<name>` |
-| Codex | symlink `dotcodex/skills/<name>` → `../../skills/<name>` |
-| Grok | `[skills].paths` in `~/.grok/config.toml` points here |
-| Antigravity (`agy`) | per-entry symlink `~/.gemini/config/skills/<name>` |
-
-Do not put Claude-only tool names in the body. Optional frontmatter (`allowed-tools`, `argument-hint`) is fine — other hosts ignore it.
-
-Claude- or Codex-specific copies still live under `dotclaude/` and `dotcodex/`. New shared work goes here.
+New work goes here via the `new-skill` skill. Optional Claude/Grok
+frontmatter (`allowed-tools`, `argument-hint`) is fine. Bodies stay
+host-neutral.

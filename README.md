@@ -1,24 +1,26 @@
 # dotagents
 
-Personal agent workflows.
+Personal agent skills. One tree, every harness.
 
-Shared, agent-neutral skills live in `skills/` and are linked into every
-harness (Claude, Codex, Grok, Antigravity). See `skills/README.md`.
+```
+~/Github/dotagents/skills/<name>/SKILL.md
+```
 
-- `~/.claude/skills/` is a real directory with child links into `dotclaude/skills/` (and into `skills/` for shared ones)
-- `~/.codex/skills` is a symlink to `dotcodex/skills/`
-- Grok scans `skills/` via `[skills].paths` in `~/.grok/config.toml`
-- Antigravity scans `~/.gemini/config/skills/` (per-entry links into `skills/`)
+Install (or refresh) the per-harness links:
 
-Everything on the Claude side is a skill. Claude Code merged custom slash
-commands into skills, so `dotclaude/skills/<name>/SKILL.md` both creates
-`/<name>` and lets Claude invoke it on its own when the `description` matches.
-There is no `dotclaude/commands/` directory. Add `disable-model-invocation: true`
-to a skill that should stay slash-only.
+```nu
+nu ~/Github/dotagents/scripts/install-skills.nu
+```
 
-Codex workflows are stored as skills with `SKILL.md` files in direct child
-folders under `dotcodex/skills/`. They are kept separate from the Claude
-versions on purpose — the bodies use Codex-native language.
+| Harness | Link farm |
+|---|---|
+| Claude | `~/.claude/skills/<name>` |
+| Codex | `~/.codex/skills/<name>` (plus `.system` → `~/.codex/system-skills`) |
+| Grok | `~/.grok/skills/<name>` and `[skills].paths` in `~/.grok/config.toml` |
+| Antigravity | `~/.gemini/config/skills/<name>` and `~/.gemini/antigravity-cli/skills/<name>` |
 
-Codex skills are not slash commands. Invoke them by natural language, e.g.
-`use the pr-description skill`, not `/pr-description`.
+Multi-lab orchestration (`review-loop`, `review-pr`, `critique-loop`,
+`implement-issue`, `plan-issue`) follows `skills/panel-runtime.md`.
+
+`dotclaude/` still holds Claude hooks and local data. It is not a skill
+tree. All changes land on `main`.

@@ -1,0 +1,89 @@
+---
+name: implement-issue
+description: >
+  Take a Linear issue from link to finished implementation — skeleton
+  Graphite PR, cross-link Linear↔PR, plan (Fable if reachable, else
+  host) critiqued by Opus + Sol + Grok, implement via a closing child,
+  review via review-loop, submit, CI green. Use when the user wants an
+  issue implemented end to end.
+argument-hint: "<issue-link-or-number>"
+allowed-tools: Bash(*), Read, Write, Edit
+---
+
+# implement-issue
+
+Drive a Linear issue end to end. Read
+`~/Github/dotagents/skills/panel-runtime.md` for planner/critics and
+`~/Github/dotagents/skills/review-loop/SKILL.md` for the review.
+
+The user's request is the Linear id or URL. Empty: ask once.
+
+Heavy work runs in isolated children that close. The host keeps glue
+and checkpoints.
+
+## 1. Read the issue
+
+`linear-cli`: `linear issue view <ID>`. Capture title, why, URL.
+
+## 2. Skeleton PR
+
+`graphite` skill. `gt sync`, `gt top`, benign change, `gt create
+<id>-<kebab-title>`, `gt submit --no-interactive --no-edit-description`.
+
+## 3. Skeleton description
+
+`pr-description` as WIP: Why from the issue (markdown link
+`[<ID>](<url>)`), What/How = `WIP`. Auto-approve the skeleton.
+
+## 4. Cross-link
+
+`linear issue link <ID> "$pr_url"`. Assignee `JuaniRios`. Reviewers
+`0xgleb` and `findolor` (only `0xgleb` in `st0x.liquidity`).
+
+## 5. Plan
+
+If a Linear document titled `<ID> Implementation Plan` exists, use it
+(confirm with the user) and skip machine planning.
+
+Otherwise, per panel-runtime **Plan critics**:
+
+- Planner: Fable if Claude is reachable, else host. Write
+  `.tmp/implement-issue/<id>-plan.md`.
+- Critics in parallel: Opus, Sol, Grok. Label the run `claude-host` or
+  `portable`.
+- Incorporate critique. Wait for user approval before implementing.
+
+## 6. Implement
+
+One implementer child (host / cheap same-host model). Surgical edits,
+tests the plan names, scoped checks. Comment discipline: Rust carries
+intent; comments only for non-obvious rationale. Then `gt modify -a`.
+
+Large plans (>~6 tasks): two implementer children by task group.
+
+## 7. Review and describe
+
+Run `review-loop` (current branch, no `stack`) per that skill and
+panel-runtime. Ambiguous findings: collect, don't mid-loop ask. After
+convergence: `gt modify -a`, then `pr-description` for the real body.
+
+## 8. Submit and CI
+
+`gt ss`. Wait for the GitHub run whose `headSha` is this HEAD. Red →
+`ci-fix`, resubmit. No run (6th+ in a Graphite stack) → local
+`nix run .#ci`. Cap a few rounds.
+
+## 9. Report
+
+Issue URL, PR URL, CI, one-line what shipped, plan path.
+
+## Hard rules
+
+1. Version control via `gt`.
+2. No implementation before plan approval (attached plans still get a
+   quick confirm).
+3. Linear ↔ PR linked both ways.
+4. Panel and critics per panel-runtime. Never impersonate a dropped
+   lab.
+5. Don't declare done until CI for this HEAD is green (or local full
+   CI when Graphite skipped it).
