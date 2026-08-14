@@ -1,7 +1,7 @@
 ---
 name: create-release
 description: Cut and publish a new GitHub release for the current repo. Drafts the body with the draft-release skill, picks the next version (or takes one as an argument), then creates the tag and release after you confirm.
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(test:*), Bash(mkdir:*), Bash(sed:*), Bash(grep:*), Bash(sort:*), Read, Write, Skill, AskUserQuestion
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(test:*), Bash(mkdir:*), Bash(sed:*), Bash(grep:*), Bash(sort:*), Read, Write
 argument-hint: [version]
 disable-model-invocation: true
 ---
@@ -60,7 +60,7 @@ the resolved PRs and commit subjects:
 | any `feat:` | minor |
 | only `fix:` / `chore:` / `refactor:` / `docs:` / `ci:` | patch |
 
-Then use `AskUserQuestion` with the three concrete tags as options — the
+Then ask the user with the three concrete tags as options — the
 suggested bump first, labelled `(Recommended)` — plus your one-line reason
 ("14 PRs, 3 feats, no breaking changes -> minor"). The user can always type
 their own via Other.
@@ -103,7 +103,7 @@ Then print, in one block:
   H1 already gone. Never print the raw notes file here; showing a line that
   never publishes invites the user to spend a decision on it.
 
-Then `AskUserQuestion`: publish this release, or abort. Only "publish" proceeds.
+Then ask: publish this release, or abort. Only "publish" proceeds.
 If the user wants edits to the wording, edit the `.tmp` notes file, rebuild
 `$body`, re-print, and re-confirm.
 

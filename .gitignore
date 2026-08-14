@@ -1,5 +1,6 @@
-dotcodex/skills/.system
 .env
 .DS_Store
 **/.DS_Store
 .tmp/
+data/daily-report/reports/
+data/progress-tracking/reports/

@@ -1,7 +1,7 @@
 ---
 name: add-issuance-assets
 description: Add newly deployed tokenized assets to the production issuance bot. Use when given a registry PR, deployment output, or asset-address table and asked to register, restart, and verify issuance assets.
-allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(gh:*), Bash(awk:*), Bash(grep:*), Bash(sed:*), Bash(date:*), Read, AskUserQuestion
+allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(gh:*), Bash(awk:*), Bash(grep:*), Bash(sed:*), Bash(date:*), Read
 ---
 
 # Add issuance assets

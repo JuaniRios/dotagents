@@ -25,12 +25,13 @@ dir. Do not write files under `~/.claude/`, `~/.codex/`, `~/.grok/`,
 or `~/.gemini/`.
 
 Frontmatter: `name`, `description` (a **trigger**, not a summary).
-Optional Claude/Grok fields (`allowed-tools`, `argument-hint`,
-`disable-model-invocation`) are fine — other hosts ignore them.
+Optional frontmatter (`allowed-tools`, `argument-hint`,
+`disable-model-invocation`) is fine — hosts that do not use those
+keys ignore them.
 
-Body: host-neutral. Say "ask the user", "the user's arguments", "a
-subagent", "the `foo` skill". Do not name `AskUserQuestion`,
-`$ARGUMENTS`, or `Agent` unless documenting a compatibility detail.
+Body: host-neutral. Say "ask the user", "the user's arguments",
+"an isolated child", "the `foo` skill". Never name a harness-specific
+tool.
 
 If the skill fans out models, say "follow
 `~/Github/dotagents/skills/panel-runtime.md`" instead of inventing

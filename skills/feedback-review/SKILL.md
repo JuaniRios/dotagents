@@ -1,6 +1,6 @@
 ---
 name: feedback-review
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(jq:*), Bash(mktemp:*), Bash(rm:*), Bash(wc:*), Bash(date:*), Bash(test:*), Bash(linear:*), Bash(cat:*), Bash(python3:*), Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Skill
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(jq:*), Bash(mktemp:*), Bash(rm:*), Bash(wc:*), Bash(date:*), Bash(test:*), Bash(linear:*), Bash(cat:*), Bash(python3:*), Read, Edit, Write, Grep, Glob
 description: "Triage and address review feedback on the current branch's PR. Use whenever CodeRabbit or a human reviewer has left comments, or the user says address the review, handle the feedback, respond to the comments, or CodeRabbit found things. Summarizes each comment (CodeRabbit inline, out-of-diff, and human) with severity and an opinion, asks which to implement, fixes those, drafts replies for the rest, and resolves every human thread it answers."
 ---
 
@@ -201,7 +201,7 @@ PR #<N> -- Feedback triage (<M> actionable comments)
  4  | human:bob     | nit    | agree            | trivial | Fix typo in comment
 ```
 
-Then collect decisions using `AskUserQuestion`. For each comment, offer:
+Then collect decisions by asking the user. For each comment, offer:
 
 - **"Fix as suggested"** -- implement exactly what the reviewer asked
 - **"Fix differently"** -- implement but with a different approach (you'll ask how)
@@ -216,7 +216,7 @@ Default recommendations based on your opinion:
 - `partially agree` + `large` effort -> consider defaulting "Defer to issue"
 - `disagree` -> default "Reply & skip"
 
-Batch up to 4 findings per `AskUserQuestion` call. If the user picks "Show
+Batch up to 4 findings per question. If the user picks "Show
 details", present the full comment thread and your analysis, then re-ask.
 
 If the user picks "Fix differently", ask them how they want it fixed before
@@ -251,7 +251,7 @@ After all fixes are applied:
 
 ## 7. Commit and restack
 
-After fixes pass verification, ask the user via `AskUserQuestion`:
+After fixes pass verification, ask the user by asking the user:
 
 > "Run `gt modify -a` and `gt ss` to amend the commit and restack the stack?"
 
@@ -291,7 +291,7 @@ CLI. Follow the linear-cli skill's workflow:
 
 ## 9. Handle comment replies
 
-Ask the user via `AskUserQuestion`:
+Ask the user by asking the user:
 
 > "Post replies for skipped/fixed comments on GitHub?"
 
@@ -347,7 +347,7 @@ Draft replies for skipped comments
   > I'll switch to a HashMap.
 ```
 
-Ask the user to approve, edit, or skip each reply. Use `AskUserQuestion` with
+Ask the user to approve, edit, or skip each reply. Ask the user with
 options: "Send", "Edit", "Skip".
 
 For approved replies, post them:
@@ -408,7 +408,7 @@ of the current one:
 gh pr list --base "$(git branch --show-current)" --json number,title,headRefName --jq '.[0]'
 ```
 
-If a stacked PR exists, ask via `AskUserQuestion`:
+If a stacked PR exists, ask by asking the user:
 
 > "PR #<N> (<title>) is stacked on top. Run /feedback-review on it?"
 

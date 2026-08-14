@@ -15,7 +15,7 @@ is supposed to apply that label automatically on the `closed` event — this
 command is the manual backstop that catches gaps and verifies the CI is working.
 
 Run from the repo root. `gh` auto-detects the repo from the working directory.
-Default window is the **past 7 days**; if `$ARGUMENTS` is a number, use that many
+Default window is the **past 7 days**; if the user's arguments are a number, use that many
 days instead.
 
 ## Step 1 — Collect PRs referenced by recent master commits

@@ -1,6 +1,6 @@
 ---
 name: graphite-review-reminder
-allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(date:*), Bash(cat:*), Bash(test:*), Bash(source:*), Bash(curl:*), Bash(printf:*), Read, Write, Skill
+allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(date:*), Bash(cat:*), Bash(test:*), Bash(source:*), Bash(curl:*), Bash(printf:*), Read, Write
 description: Find open GitHub/Graphite PRs awaiting review and send a pretty Telegram reminder with Graphite links.
 argument-hint: "[send|draft] [audience/context]"
 ---

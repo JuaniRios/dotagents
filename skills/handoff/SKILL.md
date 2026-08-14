@@ -15,7 +15,7 @@ The output is written for an *agent*, not a human report: terse, structured,
 scannable, and built from **pointers (path:line, symbols, IDs), not payloads
 (pasted code, diffs, logs)**.
 
-If `$ARGUMENTS` is provided, bias the summary toward that focus (e.g.
+If the user's arguments is provided, bias the summary toward that focus (e.g.
 `/handoff the auth refactor only`), the way `/compact [instructions]` does.
 
 ## Step 1 -- Gather objective context

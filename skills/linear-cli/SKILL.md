@@ -255,7 +255,7 @@ defaults; rely on `~/.config/linear/linear.toml` for global ones.
 
 **Every new issue MUST be assigned to a project, and defaults to being assigned
 to this user.** Before running `linear issue create`, always confirm these four
-fields with the user via `AskUserQuestion` (one prompt, batch all four):
+fields with the user by asking the user (one prompt, batch all four):
 
 1. **Project** (required — an issue without a project is not allowed). If the
    user didn't name one, run `linear project list --team RAI` and offer the
@@ -397,7 +397,7 @@ curl -s -X POST https://api.linear.app/graphql \
    approval, then run `linear issue create`.
 2. **Every new issue MUST have a `--project`, and defaults to `--assignee
    self`.** Confirm project, milestone, assignee, and priority via
-   `AskUserQuestion` before creating. Never create an issue with no project.
+   ask the user before creating. Never create an issue with no project.
 3. **Always use `--description-file` / `--body-file`** for markdown content.
 4. **Run `--help` on the exact subcommand** before guessing flags.
 5. `linear issue list` requires `--sort` and usually `--team`. Don't forget.

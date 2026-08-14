@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "hedge-bot": {
+      "repo": "~/Github/st0x.liquidity",
+      "linear_team": "RAI",
+      "project_context": "Liquidity bot that provides onchain liquidity via Raindex and hedges trades offchain via Alpaca. Includes hedging, rebalancing, vault management, order strategies, and the staging/production deployment infrastructure.",
+      "last_run": "2026-07-19T01:52:03Z"
+    },
+    "issuance-bot": {
+      "repo": "~/Github/st0x.issuance",
+      "linear_team": "RAI",
+      "project_context": "Issuance bot that acts as the Issuer in Alpaca's Instant Tokenization Network (ITN). Implements the Issuer-side mint/redeem endpoints Alpaca calls, and coordinates with Rain OffchainAssetReceiptVault (SFT) contracts to mint and burn tokenized equity shares. Includes account linking, asset/token management, minting, redemption, dividends and corporate actions, new token launches, and the event-sourced (ES/CQRS) core shared with the liquidity bot.",
+      "last_run": "2026-07-19T01:52:03Z"
+    }
+  }
+}

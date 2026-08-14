@@ -1,6 +1,6 @@
 ---
 name: ci
-allowed-tools: Bash(nix:*), Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(cat:*), Bash(grep:*), Bash(tail:*), Bash(wc:*), Bash(test:*), Bash(nixfmt:*), Bash(find:*), Read, Edit, Write, Grep, Glob, TodoWrite, Skill
+allowed-tools: Bash(nix:*), Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(cat:*), Bash(grep:*), Bash(tail:*), Bash(wc:*), Bash(test:*), Bash(nixfmt:*), Bash(find:*), Read, Edit, Write, Grep, Glob
 description: "Run fast local CI before submitting — check, clippy, fmt, nixfmt, pre-commit on changed files (~3 min). Use whenever the user says run CI, lint, format, check it builds, or make sure it compiles, and before pushing or `gt submit`ing Rust or Nix changes. Use ci-fix instead when CI already failed on GitHub."
 argument-hint: "[stack]"
 ---

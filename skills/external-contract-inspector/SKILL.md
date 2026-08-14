@@ -1,6 +1,6 @@
 ---
 name: external-contract-inspector
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(test:*), Bash(date:*), Read, Grep, Glob, Agent
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(test:*), Bash(date:*), Read, Grep, Glob
 description: Lightweight review — flags assumptions the diff makes about an external API/contract (types, units, encoding, field presence, error shapes) that aren't backed by cited documentation or a test encoding a real response.
 argument-hint: "[pr-number | pr-url]"
 ---
@@ -48,8 +48,8 @@ still floating free.
 
 ## 1. Get the diff
 
-If `$ARGUMENTS` is provided, treat it as a PR reference and use
-`gh pr diff "$ARGUMENTS"`. Otherwise the caller will supply the diff path
+If the user's arguments is provided, treat it as a PR reference and use
+`gh pr diff "the user's arguments"`. Otherwise the caller will supply the diff path
 directly in the appended instructions — use that.
 
 ## 2. Identify external touchpoints in the diff

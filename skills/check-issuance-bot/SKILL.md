@@ -1,6 +1,6 @@
 ---
 name: check-issuance-bot
-allowed-tools: Bash(nu:*), Bash(nix:*), Bash(sqlite3:*), Bash(curl:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(git:*), Read, Grep, Glob, AskUserQuestion
+allowed-tools: Bash(nu:*), Bash(nix:*), Bash(sqlite3:*), Bash(curl:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(git:*), Read, Grep, Glob
 description: Diagnose the issuance bot's health in production or staging through the managed Nushell remote accessors. Runs a general read-only service, API, event-store, signer, backfill, vault-poller, RPC, and Alpaca check first; investigates stuck mints/redemptions and guides carefully confirmed recovery only when needed.
 argument-hint: <prod|staging>
 ---

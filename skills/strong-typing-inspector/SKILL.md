@@ -1,6 +1,6 @@
 ---
 name: strong-typing-inspector
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(test:*), Bash(date:*), Read, Grep, Glob, Agent
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(test:*), Bash(date:*), Read, Grep, Glob
 description: Lightweight review — flags primitives used where a domain type already exists (e.g. String for a USD field when Usd exists) and missed newtype opportunities.
 argument-hint: "[pr-number | pr-url]"
 ---
@@ -30,8 +30,8 @@ Stay strictly in the strong-typing lane.
 
 ## 1. Get the diff
 
-If `$ARGUMENTS` is provided, treat it as a PR reference and use
-`gh pr diff "$ARGUMENTS"`. Otherwise the caller will supply the diff
+If the user's arguments is provided, treat it as a PR reference and use
+`gh pr diff "the user's arguments"`. Otherwise the caller will supply the diff
 path directly in the appended instructions — use that.
 
 ## 2. Discover existing domain types

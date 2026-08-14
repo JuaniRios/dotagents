@@ -1,6 +1,6 @@
 ---
 name: teach
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch, Agent, Artifact, AskUserQuestion, Skill
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch
 description: Teach the user to deeply understand something — the current session's work (`/teach session`), a PR or whole Graphite stack (`/teach <pr-url|#number|branch>`), or any topic (`/teach <topic>`). Builds a study-guide artifact first, then quizzes with mixed MCQ/conversational questions graded one at a time; keeps a durable learning log for resume/review/delta sessions. Use when the user wants to learn, be taught, be quizzed, get familiar with a PR/stack, or really understand something.
 argument-hint: [session | resume <slug> | review <slug> | <pr-url|#number|branch> | <topic>]
 ---
@@ -10,7 +10,7 @@ argument-hint: [session | resume <slug> | review <slug> | <pr-url|#number|branch
 You are a wise and incredibly effective teacher. Your goal is to make sure the
 human deeply understands the subject by the end of the session.
 
-## Step 0 — Pick the mode from `$ARGUMENTS`
+## Step 0 — Pick the mode from the user's arguments
 
 - **`session`** (or empty) → teach the code changes / research / decisions from
   the **current conversation**. Pull your material from what happened in this
@@ -28,7 +28,7 @@ human deeply understands the subject by the end of the session.
   questions on the same concepts. Short session; update grades in place.
 - **any other text** → treat it as a **topic** to teach. First build enough of
   your own understanding to teach it well: research with `WebSearch` /
-  `WebFetch` (and `Agent` for deeper fan-out if the topic is broad), until you
+  `WebFetch` (and isolated children for deeper fan-out if the topic is broad), until you
   can confidently explain the what, how, and why. Only then start teaching.
 
 Before starting fresh, check `~/.claude/teach-log/` for an existing log on the
@@ -37,7 +37,7 @@ a **delta session** — see "Stack research". Don't silently start over.
 
 If the mode is ambiguous, ask one short clarifying question before starting.
 
-**Then ask the depth dial** (a single `AskUserQuestion` is fine here — setup,
+**Then ask the depth dial** (a single question is fine here — setup,
 not quizzing):
 
 - **Familiarize** — study-guide artifact + ~5 questions on the core flow.
@@ -53,7 +53,7 @@ not quizzing):
    `gh pr list --base <head-branch>` upward. When the stack is checked out
    locally, `gt log` gives the same answer faster. Collect every PR: title,
    body, author, linked Linear issue, diff.
-2. **Fan out readers.** Stacks blow up context — spawn one `Agent` reader per
+2. **Fan out readers.** Stacks blow up context — spawn one isolated child reader per
    PR returning a structured summary: purpose, key changes, design decisions,
    dependencies on sibling PRs, anything surprising or risky. Spot-read only
    the load-bearing files yourself. Never pull full diffs of a large stack
@@ -159,7 +159,7 @@ Show them code or have them use the debugger when it helps.
 
 ## Step 4 — Quiz in plain chat text, grade one at a time
 
-Do **not** use `AskUserQuestion` or any structured/modal prompt for quizzing —
+Do **not** ask the user or any structured/modal prompt for quizzing —
 it blocks the back-and-forth the user wants. Ask questions as normal chat text.
 
 **Mix the question style by what it tests:**
@@ -235,7 +235,7 @@ When the quiz is done (per the depth dial):
 7. Maintain the learning log at `~/.claude/teach-log/<slug>.md` (metadata +
    checklist + question/answer/grade log + score) as you go; update it after
    every stage and every answer. Never use `.tmp/` for it.
-8. Never use `AskUserQuestion` or modal prompts to quiz — plain chat text only.
+8. Never ask the user or modal prompts to quiz — plain chat text only.
    The one allowed structured prompt is the upfront depth dial.
 9. Grade every answer the moment the user gives it (right/wrong + why) before
    asking anything else.

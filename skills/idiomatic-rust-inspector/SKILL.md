@@ -1,6 +1,6 @@
 ---
 name: idiomatic-rust-inspector
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(wc:*), Bash(test:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Read, Grep, Glob, Agent
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(wc:*), Bash(test:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Read, Grep, Glob
 description: Review Rust code in a PR for idiomatic patterns — flags non-idiomatic constructs, missed std library usage, ownership anti-patterns, and code that fights the borrow checker instead of working with it.
 argument-hint: "[pr-number | pr-url]"
 ---
@@ -57,7 +57,7 @@ strengths rather than fighting them.
 
 ## 1. Get the PR diff
 
-If `$ARGUMENTS` is provided, use it as the PR reference. Otherwise use the
+If the user's arguments is provided, use it as the PR reference. Otherwise use the
 current branch's PR.
 
 ```bash

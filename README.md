@@ -22,5 +22,5 @@ nu ~/Github/dotagents/scripts/install-skills.nu
 Multi-lab orchestration (`review-loop`, `review-pr`, `critique-loop`,
 `implement-issue`, `plan-issue`) follows `skills/panel-runtime.md`.
 
-`dotclaude/` still holds Claude hooks and local data. It is not a skill
-tree. All changes land on `main`.
+Shared runtime files live in `data/` and `hooks/`. All changes land
+on `main`.

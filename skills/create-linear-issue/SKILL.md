@@ -1,6 +1,6 @@
 ---
 name: create-linear-issue
-allowed-tools: Bash(linear:*), Bash(cat:*), Bash(mktemp:*), Bash(grep:*), Read, Write, AskUserQuestion
+allowed-tools: Bash(linear:*), Bash(cat:*), Bash(mktemp:*), Bash(grep:*), Read, Write
 description: Create a well-scoped Linear issue via a draft-then-confirm flow. Drafts a tightly-scoped issue, then interactively confirms project, priority, milestone, assignee, and labels before creating. Use whenever the user asks to file/open/create a Linear issue or ticket.
 argument-hint: [what the issue should be about]
 ---
@@ -81,7 +81,7 @@ guessing a value.
 
 ## Step 3 — Confirm metadata interactively (required)
 
-Use **AskUserQuestion** to confirm, in one prompt, the fields the user should
+Use a question to confirm, in one prompt, the fields the user should
 own. Offer your recommended option first, labelled "(Recommended)", based on
 Step 2:
 

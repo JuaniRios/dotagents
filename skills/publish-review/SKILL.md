@@ -1,6 +1,6 @@
 ---
 name: publish-review
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(find:*), Bash(date:*), Bash(test:*), Bash(ls:*), Bash(jq:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(wc:*), Read, Grep, Glob, Agent
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(find:*), Bash(date:*), Bash(test:*), Bash(ls:*), Bash(jq:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(wc:*), Read, Grep, Glob
 description: Publish review findings as a pending GitHub PR review with inline comments. Run after /review-pr.
 argument-hint: [review-dir-path]
 ---
@@ -11,10 +11,10 @@ onto the PR for inspection on the Graphite dashboard.
 
 ## 1. Locate the review
 
-If `$ARGUMENTS` is provided, treat it as the path to a review directory or
+If the user's arguments is provided, treat it as the path to a review directory or
 `review.md` file.
 
-If `$ARGUMENTS` is empty, find the most recent review:
+If the user's arguments is empty, find the most recent review:
 
 ```bash
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)

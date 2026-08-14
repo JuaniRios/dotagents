@@ -1,6 +1,6 @@
 ---
 name: test-inspector
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(wc:*), Bash(test:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Read, Grep, Glob, Agent
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(wc:*), Bash(test:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Read, Grep, Glob
 description: Review tests in a PR for quality — flags useless tests, over-mocking, implementation-detail coupling, and tests that don't verify real behavior.
 argument-hint: "[pr-number | pr-url]"
 ---
@@ -43,7 +43,7 @@ honest assessment of whether the tests are worth keeping.
 
 ## 1. Get the PR diff
 
-If `$ARGUMENTS` is provided, use it as the PR reference. Otherwise use the
+If the user's arguments is provided, use it as the PR reference. Otherwise use the
 current branch's PR.
 
 ```bash

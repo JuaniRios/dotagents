@@ -66,7 +66,7 @@ boundaries. Deltas from the single-bot flow:
 Read the config file:
 
 ```bash
-cat ~/Github/dotagents/dotclaude/data/progress-tracking.json
+cat ~/Github/dotagents/data/progress-tracking.json
 ```
 
 Look up the project by name. If the project isn't found, tell the user
@@ -83,7 +83,7 @@ Store the resolved date as an ISO 8601 string for use in queries.
 
 ## Step 2b — Load the previous report (continuity)
 
-Reports live in `~/Github/dotagents/dotclaude/data/progress-tracking/reports/`.
+Reports live in `~/Github/dotagents/data/progress-tracking/reports/`.
 Read the most recent prior report for this project (skip one dated today —
 that's a re-run). Two things to extract:
 
@@ -168,7 +168,7 @@ else echo "tdl: ok"; fi
 The work chats live in `~/.config/daily-report-telegram-chats.txt` (one
 chat ID or @username per line, `#` for comments — the same file the
 daily-report skill maintains). If it's missing, run `tdl chat ls`, ask the
-user which chat is the dev channel (AskUserQuestion), and write the file.
+user which chat is the dev channel (ask the user), and write the file.
 
 Export each configured chat over the range and parse each export
 immediately (export and parse in the same loop — variables set inside a
@@ -258,7 +258,7 @@ Notes:
   a daily report saying "prod was patched manually, fix still in PR" is
   exactly the kind of truth the investor summary must not paper over.
 - The user's own reports are also saved locally at
-  `~/Github/dotagents/dotclaude/data/daily-report/reports/` (`<date>.html`
+  `~/Github/dotagents/data/daily-report/reports/` (`<date>.html`
   + `<date>.json` sidecar with compact status/themes) — handy as a quick
   pre-scan of which days were eventful before diving into the export.
 
@@ -699,7 +699,7 @@ correcting.
 
    ```bash
    # The single deliverable (STE, sendable as-is):
-   #   ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<YYYY-MM-DD>.md
+   #   ~/Github/dotagents/data/progress-tracking/reports/<project>-<YYYY-MM-DD>.md
    ```
 
    The file is the STE document plus the Period header — no appendix, no
@@ -716,18 +716,18 @@ correcting.
    # Read, update last_run to current ISO datetime, write back
    ```
 
-   Read `~/Github/dotagents/dotclaude/data/progress-tracking.json`, update the
+   Read `~/Github/dotagents/data/progress-tracking.json`, update the
    project's `last_run` to the current datetime (ISO 8601), and write it
    back using `Write`.
 
 4. **Confirm**:
 
    ```
-   Report saved: ~/Github/dotagents/dotclaude/data/progress-tracking/reports/<project>-<date>.md
+   Report saved: ~/Github/dotagents/data/progress-tracking/reports/<project>-<date>.md
    Last run updated to: <datetime>
 
    To convert to PDF:
-     cd ~/Github/dotagents/dotclaude/data/progress-tracking/reports && \
+     cd ~/Github/dotagents/data/progress-tracking/reports && \
      TYPST_FONT_PATHS="/System/Library/Fonts:/System/Library/Fonts/Supplemental:/Library/Fonts:$HOME/Library/Fonts" \
      nix shell nixpkgs#pandoc nixpkgs#typst -c pandoc -f gfm <project>-<date>.md \
        -o <project>-<date>.pdf --pdf-engine=typst -V mainfont="Helvetica Neue" \
@@ -768,7 +768,7 @@ correcting.
 
 - **Linear auth expired**: tell the user to run `linear auth login`.
 - **Repo path doesn't exist**: tell the user and suggest updating the
-  config file at `~/Github/dotagents/dotclaude/data/progress-tracking.json`.
+  config file at `~/Github/dotagents/data/progress-tracking.json`.
 - **No issues found**: report git activity only, note no Linear activity.
 - **No commits found**: report Linear activity only, note no git activity.
 - **`/pnl` endpoint unreachable** (hedge-bot): fall back to
@@ -776,7 +776,7 @@ correcting.
   independently verified"; note the endpoint was unavailable.
 - **`tdl` not installed / not logged in / export fails**: fall back to the
   locally saved daily reports
-  (`~/Github/dotagents/dotclaude/data/daily-report/reports/`); note that
+  (`~/Github/dotagents/data/daily-report/reports/`); note that
   team-wide dev-channel context was unavailable. If those are empty too,
   note "daily-report context unavailable for this period" so the user
   knows the narrative leans on git/Linear/PRs alone.

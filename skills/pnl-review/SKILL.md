@@ -22,12 +22,12 @@ setup. Net PnL is therefore an **upper bound**. Always confirm against
 `"/pnl" = apiProxy "/pnl"`), so **query it directly over HTTPS -- no SSH.** Any
 tailnet member can run this command; a root SSH key is not required.
 
-The argument is `$ARGUMENTS`. Parse it into a timeframe, optional filters, and
+Parse the user's request. Parse it into a timeframe, optional filters, and
 environment, then query and summarize. **Default timeframe: last 24h.**
 
 ## 1. Parse the argument
 
-`$ARGUMENTS` is free text. Extract, in any order (all parts optional):
+The user's request is free text. Extract, in any order (all parts optional):
 
 - **Environment**: `staging` -> base URL
   `https://st0x-liquidity-staging.tail6094d7.ts.net`. Anything else / omitted ->
@@ -139,7 +139,7 @@ fetch is **not** snapshotted. Quote the `asOfRowid` in the report footer.
 
 ## 4. Answer the ask
 
-First decide the response shape from `$ARGUMENTS`:
+First decide the response shape from the user's arguments:
 
 - **Targeted question** -- the argument asks for a specific quantity or a
   yes/no (e.g. "did COIN make money yesterday", "what were our CCTP fees last
@@ -287,7 +287,7 @@ printing a wall of zeros.
 
 1. **Read-only.** Only GET the endpoint and read the DB indirectly through it.
    Never write, restart, or mutate anything.
-2. **Never interpolate `$ARGUMENTS` into the URL.** Always `--data-urlencode`.
+2. **Never interpolate the user's arguments into the URL.** Always `--data-urlencode`.
 3. **Every figure carries its window.** When an invocation makes more than one
    `/pnl` call (different dates, sessions, or symbols), each number you report
    must state its exact `fromDate..toDate` and filters -- inline or as a table

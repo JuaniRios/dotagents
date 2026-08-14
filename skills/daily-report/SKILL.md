@@ -1,13 +1,13 @@
 ---
 name: daily-report
-allowed-tools: Bash(*), Read, Grep, Glob, Agent, Workflow, Write
+allowed-tools: Bash(*), Read, Grep, Glob, Write
 description: Generate a team-facing daily summary of all work done across repos. For pasting in the group chat. Shows what was accomplished, what's next, open points, and stats.
 argument-hint: "[compressed]"
 ---
 
 # Daily Report — end-of-day work summary
 
-Generates a comprehensive daily report by aggregating Claude Code sessions,
+Generates a comprehensive daily report by aggregating this harness sessions,
 Codex CLI sessions, git history, GitHub activity, Linear, investigation
 traces, and Telegram conversations across all repos in `~/Github/`.
 
@@ -97,18 +97,18 @@ else echo "tdl: ok"; fi
   degraded report (see Failure modes).
 - `tdl` not logged in: suggest the user run `! tdl login`, then re-check.
 - Telegram chat config missing (but tdl ok): run `tdl chat ls`, show the
-  chats, ask which are work-related (AskUserQuestion), and write
+  chats, ask which are work-related (ask the user), and write
   `~/.config/daily-report-telegram-chats.txt` — one chat per line (numeric
   ID or @username), `#` for comments. Do this NOW, not mid-collection.
 
 ### Load yesterday's report (continuity)
 
-Reports are saved to `~/Github/dotagents/dotclaude/data/daily-report/reports/`
+Reports are saved to `~/Github/dotagents/data/daily-report/reports/`
 as `<date>.html` plus a `<date>.json` sidecar (see Step 7). Load the most
 recent one before `REPORT_DATE`:
 
 ```bash
-ls ~/Github/dotagents/dotclaude/data/daily-report/reports/*.json 2>/dev/null | sort | tail -3
+ls ~/Github/dotagents/data/daily-report/reports/*.json 2>/dev/null | sort | tail -3
 ```
 
 Read the latest sidecar dated before `REPORT_DATE` (skip one equal to
@@ -119,7 +119,7 @@ prior report exists, note "first run — no continuity data" and move on.
 
 ## Step 2 — Discover sessions (inline, no agents)
 
-Scan Claude Code history for the day's sessions — this is one cheap python
+Scan this harness history for the day's sessions — this is one cheap python
 call, run it in the main thread:
 
 ```bash
@@ -147,6 +147,7 @@ Then:
 1. **Resolve session files by glob** — do NOT try to derive the
    dash-mangled project directory name (dots are mangled too, not just
    slashes): `ls ~/.claude/projects/*/<sessionId>.jsonl`
+   `~/.grok/sessions/` if this harness is Grok.
 2. **Normalize project keys**: fold worktrees into their parent repo
    (`st0x.liquidity-worktrees/pale-quail` → `st0x.liquidity`).
 3. **Group for fan-out**: one summarizer per project; merge projects that
@@ -156,9 +157,9 @@ Then:
    `REPORT_DATE` — and ALSO for `CALENDAR_DATE` when the two differ (a
    post-midnight run must scan both).
 
-## Step 3 — Collect via Workflow
+## Step 3 — Collect via parallel children
 
-Launch all collectors as one Workflow with a single `parallel()` batch:
+Launch all collectors as one parallel fan-out of isolated children:
 the five fixed collectors (git, Linear, GitHub, Codex, Telegram) plus one
 session summarizer per project group from Step 2. Schemas enforce the
 *facts* (PR numbers, timestamps, issue IDs, ship status) so Step 5 can
@@ -171,7 +172,7 @@ your final text is data, not prose."
 
 **Define the prompts as `const` strings INSIDE the script body** (template
 literals with the Step 1 literals already interpolated) — do NOT thread
-them through Workflow's `args`. Passing a large prompt payload via `args`
+them through the fan-out args. Passing a large prompt payload via `args`
 has proven unreliable (it can arrive `undefined`, so the script dies on
 the first `args.prompts.…` access). Inline constants are self-contained and
 always work. `args` remains available only as an optional override for
@@ -231,10 +232,10 @@ return await parallel(tasks)
 
 `parallel()` returns `null` for any collector that dies — treat a null as
 that source being unavailable (see Failure modes), never as "no activity".
-If the Workflow tool itself is unavailable, fall back to launching the
-same prompts as plain parallel Agent calls and parse their text output.
+If this host cannot fan out children, run the same prompts as
+isolated children one at a time and parse their text output.
 
-### Collector — Claude sessions (one agent per project group)
+### Collector — this-harness sessions (one child per project group)
 
 Prompt: the project key, its session file paths, and the instructions
 below. Each summarizer digests ONLY its own project's sessions.
@@ -503,9 +504,9 @@ print(f'  ... ({len(msgs)} messages total)')
 done
 ```
 
-Return the same per-session summaries as the Claude session collectors.
-Do NOT separate "Claude work" from "Codex work" downstream — the team
-cares about outcomes, not which tool produced them.
+Return the same per-session summaries as the this-harness session
+collectors. Do not separate work by which harness produced it —
+the team cares about outcomes.
 
 ### Collector — Telegram conversations
 
@@ -552,7 +553,7 @@ extract:
 ## Step 4 — User review before writing
 
 Once all collectors return, compile a short summary and present it for
-review using `AskUserQuestion`. This lets the user correct emphasis, flag
+review by asking the user. This lets the user correct emphasis, flag
 misses, or add context the data can't show ("prod is currently down",
 "this issue is the most important one").
 
@@ -765,7 +766,7 @@ in `~/.config/telegram-bot.env` (`export TELEGRAM_BOT_TOKEN=...` and
    split on section boundaries into `/tmp/daily-report-2.txt` etc.
 3. **Always show the full message and wait for explicit confirmation
    before sending.** Print the complete report inline exactly as it will
-   appear, then ask via `AskUserQuestion` ("Send it" / "Edit first"). Do
+   appear, then ask the user ("Send it" / "Edit first"). Do
    NOT send until explicitly approved this run. If they request changes,
    edit, re-show, re-ask. This applies in compressed mode too.
 4. Once approved, send each part in order:
@@ -820,13 +821,13 @@ Use Telegram's HTML parse mode — more reliable than MarkdownV2:
 After a successful send, persist for tomorrow's continuity:
 
 ```bash
-mkdir -p ~/Github/dotagents/dotclaude/data/daily-report/reports
+mkdir -p ~/Github/dotagents/data/daily-report/reports
 ```
 
 1. Save the exact sent message(s) to
-   `~/Github/dotagents/dotclaude/data/daily-report/reports/<REPORT_DATE>.html`
+   `~/Github/dotagents/data/daily-report/reports/<REPORT_DATE>.html`
 2. Write the sidecar
-   `~/Github/dotagents/dotclaude/data/daily-report/reports/<REPORT_DATE>.json`:
+   `~/Github/dotagents/data/daily-report/reports/<REPORT_DATE>.json`:
 
 ```json
 {
@@ -870,10 +871,10 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
    ("I fixed...", "I investigated...") — it's pasted directly into a team
    group chat under the user's name. Apply the voice to the prose (Status,
    themes, bullets, Up Next, Action Items); leave the Stats block mechanical.
-9. Never mention internal tooling or process in the output: Claude Code
+9. Never mention internal tooling or process in the output: this harness
    sessions, Codex CLI sessions, JSONL files, AI tooling, Workflows,
    Telegram exports, traces, cross-reviews, feedback-reviews, review
-   loops, slash commands, skills, sub-agents, or any other implementation
+   loops, skills, skills, sub-agents, or any other implementation
    detail. These are input sources — the team only cares about outcomes.
    Write *what* was done and *why*, never *how* ("addressed PR review
    comments" not "ran /feedback-review").
@@ -907,7 +908,7 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
 
 ## Failure modes
 
-- **No Claude sessions today**: proceed with the other collectors; say so
+- **No this-harness sessions today**: proceed with the other collectors; say so
   in the Step 4 summary.
 - **No Codex sessions today** (or `~/.codex/` missing): skip silently.
 - **`gh` not authenticated**: caught in pre-flight; if proceeding, note
@@ -921,11 +922,10 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
 - **Telegram chat config missing**: pre-flight runs `tdl chat ls`, asks
   the user which chats are work-related, writes
   `~/.config/daily-report-telegram-chats.txt`, then proceeds.
-- **Workflow tool unavailable**: launch the same collector prompts as
-  plain parallel Agent calls and parse their text output.
+- **parallel fan-out unavailable**: run the same collector prompts as
+  isolated children, one at a time, and parse their text output.
 - **A collector returns null/dies**: treat that source as unavailable and
   note it — never as "no activity".
 - **No prior report sidecar**: first run — skip continuity, note it.
 - **history.jsonl missing**: fall back to scanning session JSONL files by
-  modification date (`find ~/.claude/projects -name '*.jsonl' -newer
-  <today-sentinel>`).
+  modification date under `~/.claude/projects` and `~/.grok/sessions`.

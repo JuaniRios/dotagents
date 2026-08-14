@@ -1,6 +1,6 @@
 ---
 name: review-reminder
-allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(source:*), Bash(python3:*), Bash(cat:*), Read, Write, AskUserQuestion
+allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(source:*), Bash(python3:*), Bash(cat:*), Read, Write
 description: Draft and send a grouped "Review reminder" message listing my open Graphite PRs that still need review. Groups PRs by theme with Graphite links and sends to the group chat via Telegram. Use when asking a colleague to review the PRs I authored.
 argument-hint: "[@reviewer] [owner/repo]"
 ---
@@ -54,7 +54,7 @@ Split the qualifying PRs into two buckets by `reviewDecision`:
   I've pushed those fixes and want another look.
 
 If there are any re-review PRs, **before drafting** list them and ask the user
-whether to include them (via `AskUserQuestion` or a concise prompt), e.g. "These
+whether to include them (by asking the user or a concise prompt), e.g. "These
 have changes requested and are awaiting your fixes: #978, #981. Include them as
 re-review requests?"
 
@@ -144,7 +144,7 @@ Notes:
 ## Step 6 — Show the draft and confirm
 
 Print the composed message and the proposed grouping to the terminal. Ask the
-user (via `AskUserQuestion` or a concise prompt) to approve, re-group, or edit
+user (by asking the user or a concise prompt) to approve, re-group, or edit
 descriptions. Iterate until they approve.
 
 ## Step 7 — Send via Telegram

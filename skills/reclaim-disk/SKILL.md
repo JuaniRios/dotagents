@@ -1,6 +1,6 @@
 ---
 name: reclaim-disk
-allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), AskUserQuestion
+allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*)
 description: Reclaim SSD space by finding and (with per-category approval) deleting Rust target/ dirs, Foundry/cast caches, gitignored temp bloat, and other dev build artifacts across ~/Github. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
 argument-hint: [--dry-run] [--min-ignored <MB>] [extra-root ...]
 disable-model-invocation: true
@@ -31,13 +31,13 @@ paths**, so those prompts never appear.
   - `~/.cache`
   - `~/Library/Developer/Xcode/DerivedData`
   - `~/Library/Caches`
-  - any extra root passed in `$ARGUMENTS` (must be an existing absolute path under `$HOME`)
+  - any extra root passed in the user's arguments (must be an existing absolute path under `$HOME`)
 - Always redirect scan stderr to `/dev/null` so a stray permission error never
   derails the run.
 
 ## Step 0 — Parse arguments and define guards
 
-Parse `$ARGUMENTS`:
+Parse the user's arguments:
 - `--dry-run` present → build and print the full report, then **stop** (no
   prompts, no deletion).
 - `--min-ignored <MB>` → size threshold for the "Other ignored / temp bloat"
@@ -60,7 +60,7 @@ ALLOW_ROOTS=(
   "$HOME_REAL/Library/Developer/Xcode/DerivedData"
   "$HOME_REAL/Library/Caches"
 )
-# (append validated extra roots from $ARGUMENTS here)
+# (append validated extra roots from the user's arguments here)
 
 # kilobytes of a path (0 if missing)
 dsize() { du -sk "$1" 2>/dev/null | awk '{print $1}'; }
@@ -229,13 +229,13 @@ If `--dry-run` was passed, **stop here.**
 
 ## Step 8 — Approve via grouped selector prompts
 
-Use `AskUserQuestion` (`multiSelect: true`) with **categories as the options**:
+Ask the user (`multiSelect: true`) with **categories as the options**:
 
 - Each option label = `"<category> — <human size>"`; description = item count +
   a few example paths.
 - A selector question takes **2–4 options**, so chunk categories into questions
   of ≤4 options each; you may put up to 4 questions in a single
-  `AskUserQuestion` call, and make additional calls if there are more than 16
+  question, and make additional calls if there are more than 16
   categories.
 - If only **one** category exists, present it as a single-select question with
   options `"Delete (<size>)"` and `"Skip"`.

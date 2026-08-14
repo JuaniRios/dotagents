@@ -22,7 +22,7 @@ sibling directory alongside the repo, with memorable random names.
 
 ## Mode detection
 
-Parse `$ARGUMENTS`:
+Parse the user's arguments:
 
 - **Empty** or missing: create a new worktree (step 1).
 - **`remove <name>`**: remove the named worktree (step 5).
@@ -177,7 +177,7 @@ Graphite: initialized (trunk: <trunk>)
 
 ## Step 5 — Remove a worktree
 
-When `$ARGUMENTS` starts with `remove`:
+When the user's arguments starts with `remove`:
 
 1. Extract the worktree name from the arguments.
 2. Resolve the path:
@@ -213,7 +213,7 @@ When `$ARGUMENTS` starts with `remove`:
 
 ## Step 6 — List worktrees
 
-When `$ARGUMENTS` is `list`:
+When the user's arguments is `list`:
 
 ```bash
 repo_root=$(git rev-parse --show-toplevel)
@@ -253,7 +253,7 @@ To remove later:
 
 ## Step 7 — Detach all worktrees at trunk
 
-When `$ARGUMENTS` is `detach-all`:
+When the user's arguments is `detach-all`:
 
 1. Fetch the latest from the remote:
 

@@ -71,8 +71,8 @@ finding: state the alternative, and estimate the diff it would have been.
 
 ## 1. Get the diff
 
-If `$ARGUMENTS` is provided, treat it as a PR reference and use
-`gh pr diff "$ARGUMENTS"`. Otherwise the caller supplies the diff path in
+If the user's arguments is provided, treat it as a PR reference and use
+`gh pr diff "the user's arguments"`. Otherwise the caller supplies the diff path in
 the appended instructions. Use that.
 
 ## 2. Measure the budget before reading for style

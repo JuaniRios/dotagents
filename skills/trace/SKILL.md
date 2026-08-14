@@ -1,6 +1,6 @@
 ---
 name: trace
-allowed-tools: Bash(linear:*), Bash(ls:*), Bash(cat:*), Bash(test:*), Bash(mkdir:*), Bash(rm:*), Bash(date:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(sed:*), Bash(grep:*), Bash(wc:*), Bash(sort:*), Read, Write, Edit, Glob, Grep, AskUserQuestion, Agent
+allowed-tools: Bash(linear:*), Bash(ls:*), Bash(cat:*), Bash(test:*), Bash(mkdir:*), Bash(rm:*), Bash(date:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(sed:*), Bash(grep:*), Bash(wc:*), Bash(sort:*), Read, Write, Edit, Glob, Grep
 description: Persistent cross-repo investigation tracker. Create, load, update, and close investigation traces that span multiple repos and conversations. Each trace is a structured markdown file in ~/Github/traces/ with a linked Linear issue. Use /trace to manage complex, multi-repo issues that need context preserved across conversations.
 argument-hint: "new [--link RAI-nnn] [title] | load <id> | update <id> [note] | list | status [id] | close <id> | park <id>"
 ---
@@ -24,7 +24,7 @@ TRACES_DIR="$HOME/Github/traces"
 
 ## Mode detection
 
-Parse `$ARGUMENTS` to determine the subcommand:
+Parse the user's arguments to determine the subcommand:
 
 | Arguments pattern                        | Mode          |
 | ---------------------------------------- | ------------- |
@@ -72,7 +72,7 @@ When ambiguous, show the matches and ask the user to be more specific.
 
 ### 1a. Gather info
 
-If title is not in `$ARGUMENTS`, ask the user:
+If title is not in the user's arguments, ask the user:
 1. **Title** — short description of the issue (becomes both the Linear issue
    title and the slug basis)
 2. **Summary** — 1-3 sentences on what happened and what's affected
@@ -278,7 +278,7 @@ falling back to asking:
 
 ### 3a. Quick update (note text provided in args)
 
-When `$ARGUMENTS` contains text after the id (e.g., `/trace update RAI-173
+When the user's arguments contains text after the id (e.g., `/trace update RAI-173
 hedge bot positions now reconciled`):
 
 1. Read the current TRACE.md

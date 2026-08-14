@@ -1,6 +1,6 @@
 ---
 name: fix-conflicts
-allowed-tools: Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(grep:*), Bash(test:*), Read, Edit, Grep, Glob, Skill
+allowed-tools: Bash(cargo:*), Bash(git:*), Bash(gt:*), Bash(grep:*), Bash(test:*), Read, Edit, Grep, Glob
 description: Resolve graphite restack/sync conflicts and drive the whole stack to clean — auto gt continue through each branch, then gt restack + gt sync, looping until clean or a human decision is needed.
 ---
 

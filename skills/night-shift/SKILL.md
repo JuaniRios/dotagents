@@ -1,6 +1,6 @@
 ---
 name: night-shift
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, AskUserQuestion, TodoWrite, EnterPlanMode, ExitPlanMode
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 description: Autonomous overnight execution. Plans with you while you're awake, then drives the work itself under a self-armed goal loop while you sleep — never prompting, deciding everything itself, self-reviewing, verifying locally, logging decisions and deferred items to a doc, and reviewing it interactively when you return.
 argument-hint: <task description>
 disable-model-invocation: true
@@ -16,9 +16,9 @@ decision log on top of a Stop-hook goal loop the skill arms itself — no
 user-typed `/goal` required — and reuses the project's own review/CI skills for
 the heavy lifting.
 
-The task: `$ARGUMENTS` (if empty, use the task established in the conversation).
+The task: the user's arguments (if empty, use the task established in the conversation).
 
-Track the phases with `TodoWrite` so the morning transcript shows what happened:
+Track the phases on a visible todo list so the morning transcript shows what happened:
 pre-flight plan → arm goal → implement → self-review → verify → finalize log →
 morning review.
 
@@ -28,8 +28,7 @@ This is the **last interactive moment before the user sleeps**, so concentrate
 every question here, then ask nothing until morning. Keep it crisp — the user is
 tired and wants to hit "go."
 
-Research the codebase as needed, then enter plan mode (`EnterPlanMode`) and
-present, via `ExitPlanMode`:
+Research the codebase as needed, then present a plan:
 
 - **Understanding** — one or two lines restating the task as you read it.
 - **Approach** — the ordered plan (main steps).
@@ -53,7 +52,7 @@ working directory — the helper scopes the goal to that cwd, which is what the
 hook matches against):
 
 ```bash
-~/Github/dotagents/dotclaude/hooks/goal-loop/goal-set.sh \
+~/Github/dotagents/hooks/goal-loop/goal-set.sh \
   "<approved completion condition, e.g. 'feature X works and local checks pass'> AND NIGHT-SHIFT-LOG.md is fully updated" \
   <N>   # max turns — the hard runaway cap (e.g. 40)
 ```
@@ -68,7 +67,7 @@ is updated — or you are truly blocked — release the loop and let the session
 stop:
 
 ```bash
-~/Github/dotagents/dotclaude/hooks/goal-loop/goal-clear.sh
+~/Github/dotagents/hooks/goal-loop/goal-clear.sh
 ```
 
 After arming, just keep working: the loop engages the moment you would
@@ -76,7 +75,7 @@ otherwise stop, and the hook's injected directive carries the objective forward.
 
 ## Operating rules while the loop runs
 
-1. **No questions.** Do not use `AskUserQuestion` or pause for confirmation once
+1. **No questions.** Do not ask the user or pause for confirmation once
    the plan is approved. Every impulse to ask becomes a logged decision or a
    deferred item. The only remaining interactive moment is the morning review.
 
@@ -159,7 +158,7 @@ morning's source of truth and lets a fresh run resume.
    - Local check status
    - What needs your call (count of deferred items)
 3. Now — and only now — go interactive. Walk the user through the **Deferred**,
-   **Assumptions**, and **Irreversible steps** sections using `AskUserQuestion`,
+   **Assumptions**, and **Irreversible steps** sections by asking the user,
    batching related decisions, leading each with your recommendation. Act on the
    answers one item at a time (e.g. now push the branch, submit the PR, kick off
    remote CI, adjust an assumption).

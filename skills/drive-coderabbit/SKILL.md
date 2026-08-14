@@ -1,6 +1,6 @@
 ---
 name: drive-coderabbit
-allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(python3:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(cat:*), Bash(sleep:*), Bash(seq:*), Bash(cargo:*), Bash(grep:*), Bash(wc:*), Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion
+allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(python3:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(cat:*), Bash(sleep:*), Bash(seq:*), Bash(cargo:*), Bash(grep:*), Bash(wc:*), Read, Edit, Write, Grep, Glob
 description: Drive CodeRabbit across an entire graphite stack in parallel — comment "@coderabbitai full review" on every PR, wait for each review (auto-retrying through rate limits), then autonomously address each PR's findings with feedback-review's judgment and amend the stack.
 argument-hint: [current]
 ---
@@ -51,9 +51,9 @@ ordered list of PRs you're about to drive.
 
 ## 2. Phase 1 — fan out one background agent per PR
 
-Launch the agents in a **single message** with multiple `Agent` calls,
-`run_in_background: true`, so they run concurrently. Each agent is fully
-self-contained (it does NOT share your context). Give each this prompt,
+Launch one isolated child per PR in a single parallel batch so they
+run concurrently. Each child is fully self-contained (it does NOT
+share your context). Give each this prompt,
 substituting the PR number and branch:
 
 > You are driving CodeRabbit on PR #<N> (branch `<branch>`) of this repo. Do
