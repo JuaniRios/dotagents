@@ -7,8 +7,8 @@ argument-hint: "[focus instructions]"
 
 # Session handoff
 
-Produce a dense, high-signal handoff document at a temp file that a **fresh
-Claude session** -- possibly on a different model -- can read to pick up exactly
+Produce a dense, high-signal handoff document that a **fresh session**
+-- possibly on a different harness or model -- can read to pick up exactly
 where this one left off, without inheriting this session's token bloat.
 
 The output is written for an *agent*, not a human report: terse, structured,
@@ -45,8 +45,9 @@ out, gotchas discovered. Drop anything the next agent can cheaply rederive
 
 ## Step 3 -- Write the file
 
-Write to `/tmp/claude-handoff-<name>-<stamp>.md` using this template. Omit no
-section; if one is empty, write `none` rather than padding.
+Write to `~/Github/dotagents/data/handoffs/<name>-<stamp>.md` (create
+the directory if needed) using this template. Omit no section; if one
+is empty, write `none` rather than padding.
 
 ```markdown
 # Session handoff -- <name> -- <stamp>
@@ -84,13 +85,10 @@ section; if one is empty, write `none` rather than padding.
 Print the path and ready-to-use resume commands:
 
 ```
-Handoff written: /tmp/claude-handoff-<name>-<stamp>.md
+Handoff written: ~/Github/dotagents/data/handoffs/<name>-<stamp>.md
 
-Continue in a fresh session:
-  claude "Read /tmp/claude-handoff-<name>-<stamp>.md and continue the work."
-
-...on a different model:
-  claude --model sonnet "Read /tmp/claude-handoff-<name>-<stamp>.md and continue the work."
+Continue in a fresh session (any harness):
+  Read ~/Github/dotagents/data/handoffs/<name>-<stamp>.md and continue the work.
 ```
 
 ## Hard rules

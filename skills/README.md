@@ -14,4 +14,4 @@ flash 3.7. Do not fork a second catalogue.
 
 New work goes here via the `new-skill` skill. Optional Claude/Grok
 frontmatter (`allowed-tools`, `argument-hint`) is fine. Bodies stay
-host-neutral.
+host-neutral. Runtime data belongs in `~/Github/dotagents/data/<name>/`.

@@ -22,7 +22,8 @@ Antigravity can load it.
 
 `scripts/install-skills.nu` puts a per-entry symlink into each harness
 dir. Do not write files under `~/.claude/`, `~/.codex/`, `~/.grok/`,
-or `~/.gemini/`.
+or `~/.gemini/`. Skill-owned runtime data (logs, reports, state) goes
+in `~/Github/dotagents/data/<name>/` so every harness can read it.
 
 Frontmatter: `name`, `description` (a **trigger**, not a summary).
 Optional frontmatter (`allowed-tools`, `argument-hint`,

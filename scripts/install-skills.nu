@@ -5,7 +5,7 @@
 #   nu ~/Github/dotagents/scripts/install-skills.nu --dry-run
 #
 # Each harness gets a per-entry symlink to skills/<name>. Stale links that
-# point at this repo (or at the old dotclaude/dotcodex trees) are removed.
+# point at this repo (or leftover pre-unify skill trees) are removed.
 # Codex's .system link to ~/.codex/system-skills is preserved.
 
 def skill-names [src: path]: nothing -> list<string> {

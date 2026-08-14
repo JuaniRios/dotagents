@@ -21,7 +21,7 @@ human deeply understands the subject by the end of the session.
   branch name → teach the **entire Graphite stack** containing that PR, never
   just the one PR. See "Stack research" below.
 - **`resume <slug>`** → load the learning log at
-  `~/.claude/teach-log/<slug>.md` and continue the session from where it left
+  `~/Github/dotagents/data/teach-log/<slug>.md` and continue the session from where it left
   off (remaining checklist stages, unanswered questions).
 - **`review <slug>`** → load that log and re-quiz **only the weak spots** —
   questions graded `WRONG` / `PARTIAL` / `TAUGHT` — plus one or two transfer
@@ -31,9 +31,11 @@ human deeply understands the subject by the end of the session.
   `WebFetch` (and isolated children for deeper fan-out if the topic is broad), until you
   can confidently explain the what, how, and why. Only then start teaching.
 
-Before starting fresh, check `~/.claude/teach-log/` for an existing log on the
-same target. If one exists, say so and offer: resume, review, or (for stacks)
-a **delta session** — see "Stack research". Don't silently start over.
+Before starting fresh, check `~/Github/dotagents/data/teach-log/` for an
+existing log on the same target (also look in `~/.claude/teach-log/` for
+older logs and move any hit into `data/teach-log/`). If one exists, say
+so and offer: resume, review, or (for stacks) a **delta session** — see
+"Stack research". Don't silently start over.
 
 If the mode is ambiguous, ask one short clarifying question before starting.
 
@@ -77,7 +79,8 @@ not quizzing):
 
 ## Step 1 — Build the learning log
 
-Create a real, persisted markdown file at `~/.claude/teach-log/<slug>.md`
+Create a real, persisted markdown file at
+`~/Github/dotagents/data/teach-log/<slug>.md`
 (create the directory if needed; pick a short stable slug from the topic or
 stack name) and keep it updated for the whole session — this is your working
 memory AND the durable record that `resume` / `review` / delta sessions load
@@ -232,9 +235,11 @@ When the quiz is done (per the depth dial):
    single PR in isolation.
 6. Publish the study-guide artifact and let the user read it **before** any
    quizzing (except trivial session-mode changes).
-7. Maintain the learning log at `~/.claude/teach-log/<slug>.md` (metadata +
+7. Maintain the learning log at
+   `~/Github/dotagents/data/teach-log/<slug>.md` (metadata +
    checklist + question/answer/grade log + score) as you go; update it after
-   every stage and every answer. Never use `.tmp/` for it.
+   every stage and every answer. Never use `.tmp/` or a harness home
+   dir (`~/.claude`, `~/.codex`, `~/.grok`, `~/.gemini`) for it.
 8. Never ask the user or modal prompts to quiz — plain chat text only.
    The one allowed structured prompt is the upfront depth dial.
 9. Grade every answer the moment the user gives it (right/wrong + why) before

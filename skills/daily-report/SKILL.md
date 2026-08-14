@@ -7,9 +7,10 @@ argument-hint: "[compressed]"
 
 # Daily Report — end-of-day work summary
 
-Generates a comprehensive daily report by aggregating this harness sessions,
-Codex CLI sessions, git history, GitHub activity, Linear, investigation
-traces, and Telegram conversations across all repos in `~/Github/`.
+Generates a comprehensive daily report by aggregating conversation
+history from every harness (Claude, Codex, Grok, Agy), git history,
+GitHub activity, Linear, investigation traces, and Telegram
+conversations across all repos in `~/Github/`.
 
 ## Compressed mode
 
@@ -119,49 +120,41 @@ prior report exists, note "first run — no continuity data" and move on.
 
 ## Step 2 — Discover sessions (inline, no agents)
 
-Scan this harness history for the day's sessions — this is one cheap python
-call, run it in the main thread:
+Index **every** harness the user actually uses — Claude, Codex, Grok,
+and Agy. Do not stop at whichever host is running this skill. One
+cheap script, run it in the main thread:
 
 ```bash
-python3 -c "
-import json
-start_ts = $START_EPOCH_MS
-sessions = {}
-with open('$HOME/.claude/history.jsonl') as f:
-    for line in f:
-        try:
-            entry = json.loads(line.strip())
-        except json.JSONDecodeError:
-            continue
-        if entry.get('timestamp', 0) >= start_ts:
-            sid = entry.get('sessionId', 'unknown')
-            s = sessions.setdefault(sid, {'project': entry.get('project', 'unknown'), 'prompts': []})
-            s['prompts'].append(entry.get('display', ''))
-for sid, info in sessions.items():
-    print(f'{sid}|{info[\"project\"]}|{len(info[\"prompts\"])}')
-" 2>/dev/null
+python3 ~/Github/dotagents/skills/daily-report/sessions.py index $START_EPOCH_S
 ```
+
+Each line is `sid|harness|project|n_prompts|path`. The script already:
+
+- reads Claude (`~/.claude/history.jsonl` + `~/.claude/projects/*/<sid>.jsonl`)
+- reads Codex (`~/.codex/history.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`)
+- reads Grok (`~/.grok/sessions/<urlencoded-cwd>/prompt_history.jsonl` + `<sid>/chat_history.jsonl`)
+- reads Agy (`~/.gemini/antigravity-cli/history.jsonl`, `conversation_summaries.db`, `cache/conversation_metadata.json`, `brain/<sid>/.../transcript.jsonl`)
+- folds worktrees into the parent repo (`st0x.liquidity-worktrees/pale-quail` → `st0x.liquidity`)
+- falls back to file mtime when a history index is missing
 
 Then:
 
-1. **Resolve session files by glob** — do NOT try to derive the
-   dash-mangled project directory name (dots are mangled too, not just
-   slashes): `ls ~/.claude/projects/*/<sessionId>.jsonl`
-   `~/.grok/sessions/` if this harness is Grok.
-2. **Normalize project keys**: fold worktrees into their parent repo
-   (`st0x.liquidity-worktrees/pale-quail` → `st0x.liquidity`).
-3. **Group for fan-out**: one summarizer per project; merge projects that
-   only had a single short session into one combined "misc" group. Cap at
-   ~6 summarizer groups.
-4. **Codex day directories**: `~/.codex/sessions/<YYYY>/<MM>/<DD>/` for
-   `REPORT_DATE` — and ALSO for `CALENDAR_DATE` when the two differ (a
-   post-midnight run must scan both).
+1. **Group by project, not by harness.** A day of work in
+   `st0x.liquidity` is one story even if it spanned Grok, Codex, and
+   Claude. Merge projects that only had a single short session into one
+   combined "misc" group. Cap at ~6 summarizer groups.
+2. Keep the `harness` + `path` on each session so the summarizer can
+   extract the right format. Never invent a session file path.
+3. A missing store (no `~/.codex`, empty Agy, etc.) is normal — skip
+   that harness silently. Missing *all four* is the only case worth
+   mentioning in Step 4.
 
 ## Step 3 — Collect via parallel children
 
 Launch all collectors as one parallel fan-out of isolated children:
-the five fixed collectors (git, Linear, GitHub, Codex, Telegram) plus one
-session summarizer per project group from Step 2. Schemas enforce the
+the four fixed collectors (git, Linear, GitHub, Telegram) plus one
+session summarizer per project group from Step 2. Session groups
+already include Claude, Codex, Grok, and Agy. Schemas enforce the
 *facts* (PR numbers, timestamps, issue IDs, ship status) so Step 5 can
 cross-reference mechanically — but narrative fields stay free text;
 forcing the story into rigid enums is how the gist gets lost.
@@ -181,7 +174,7 @@ small values.
 ```js
 export const meta = {
   name: 'daily-report-collect',
-  description: 'Collect daily activity: sessions, git, Linear, GitHub, Codex, Telegram',
+  description: 'Collect daily activity: sessions, git, Linear, GitHub, Telegram',
   phases: [{ title: 'Collect' }],
 }
 // Build these as inline const strings (Step 1 literals already substituted).
@@ -189,7 +182,6 @@ export const meta = {
 const gitPrompt = `...`      // from the Git collector section
 const linearPrompt = `...`   // from the Linear collector section
 const githubPrompt = `...`   // from the GitHub collector section
-const codexPrompt = `...`    // from the Codex collector section
 const telegramPrompt = null  // or the Telegram collector prompt if tdl is ok
 const sessionGroups = [/* { key, prompt } per project group from Step 2 */]
 const STR = { type: 'string' }
@@ -219,7 +211,6 @@ const tasks = [
   () => agent(gitPrompt, { label: 'git', phase: 'Collect', schema: GIT }),
   () => agent(linearPrompt, { label: 'linear', phase: 'Collect', schema: LINEAR }),
   () => agent(githubPrompt, { label: 'github', phase: 'Collect', schema: GITHUB }),
-  () => agent(codexPrompt, { label: 'codex', phase: 'Collect', schema: SESSIONS }),
 ]
 if (telegramPrompt) {
   tasks.push(() => agent(telegramPrompt, { label: 'telegram', phase: 'Collect', schema: TELEGRAM }))
@@ -235,60 +226,26 @@ that source being unavailable (see Failure modes), never as "no activity".
 If this host cannot fan out children, run the same prompts as
 isolated children one at a time and parse their text output.
 
-### Collector — this-harness sessions (one child per project group)
+### Collector — sessions (one child per project group)
 
-Prompt: the project key, its session file paths, and the instructions
-below. Each summarizer digests ONLY its own project's sessions.
+Prompt: the project key and every `harness|path` pair from Step 2 for
+that project. Each summarizer digests ONLY its own project's sessions,
+across all harnesses.
 
 Session files are mostly tool-call noise; never read them raw. Extract
-just the conversation — user messages and assistant text, skipping tool
-results, system reminders, and sub-agent sidechains:
+just the conversation with the shared helper (it already picks the
+right format per harness and skips tool results, system reminders,
+compaction metadata, and sidechains):
 
 ```bash
-python3 -c "
-import json, sys
-msgs = []
-with open(sys.argv[1]) as fh:
-    for line in fh:
-        try:
-            e = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if e.get('isSidechain'):
-            continue
-        if e.get('type') not in ('user', 'assistant'):
-            continue
-        content = (e.get('message') or {}).get('content')
-        if isinstance(content, str):
-            parts = [content]
-        elif isinstance(content, list):
-            parts = [b.get('text', '') for b in content
-                     if isinstance(b, dict) and b.get('type') == 'text']
-        else:
-            continue
-        txt = ' '.join(p for p in parts if p).strip()
-        if not txt or txt.startswith(('<system-reminder', '<command-name',
-                '<local-command-stdout', '<task-notification', 'Caveat:')):
-            continue
-        msgs.append([e['type'], txt[:300]])
-# Long sessions: keep ALL user messages (they mark every direction change)
-# plus the assistant reply just before each, plus the final assistant
-# message. Never blanket-elide the middle — that's where the pivots live.
-if len(msgs) <= 120:
-    keep = msgs
-else:
-    keep = []
-    for i, m in enumerate(msgs):
-        if m[0] == 'user':
-            if i and msgs[i-1][0] == 'assistant' and (not keep or keep[-1] is not msgs[i-1]):
-                keep.append(msgs[i-1])
-            keep.append(m)
-    if msgs[-1][0] == 'assistant' and (not keep or keep[-1] is not msgs[-1]):
-        keep.append(msgs[-1])
-for role, txt in keep:
-    print(f'[{role}] {txt}')
-" "$session_file"
+python3 ~/Github/dotagents/skills/daily-report/sessions.py extract <harness> <path>
 ```
+
+`<harness>` is `claude`, `codex`, `grok`, or `agy`. Run it once per
+session path. Long sessions keep all user messages (they mark every
+direction change) plus the assistant reply just before each, plus the
+final assistant message. Never blanket-elide the middle — that's where
+the pivots live.
 
 The gist of a session usually lives in the MIDDLE of the conversation —
 direction changes, discoveries, dead ends, fixes. Never summarize from the
@@ -297,6 +254,8 @@ from what they started with. Return one summary per session: goal, what
 actually happened (narrative including pivots), outcome, ship_status,
 incidents (prod outages, manual interventions, root causes and whether the
 fix shipped or sits in a PR), and unresolved threads worth following up.
+Do not separate work by which harness produced it — the team cares about
+outcomes.
 
 ### Collector — Git activity + traces
 
@@ -439,74 +398,6 @@ merged-after = **merged-undeployed**. A repo with zero deploy runs in the
 window shipped nothing to that environment this period, no matter how many
 PRs merged. Session summaries routinely misreport "deployed X" — always
 override them with the deploy-run evidence.
-
-### Collector — Codex CLI sessions
-
-Codex stores conversations separately. Two stores:
-
-1. `~/.codex/history.jsonl` — user prompts with `session_id`, `ts`
-   (epoch **seconds**), `text`.
-2. `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl` — full transcripts.
-
-```bash
-python3 -c "
-import json
-start_ts = START_EPOCH_S
-sessions = {}
-with open('$HOME/.codex/history.jsonl') as f:
-    for line in f:
-        try:
-            entry = json.loads(line.strip())
-        except json.JSONDecodeError:
-            continue
-        if entry.get('ts', 0) >= start_ts:
-            sid = entry.get('session_id', 'unknown')
-            sessions.setdefault(sid, []).append(entry.get('text', ''))
-for sid, prompts in sessions.items():
-    print(f'## Codex session {sid[:8]}... ({len(prompts)} prompts)')
-    for p in prompts[:5]:
-        if p and not p.startswith('/'):
-            print(f'    - {p[:120]}')
-" 2>/dev/null
-```
-
-Then read the rollout files in the day directories passed in the prompt
-(both directories when the report date differs from the calendar date).
-Each rollout's first line is `session_meta` with `payload.cwd` (the repo).
-The conversation is in `response_item` lines with `payload.type ==
-"message"`. These files are large — extract messages, don't cat:
-
-```bash
-for f in <each rollout file in the given day dirs>; do
-  [ -f "$f" ] || continue
-  python3 -c "
-import json, sys
-cwd = None
-msgs = []
-with open(sys.argv[1]) as fh:
-    for line in fh:
-        try: e = json.loads(line)
-        except json.JSONDecodeError: continue
-        if e.get('type') == 'session_meta':
-            cwd = e.get('payload', {}).get('cwd')
-        elif e.get('type') == 'response_item':
-            p = e.get('payload', {})
-            if p.get('type') == 'message' and p.get('role') in ('user', 'assistant'):
-                parts = [c.get('text', '') for c in p.get('content', []) if isinstance(c, dict)]
-                txt = ' '.join(t for t in parts if t).strip()
-                if txt:
-                    msgs.append((p['role'], txt[:200]))
-print(f'### Codex: {cwd}')
-for role, txt in msgs[:10]:
-    print(f'  [{role}] {txt}')
-print(f'  ... ({len(msgs)} messages total)')
-" "$f"
-done
-```
-
-Return the same per-session summaries as the this-harness session
-collectors. Do not separate work by which harness produced it —
-the team cares about outcomes.
 
 ### Collector — Telegram conversations
 
@@ -851,10 +742,12 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
    substitute literals into every collector. Collectors never call `date`
    or `datetime.now()`. Local timezone for "today"; `START_UTC` for any
    GitHub timestamp comparison.
-2. Never read session JSONL files raw — they are huge and mostly tool-call
-   noise. Always use the message extractor; for long sessions keep all
-   user messages (plus adjacent assistant replies), never blanket-elide
-   the middle.
+2. Never read session JSONL / sqlite files raw — they are huge and
+   mostly tool-call noise. Always use
+   `~/Github/dotagents/skills/daily-report/sessions.py extract`. For
+   long sessions keep all user messages (plus adjacent assistant
+   replies), never blanket-elide the middle. Scan all four harnesses
+   every run, not just the host that invoked this skill.
 3. Thematic grouping over flat lists — cluster related work, never dump
    raw commit messages.
 4. If `gh` or `linear` fails pre-flight, tell the user immediately; if
@@ -871,10 +764,10 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
    ("I fixed...", "I investigated...") — it's pasted directly into a team
    group chat under the user's name. Apply the voice to the prose (Status,
    themes, bullets, Up Next, Action Items); leave the Stats block mechanical.
-9. Never mention internal tooling or process in the output: this harness
-   sessions, Codex CLI sessions, JSONL files, AI tooling, Workflows,
+9. Never mention internal tooling or process in the output: Claude /
+   Codex / Grok / Agy sessions, JSONL files, AI tooling, Workflows,
    Telegram exports, traces, cross-reviews, feedback-reviews, review
-   loops, skills, skills, sub-agents, or any other implementation
+   loops, skills, isolated children, or any other implementation
    detail. These are input sources — the team only cares about outcomes.
    Write *what* was done and *why*, never *how* ("addressed PR review
    comments" not "ran /feedback-review").
@@ -908,9 +801,10 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
 
 ## Failure modes
 
-- **No this-harness sessions today**: proceed with the other collectors; say so
-  in the Step 4 summary.
-- **No Codex sessions today** (or `~/.codex/` missing): skip silently.
+- **No sessions today on one harness**: skip that store silently
+  (missing `~/.codex`, empty Agy, etc. is normal).
+- **No sessions today on any harness**: proceed with git / Linear /
+  GitHub / Telegram; say so in the Step 4 summary.
 - **`gh` not authenticated**: caught in pre-flight; if proceeding, note
   "GitHub activity skipped (gh not authenticated)".
 - **`linear` fails**: fall back to `RAI-\d+` extraction from commits and
@@ -927,5 +821,6 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
 - **A collector returns null/dies**: treat that source as unavailable and
   note it — never as "no activity".
 - **No prior report sidecar**: first run — skip continuity, note it.
-- **history.jsonl missing**: fall back to scanning session JSONL files by
-  modification date under `~/.claude/projects` and `~/.grok/sessions`.
+- **A history index is missing**: `sessions.py index` already falls
+  back to file mtime under `~/.claude/projects`, `~/.codex/sessions`,
+  `~/.grok/sessions`, and `~/.gemini/antigravity-cli`.
