@@ -83,6 +83,7 @@ file; a tool wanted on one goes in that host's entry point.
 | System activation script | new module in `modules/darwin/` | `system.activationScripts.*` (+ import in hosts/juanrios-m2.nix) |
 | Nix daemon setting (server) | `modules/nixos/nix.nix` | `nix.settings.*` |
 | New home-manager module | new file in `home/` | (+ import in `home/common.nix` for both hosts, or `home/darwin.nix` / `home/server.nix` for one) |
+| Shared agent skills / Stop hooks | `home/dotagents.nix` | activation runs `~/Github/dotagents/scripts/install-skills.nu` on every mac rebuild |
 
 ## Adding a CLI Tool — Always Check nixpkgs First
 
