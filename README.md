@@ -1,9 +1,14 @@
 # dotagents
 
-Personal agent workflows for Claude Code and Codex.
+Personal agent workflows.
 
-- `~/.claude/skills/` is a real directory with child links into `dotclaude/skills/`
+Shared, agent-neutral skills live in `skills/` and are linked into every
+harness (Claude, Codex, Grok, Antigravity). See `skills/README.md`.
+
+- `~/.claude/skills/` is a real directory with child links into `dotclaude/skills/` (and into `skills/` for shared ones)
 - `~/.codex/skills` is a symlink to `dotcodex/skills/`
+- Grok scans `skills/` via `[skills].paths` in `~/.grok/config.toml`
+- Antigravity scans `~/.gemini/config/skills/` (per-entry links into `skills/`)
 
 Everything on the Claude side is a skill. Claude Code merged custom slash
 commands into skills, so `dotclaude/skills/<name>/SKILL.md` both creates

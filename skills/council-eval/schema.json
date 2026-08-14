@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "severity",
+          "category",
+          "finding",
+          "why_it_matters",
+          "recommended_fix",
+          "confidence"
+        ],
+        "properties": {
+          "title": { "type": "string" },
+          "severity": {
+            "enum": ["critical", "high", "medium", "low", "nit"]
+          },
+          "category": {
+            "enum": [
+              "consistency",
+              "goal",
+              "completeness",
+              "feasibility",
+              "scope",
+              "cost"
+            ]
+          },
+          "finding": { "type": "string" },
+          "why_it_matters": { "type": "string" },
+          "recommended_fix": { "type": "string" },
+          "confidence": { "type": "integer" }
+        }
+      }
+    },
+    "clean_reason": { "type": "string" },
+    "reviewer_error": { "type": "string" }
+  }
+}
