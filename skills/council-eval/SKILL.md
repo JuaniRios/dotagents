@@ -1,21 +1,24 @@
 ---
 name: council-eval
 description: >
-  One unbiased review from each available lab (Opus, gpt-5.6-sol, Grok,
-  Agy 3.7 Flash) of a plan, document, diff, or question. Use when the user
-  says council-eval, council, multi-model review, or wants each model to
-  look at the same artifact once. Not the full review-loop.
+  One unbiased review from each available model (opus 5, sol 5.6,
+  grok 4.6, flash 3.7) of a plan, document, diff, or question. Use when
+  the user says council-eval, council, multi-model review, or wants
+  each model to look at the same artifact once. Not the full review-loop.
 argument-hint: "<path-or-prompt>"
 allowed-tools: Bash(*), Read, Write
 ---
 
 # council-eval
 
-One generalist lane per lab. No specialists. No fix loop. The host
-assembles; it does not add a fifth opinion.
+One generalist lane per **model**. No specialists. No fix loop. The
+host harness assembles; it does not add a fifth opinion.
 
-**Lanes:** `review-opus`, `review-sol`, `review-grok`, `review-agy`.
-Fable is not a council lane.
+**Lanes:** `review-opus` (opus 5), `review-sol` (sol 5.6),
+`review-grok` (grok 4.6), `review-flash` (flash 3.7). fable 5 is not
+a council lane.
+
+CLI recipes and native-vs-foreign rules: `panel-runtime.md`.
 
 ## 1. Resolve the target
 
@@ -46,8 +49,8 @@ command -v grok
 command -v agy
 ```
 
-Drop any lane whose CLI is missing (except the lane that *is* this host —
-that one is native and needs no CLI). Say which lanes dropped.
+Drop any lane whose **model** CLI is missing, unless that model is
+native on this harness. Say which models dropped.
 
 ## 3. Shared prompt
 
@@ -98,20 +101,20 @@ If clean, emit exactly:
 <one sentence>
 ```
 
-## 4. Run one wrapper per lab
+## 4. Run one wrapper per model
 
-Fan out in one parallel batch with this host's parallel primitive. Each
-wrapper is a host subagent. It either *is* the reviewer or it pipes to
-that lab's CLI.
+Fan out in one parallel batch with this host harness's parallel
+primitive. Each wrapper is a host child. It either *is* the pinned
+model or it pipes to that model's CLI (see panel-runtime).
 
-Detect the host: Claude, Codex, Grok, or Antigravity.
+Host harness: claude, codex, grok, or agy.
 
-| Lane | Preferred | Native when host is | Else CLI |
+| Lane | Model | Native on harness | Else CLI |
 |---|---|---|---|
-| `review-opus` | Opus | Claude | `env -u ANTHROPIC_API_KEY claude -p --model opus` |
-| `review-sol` | gpt-5.6-sol | Codex | `codex exec --sandbox read-only -m gpt-5.6-sol` |
-| `review-grok` | Grok | Grok | `grok -p --prompt-file …` |
-| `review-agy` | Gemini 3.7 Flash High | Antigravity | `agy -p` (flag last) |
+| `review-opus` | opus 5 | claude | `claude -p --model opus` |
+| `review-sol` | sol 5.6 high | codex | `codex exec -m gpt-5.6-sol` |
+| `review-grok` | grok 4.6 high | grok | `grok -p --model grok-4.6 --effort high` |
+| `review-flash` | flash 3.7 high | agy | `agy -p --model gemini-3.7-flash-high` |
 
 **Native:** read `$out_dir/prompt.txt` and `{TARGET_PATH}`, return schema JSON
 to `$out_dir/raw-<lane>.json`.
@@ -119,7 +122,9 @@ to `$out_dir/raw-<lane>.json`.
 **CLI recipes** (write stdout to `$out_dir/raw-<lane>.txt` or `.json`):
 
 ```bash
-# opus — Max plan only. Never if ANTHROPIC_API_KEY would stick.
+SCHEMA_INLINE=$(cat "$schema")
+
+# opus 5 — Max plan only. Never if ANTHROPIC_API_KEY would stick.
 # Do not use this when the host is already Claude.
 env -u ANTHROPIC_API_KEY claude -p --model opus \
   --output-format text \
@@ -133,30 +138,29 @@ codex exec --sandbox read-only -m gpt-5.6-sol \
   "$(cat "$out_dir/prompt.txt")" \
   > "$out_dir/raw-review-sol.txt"
 
-# grok — not when the host is already Grok
-grok -p --prompt-file "$out_dir/prompt.txt" \
-  --json-schema "$schema" \
-  --output-format json \
+# grok 4.6 — not when the host harness is already grok
+grok -p "$(cat "$out_dir/prompt.txt")" \
+  --model grok-4.6 --effort high \
+  --json-schema "$SCHEMA_INLINE" \
   --disallowed-tools Agent \
   > "$out_dir/raw-review-grok.json"
 
-# agy — -p last; detach stdin or print mode hangs on a non-TTY.
-# Headless sandbox denies read_file unless allowed. Either inline the
-# artifact in the prompt and tell the lane not to read files, or pass
-# --dangerously-skip-permissions.
+# flash 3.7 — -p last; detach stdin; skip-permissions (headless
+# sandbox denies read_file). Do not pass --effort (conflicts with
+# gemini-3.7-flash-high).
 agy --sandbox --disable-slash-commands \
-  --model gemini-3.7-flash-high --effort high \
+  --model gemini-3.7-flash-high \
   --output-format json --json-schema "$schema" \
   --print-timeout 10m \
   --dangerously-skip-permissions \
   -p "$(cat "$out_dir/prompt.txt")" \
   < /dev/null \
-  > "$out_dir/raw-review-agy.json"
+  > "$out_dir/raw-review-flash.json"
 ```
 
 If `codex` rejects `service_tier=fast`, retry without that flag. If a CLI
 429s, retry once, then drop that lane and record the error. Never fall
-back to the host and still label the result as that lab.
+back to the host model and still label the result as the missing model.
 
 Timeout: 10 minutes per lane.
 
@@ -172,7 +176,7 @@ deterministically (no synthesis agent):
 
 ```
 # Council — <target one-liner>
-Lanes: opus, sol, grok, agy  (dropped: …)
+Lanes: opus 5, sol 5.6, grok 4.6, flash 3.7  (dropped: …)
 
 ## Findings
 ### [SEVERITY] <title>
@@ -192,10 +196,12 @@ Do not auto-fix. Do not start review-loop.
 
 ## Hard rules
 
-1. Four generalists only. No Fable. No inspectors. No re-review loop.
-2. Never `claude -p` when the host is Claude. Never `grok -p` when the
-   host is Grok. Never `codex exec` when the host is Codex. Never `agy -p`
-   when the host is Antigravity. Same-product lanes are native.
+1. Four generalists only (opus 5, sol 5.6, grok 4.6, flash 3.7). No
+   fable 5. No inspectors. No re-review loop.
+2. Never `claude -p` when the host harness is Claude. Never `grok -p`
+   when it is Grok. Never `codex exec` when it is Codex. Never `agy -p`
+   when it is Agy. Home-harness lanes are native children pinned to
+   the model.
 3. `claude -p` is Max-plan usage. Unset `ANTHROPIC_API_KEY`. If Max is
    already thin, drop `review-opus` and say so.
 4. A missing or failed CLI drops that lane. Do not impersonate it.

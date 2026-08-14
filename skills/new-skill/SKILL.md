@@ -32,9 +32,10 @@ Body: host-neutral. Say "ask the user", "the user's arguments", "a
 subagent", "the `foo` skill". Do not name `AskUserQuestion`,
 `$ARGUMENTS`, or `Agent` unless documenting a compatibility detail.
 
-If the skill fans out labs, say "follow
+If the skill fans out models, say "follow
 `~/Github/dotagents/skills/panel-runtime.md`" instead of inventing
-another catalogue.
+another catalogue. Harnesses are claude/codex/grok/agy; models are
+opus 5, fable 5, sol 5.6, grok 4.6, flash 3.7. Do not mix the two.
 
 ## Steps
 

@@ -74,9 +74,9 @@ Log skipped checkpoints to `.tmp/issue-stack/<ID>.md`.
    panel is not nested.
 2. Sequential issues. They share the worktree.
 3. Version control via `gt`. `gt sync` only in pre-flight.
-4. Planner/critics per panel-runtime. `claude -p` is allowed for Fable
-   or Opus when the host is not Claude (Max plan, `env -u
-   ANTHROPIC_API_KEY`). Never impersonate a dropped lab.
+4. Planner/critics per panel-runtime. `claude -p` is allowed for
+   fable 5 or opus 5 when the host harness is not Claude (Max plan,
+   `env -u ANTHROPIC_API_KEY`). Never impersonate a dropped model.
 5. Parent is expanded, never implemented, unless the user picked
    "parent too".
 6. Every skipped checkpoint is a line in the issue log.

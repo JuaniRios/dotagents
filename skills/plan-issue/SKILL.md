@@ -1,9 +1,10 @@
 ---
 name: plan-issue
 description: >
-  Research a Linear issue and publish a Fable-drafted (or host-drafted)
-  implementation plan as a Linear document, critiqued by Opus + Sol +
-  Grok. Use when the user asks to plan an issue or prepare it for
+  Research a Linear issue and publish a fable 5-drafted (or
+  host-model-drafted) implementation plan as a Linear document,
+  critiqued by opus 5 + sol 5.6 + grok 4.6. Use when the user asks to
+  plan an issue or prepare it for
   implement-issue. Read-only on the repo.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write
@@ -42,9 +43,10 @@ workflow. No em dashes. Do not restate repo docs — point at them.
 
 ## 5. Critique
 
-Panel-runtime **Plan critics**: planner is Fable if Claude is
-reachable, else host. Critics: Opus + Sol + Grok in parallel. Label
-`claude-host` vs `portable`. Append `### Critique` (adopted / rejected).
+Panel-runtime **Plan critics**: planner is fable 5 if the Claude
+harness is reachable, else the host model. Critics: opus 5, sol 5.6,
+grok 4.6 in parallel. Label `claude-host` vs `portable`. Append
+`### Critique` (adopted / rejected).
 
 ## 6. Publish
 
@@ -66,4 +68,4 @@ critique highlights.
 3. Part 1 has no code identifiers. No em dashes anywhere.
 4. Ground every claim in the repo.
 5. Never publish an uncritiqued plan.
-6. Critics per panel-runtime. Never impersonate a dropped lab.
+6. Critics per panel-runtime. Never impersonate a dropped model.

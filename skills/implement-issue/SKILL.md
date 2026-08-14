@@ -2,8 +2,9 @@
 name: implement-issue
 description: >
   Take a Linear issue from link to finished implementation — skeleton
-  Graphite PR, cross-link Linear↔PR, plan (Fable if reachable, else
-  host) critiqued by Opus + Sol + Grok, implement via a closing child,
+  Graphite PR, cross-link Linear↔PR, plan (fable 5 if Claude is
+  reachable, else the host model) critiqued by opus 5 + sol 5.6 +
+  grok 4.6, implement via a closing child,
   review via review-loop, submit, CI green. Use when the user wants an
   issue implemented end to end.
 argument-hint: "<issue-link-or-number>"
@@ -47,10 +48,10 @@ If a Linear document titled `<ID> Implementation Plan` exists, use it
 
 Otherwise, per panel-runtime **Plan critics**:
 
-- Planner: Fable if Claude is reachable, else host. Write
-  `.tmp/implement-issue/<id>-plan.md`.
-- Critics in parallel: Opus, Sol, Grok. Label the run `claude-host` or
-  `portable`.
+- Planner: fable 5 if the Claude harness is reachable, else the host
+  model. Write `.tmp/implement-issue/<id>-plan.md`.
+- Critics in parallel: opus 5, sol 5.6, grok 4.6. Label the run
+  `claude-host` or `portable`.
 - Incorporate critique. Wait for user approval before implementing.
 
 ## 6. Implement
@@ -84,6 +85,6 @@ Issue URL, PR URL, CI, one-line what shipped, plan path.
    quick confirm).
 3. Linear ↔ PR linked both ways.
 4. Panel and critics per panel-runtime. Never impersonate a dropped
-   lab.
+   model.
 5. Don't declare done until CI for this HEAD is green (or local full
    CI when Graphite skipped it).

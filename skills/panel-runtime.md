@@ -1,67 +1,71 @@
 # Panel runtime
 
-Shared contract for every multi-lab skill (`review-loop`, `review-pr`,
+Shared contract for every multi-model skill (`review-loop`, `review-pr`,
 `critique-loop`, `implement-issue`, `plan-issue`, `implement-issue-stack`).
-Read this file before spawning reviewers. Do not restate these tables in
-those skills.
+Read this file before spawning reviewers. Do not restate these tables
+in those skills.
 
-The host is whichever harness started the skill (Claude, Codex, Grok, or
-Antigravity). Fan out with **this host's** parallel primitive. Never wrap
-the panel in a second orchestrator.
+**Harnesses** (where the skill is running): `claude`, `codex`, `grok`,
+`agy`. The current one is the **host**. Fan out with that host's
+parallel primitive. Never wrap the panel in a second orchestrator.
 
-## Providers
+**Models** (who reviews). Do not use a harness name as if it were a
+model.
 
-| Id | Product | Native when host is | Foreign CLI |
-|---|---|---|---|
-| opus | Claude Opus | Claude | `env -u ANTHROPIC_API_KEY claude -p --model opus` |
-| fable | Claude Fable | Claude | `env -u ANTHROPIC_API_KEY claude -p --model fable` |
-| sol | gpt-5.6-sol | Codex | `codex exec --sandbox read-only -m gpt-5.6-sol` |
-| grok | Grok | Grok | `grok -p` |
-| agy | Gemini 3.7 Flash High | Antigravity | `agy -p --model gemini-3.7-flash-high` |
+| Model | Effort | Home harness | Native on that harness | Foreign CLI (any other host) |
+|---|---|---|---|---|
+| grok 4.6 | high | grok | isolated Grok child, `-m grok-4.6 --effort high` | `grok -p --model grok-4.6 --effort high` |
+| sol 5.6 | high | codex | isolated Codex child, `-m gpt-5.6-sol` high | `codex exec --sandbox read-only -m gpt-5.6-sol` |
+| opus 5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: opus` | `env -u ANTHROPIC_API_KEY claude -p --model opus` |
+| fable 5 | xhigh | claude | isolated Claude child, `model: fable` | `env -u ANTHROPIC_API_KEY claude -p --model fable` |
+| flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
 
-Same-product lanes are **isolated subagents pinned to that model**, not
-the babysitter conversation. Never `claude -p` when the host is Claude
-(native child instead). Same for `grok -p` / `codex exec` / `agy -p` on
-their own hosts.
+A model is **native** only on its home harness, and only as an
+**isolated child pinned to that model**, not the babysitter. On any
+other harness, reach it through that model's foreign CLI. Never
+`claude -p` when the host is Claude. Never `grok -p` when the host is
+Grok. Same for `codex exec` / `agy -p` on their home harnesses.
 
-Do not use Agy's listed Claude/GPT models as a Fable or Opus substitute.
+Do not pick opus 5 or fable 5 through the Agy CLI (Agy lists Claude
+model ids; those are not this panel's Claude path).
 
-If a CLI is missing or fails after one retry, **drop that lane and say
-so**. Do not run the work on the host and still label it as that lab.
+If a model's CLI is missing or fails after one retry, **drop every
+lane that needs that model** and say so. Do not run the work on the
+host model and still label it as the missing model.
 
 ## Wrapper
 
-Every lane is a host subagent that either *is* the reviewer or pipes to
-that lab's CLI. Same inputs for every lab:
+Every lane is a host child that either *is* the pinned model or pipes
+to that model's CLI.
 
-- `promptPath`, `targetPath` (diff or document), `repoRoot`, `schemaPath`
-- write stdout to `$out_dir/raw-<lane>.json` (or `.txt` if the CLI is text)
-
-CLI adapters (schema file:
-`~/Github/dotagents/skills/schemas/review-finding.json`):
+Inputs: `promptPath`, `targetPath`, `repoRoot`, `schemaPath`.
+Write stdout to `$out_dir/raw-<lane>.json` (or `.txt`).
 
 ```bash
 SCHEMA="$HOME/Github/dotagents/skills/schemas/review-finding.json"
 SCHEMA_INLINE=$(cat "$SCHEMA")
 
-# opus / fable — Max plan. Always strip a Console key.
+# opus 5 / fable 5 — Max plan. Always strip a Console key.
 env -u ANTHROPIC_API_KEY claude -p --model <opus|fable> \
   --output-format json --json-schema "$SCHEMA_INLINE" \
   "$(cat "$promptPath")"
 
-# sol — file schema; every property must be in `required` (already true of SCHEMA)
+# sol 5.6 — file schema (every property is already in `required`)
 codex exec --sandbox read-only -m gpt-5.6-sol \
   --output-schema "$SCHEMA" \
-  -c service_tier="fast" -C "$repoRoot" \
+  -c service_tier="fast" \
+  -c model_reasoning_effort="high" \
+  -C "$repoRoot" \
   "$(cat "$promptPath")"
 # If service_tier=fast is rejected, retry without it.
 
-# grok — inline schema, not a path
+# grok 4.6 — inline schema, not a path
 grok -p "$(cat "$promptPath")" \
+  --model grok-4.6 --effort high \
   --json-schema "$SCHEMA_INLINE" \
   --disallowed-tools Agent
 
-# agy — -p last; detach stdin; headless sandbox denies read_file
+# flash 3.7 — -p last; detach stdin; headless sandbox denies read_file
 agy --sandbox --disable-slash-commands \
   --model gemini-3.7-flash-high \
   --output-format json --json-schema "$SCHEMA" \
@@ -71,56 +75,56 @@ agy --sandbox --disable-slash-commands \
   < /dev/null
 ```
 
-Inline the artifact in the prompt when the CLI cannot read files (Agy
-without skip-permissions). Timeout 10 minutes per lane. 2–3 concurrent
-`claude -p` jobs are fine; do not serialize them for fear of 429s.
+Inline the artifact when the CLI cannot read files. Timeout 10 minutes
+per lane. 2–3 concurrent `claude -p` jobs are fine.
 
-Parse each result into the schema. A dead lane is `reviewer_error`, not
-clean. Dedup by file + nearby lines + category (or doc + section for
-critique). Keep `found_by`. Write `$out_dir/findings.json`. Assemble
-`$out_dir/review.md` (or `critique.md`) from that JSON — no synthesis
-agent. The host reads summaries, never full transcripts.
+Parse into the schema. A dead lane is `reviewer_error`, not clean.
+Dedup by file + nearby lines + category (or doc + section for
+critique). Keep `found_by` as **model ids**. Write
+`$out_dir/findings.json`. Assemble `review.md` / `critique.md` from
+that JSON. The host reads summaries, never full transcripts.
 
 ## Max preflight
 
-From any host:
+From any harness:
 
 ```bash
 env -u ANTHROPIC_API_KEY claude -p --output-format text "/usage"
 ```
 
 Parse `Current session: N%` and `Current week (all models): N%`. If
-session ≥ 80% or week ≥ 80%, drop `review-opus` and `fable-deep` and say
-so. If `/usage` fails, keep Claude lanes until a 429, then disable all
-remaining Claude lanes for the rest of the run.
+session ≥ 80% or week ≥ 80%, drop opus 5 and fable 5 lanes and say so.
+If `/usage` fails, keep those lanes until a 429, then disable remaining
+Claude-model lanes for the rest of the run.
 
 ## Quorum
 
-A pass counts only if **at least two different labs** returned, including
-**at least one non-host lab**. Otherwise the pass is `incomplete`, not
-clean. Do not converge.
+A pass counts only if **at least two different models** returned, and
+**at least one is not the host harness's home model** (grok 4.6 on
+Grok, sol 5.6 on Codex, opus 5 / fable 5 on Claude, flash 3.7 on Agy).
+Otherwise the pass is `incomplete`. Do not converge.
 
 ## Code-review lanes (review-loop, review-pr)
 
 ### Generals (unbiased "review this PR")
 
-| Lane | Provider |
+| Lane | Model |
 |---|---|
-| `review-sol` | sol |
-| `review-grok` | grok |
-| `review-agy` | agy |
-| `review-opus` | opus |
+| `review-sol` | sol 5.6 high |
+| `review-grok` | grok 4.6 high |
+| `review-flash` | flash 3.7 high |
+| `review-opus` | opus 5 |
 
 No `review-fable`.
 
-### Composite specialists (one process per lab)
+### Composite specialists (one process per model)
 
-| Lane | Provider | Covers | Gate |
+| Lane | Model | Covers | Gate |
 |---|---|---|---|
-| `fable-deep` | fable | goal-eval **and** simplicity, one prompt | Skip on `<50` non-sensitive. Re-run if the PR description **or** behavior hunks changed. |
-| `agy-hygiene` | agy | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
-| `grok-special` | grok | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
-| `sol-special` | sol | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
+| `fable-deep` | fable 5 xhigh | goal-eval **and** simplicity, one prompt | Skip on `<50` non-sensitive. Re-run if the PR description **or** behavior hunks changed. |
+| `flash-hygiene` | flash 3.7 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
+| `grok-special` | grok 4.6 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
+| `sol-special` | sol 5.6 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 
 Sensitive = auth, secrets, payment/financial, on-chain, or migrations.
 **Sensitive always wins over size.**
@@ -132,18 +136,18 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-agy`. Add `agy-hygiene` if tests/comments/types are in the diff. Add `grok-special` only for the rust half if `*.rs`. No Opus, no Fable. |
-| `50–500` and not sensitive | Four generals + `fable-deep` + `agy-hygiene` + gated `grok-special` / `sol-special` (no edge-cases). |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `grok-special` only for the rust half if `*.rs`. No opus 5, no fable 5. |
+| `50–500` and not sensitive | Four generals + `fable-deep` + `flash-hygiene` + gated `grok-special` / `sol-special` (no edge-cases). |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
 
-Always: host **fix-verifiers** (one per applied fix; host only, never
-CLI) and `review-sol`, `review-grok`, `review-agy`.
+Always: host **fix-verifiers** (one per applied fix; host model only,
+never a foreign CLI) and `review-sol`, `review-grok`, `review-flash`.
 
 Conditionally:
 
-- `review-opus` only if the host is Claude (native).
+- `review-opus` only if the host harness is Claude (native opus 5).
 - `fable-deep` if the PR description or behavior hunks changed.
 - composites if their gate's files changed (`cmp` the filtered
   path-list, not a semantic "slice").
@@ -151,59 +155,61 @@ Conditionally:
 Formatter-only deltas skip the pass. Cap 4 passes. Never end on a fix.
 Convergence is a **lean** clean pass that also meets quorum.
 
-A high/critical finding originally raised by Opus or Fable is
-re-checked by that same lab once (one targeted prompt), or the lean
-generals are given that finding's text and told to verify the fix
-against it.
+A high/critical finding originally raised by opus 5 or fable 5 is
+re-checked by that same **model** once, or the lean generals are given
+that finding's text and told to verify the fix against it.
 
 ## Critique lanes (critique-loop)
 
-Generals: `review-sol`, `review-grok`, `review-agy`, `review-opus`
-(same skip rule as above on short docs).
+Generals: `review-sol`, `review-grok`, `review-flash`, `review-opus`
+(same skip rule on short docs).
 
-Fable: one `fable-deep` covering goal-evaluation **and** grounding
-(pass 1; re-run if the stated goal or cited sources changed).
+`fable-deep`: goal-evaluation **and** grounding (fable 5; pass 1;
+re-run if the stated goal or cited sources changed).
 
-Agy: one hygiene pass (feasibility, clarity, style).
+`flash-hygiene`: feasibility, clarity, style (flash 3.7).
 
-Grok: consistency + scope.
+`grok-special`: consistency + scope (grok 4.6).
 
-Sol: completeness (and broad is already its general).
+`sol-special`: completeness (sol 5.6; its general already covers
+broad).
 
 Decision-changing findings are always Discuss.
 
 ## Plan critics (implement-issue, plan-issue)
 
-Planner: Fable if Claude is reachable (native or `claude -p --model
-fable`); otherwise the host. Say which.
+Planner: fable 5 if the Claude harness is reachable (native child or
+`claude -p --model fable`); otherwise the host's current model. Say
+which.
 
-Critics, in parallel, one generalist each: Opus, Sol, Grok. Skip Agy.
-If Claude is unreachable, drop the Opus critic and say the plan used
-the portable tier.
+Critics, in parallel, one generalist each: opus 5, sol 5.6, grok 4.6.
+No flash 3.7. If Claude is unreachable, drop the opus 5 critic and
+label the run `portable`. If Claude is the host, label it `claude-host`.
 
-Label the result `claude-host` vs `portable` so runs are comparable.
-
-Implementer and fixer stay on the host (or a cheap same-host child).
+Implementer and fixer stay on the host model (or a cheap same-harness
+child).
 
 ## Shared prompt base (code review)
 
 Each general gets the review-loop base prompt (correctness, concurrency,
 security, conventions, maintainability, tests — no style nits).
-Specialist composites get that base plus their focus paragraphs,
-concatenated into **one** prompt per process.
+Specialist composites get that base plus their focus paragraphs in
+**one** prompt.
 
-Inspectors that used to be separate files (`test-inspector`,
-`idiomatic-rust-inspector`, …) are still those skill bodies, inlined
-into the composite prompt. Resolve them from
-`~/Github/dotagents/skills/<name>/SKILL.md`.
+Inspector skill bodies still live at
+`~/Github/dotagents/skills/<name>/SKILL.md` and are inlined into the
+composite.
 
 ## Hard rules
 
 1. Reports live on disk. The main session prints a two-line-per-finding
    summary and a path. Never pretty-print finding bodies into the host.
-2. Verifiers, fixer, prompt-builder, report assembler: host (or a
-   same-host child). Never CLI.
+2. Verifiers, fixer, prompt-builder, report assembler: host model (or a
+   same-harness child). Never a foreign CLI.
 3. The host does not add its own review findings except lane errors.
 4. `claude -p` is Max usage when logged in via claude.ai and no
    `ANTHROPIC_API_KEY` is set. Always `env -u ANTHROPIC_API_KEY`.
-5. Do not impersonate a dropped lab.
+5. Do not impersonate a dropped **model**.
+6. Never name a harness as if it were a model. Lanes are owned by
+   grok 4.6, sol 5.6, opus 5, fable 5, or flash 3.7 — not by
+   "Grok" / "Codex" / "Claude" / "Agy".

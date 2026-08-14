@@ -1,9 +1,10 @@
 ---
 name: review-loop
 description: >
-  Cross-review the current branch with a multi-lab panel (Opus, Sol, Grok,
-  Agy, Fable-deep), auto-fix findings, and re-review until clean. Use before
-  you submit something you wrote. Pass `stack` to walk the whole upstack.
+  Cross-review the current branch with a multi-model panel (opus 5,
+  sol 5.6, grok 4.6, flash 3.7, fable 5 deep), auto-fix findings, and
+  re-review until clean. Use before you submit something you wrote.
+  Pass `stack` to walk the whole upstack.
   If the PR grows too big, offer to split it. Group verified out-of-scope
   fixes under one Linear parent and implement them with implement-issue-stack.
 argument-hint: "[stack]"
@@ -14,12 +15,12 @@ allowed-tools: Bash(*), Read, Write, Edit
 
 Review → fix → lean re-review until a clean independent pass. Automatic
 by default. Read `~/Github/dotagents/skills/panel-runtime.md` first — it
-owns providers, wrappers, lanes, adaptive sizing, lean rounds, quorum,
+owns models, wrappers, lanes, adaptive sizing, lean rounds, quorum,
 and Max preflight. This file owns the branch loop around that panel.
 
-The loop is **guest-shaped**: it runs in Claude, Codex, Grok, or
-Antigravity. Fan out with this host's parallel primitive. Native lanes
-are isolated children pinned to the lab's model, not the babysitter.
+The loop is **guest-shaped**: it runs in any harness (claude, codex,
+grok, agy). Fan out with that host's parallel primitive. Native lanes
+are isolated children pinned to the **model**, not the babysitter.
 
 **Argument:** nothing = current branch only, no version-control
 mutation. `stack` = walk the upstack and `gt modify -a` per branch
@@ -81,7 +82,7 @@ git status --porcelain
 ```
 
 Dirty tree (single-branch, first pass): stop. Missing `gt`: stop.
-Missing a lab CLI: drop that lab's lanes and say so.
+Missing a model's CLI: drop every lane that needs that model and say so.
 
 Run Max preflight from panel-runtime (`claude -p "/usage"`).
 
@@ -203,7 +204,7 @@ mutate version control.
    re-review.
 8. Cap 4. Quorum required. Never end on a fix.
 9. Panel per panel-runtime. No second orchestrator. No impersonating a
-   dropped lab.
+   dropped model.
 10. Reports on disk. Host prints summaries only.
 11. Follow-ups: one parent, then `implement-issue-stack`.
 12. Never split without approval, a backup branch, and an empty
@@ -214,5 +215,5 @@ mutate version control.
 - All lanes error or quorum fails → stop, do not triage.
 - Clean pass + empty follow-up queue → done.
 - 4-pass cap → stop and report per-pass history.
-- Missing lab CLI → drop that lab, continue if quorum still holds.
+- Missing model CLI → drop those lanes, continue if quorum still holds.
 - Split top ≠ backup → stop, keep the backup, do not hand-patch.

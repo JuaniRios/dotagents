@@ -1,7 +1,7 @@
 ---
 name: critique-loop
 description: >
-  Cross-critique a plan, spec, ADR, or design doc with a multi-lab
+  Cross-critique a plan, spec, ADR, or design doc with a multi-model
   panel, auto-fix verified findings, and re-critique until clean. The
   document sibling of review-loop. Use on SPEC.md, ADRs, delivery
   plans, architecture docs — never on code diffs.
