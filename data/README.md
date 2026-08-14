@@ -10,3 +10,4 @@ that needs to persist something points here
 - `progress-tracking/reports/` — generated progress reports (gitignored)
 - `teach-log/` — durable `/teach` learning logs (gitignored)
 - `handoffs/` — `/handoff` summaries for a fresh session (gitignored)
+- `goal-loop/` — directory-scoped Stop-hook goal state (gitignored)

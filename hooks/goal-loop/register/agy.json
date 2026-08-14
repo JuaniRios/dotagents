@@ -1,0 +1,11 @@
+{
+  "goal-loop": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "~/Github/dotagents/hooks/goal-loop/check-goal.sh",
+        "timeout": 30
+      }
+    ]
+  }
+}

@@ -7,9 +7,13 @@
 # when the goal file is gone, the turn cap is exceeded, or the state is corrupt.
 # Any session without a goal file falls straight through to a normal stop.
 #
+# Works on Claude, Grok, Codex, and Agy. Output vocabulary differs only for
+# Agy (`decision: continue`); the others use Claude's `decision: block`.
+#
 # Intentionally keeps blocking across turns (a goal loop must) rather than
 # honoring stop_hook_active's "block once" convention. The runaway guard is the
-# explicit max_turns counter, not that flag.
+# explicit max_turns counter, not that flag. Grok still hard-caps a single
+# turn at 8 Stop continuations — the next user message starts a fresh count.
 
 set -uo pipefail
 
@@ -21,7 +25,20 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 command -v jq >/dev/null 2>&1 || exit 0
 
 input="$(cat)"
-cwd="$(printf '%s' "$input" | jq -r '.cwd // empty')"
+
+# Grok fires an extra observe-only Stop at session end; do not count it.
+stop_reason="$(printf '%s' "$input" | jq -r '.reason // empty')"
+if [ -n "$stop_reason" ] && [ "$stop_reason" != "end_turn" ]; then
+  exit 0
+fi
+
+# Agy already hit a harness-level hard stop — don't fight it.
+term="$(printf '%s' "$input" | jq -r '.terminationReason // empty')"
+case "$term" in
+  max_steps_exceeded|error) exit 0 ;;
+esac
+
+cwd="$(printf '%s' "$input" | jq -r '.cwd // .workspaceRoot // .workspacePaths[0] // empty')"
 [ -n "$cwd" ] || exit 0
 
 state_file="$(goal_state_file "$cwd")"
@@ -67,5 +84,10 @@ If you are genuinely blocked, state the blocker plainly, clear the goal, and sto
 EOF
 )"
 
-jq -n --arg reason "$reason" '{decision:"block", reason:$reason}'
+# Agy is the only harness that continues with decision=continue.
+if printf '%s' "$input" | jq -e 'has("workspacePaths") or has("terminationReason")' >/dev/null 2>&1; then
+  jq -n --arg reason "$reason" '{decision:"continue", reason:$reason}'
+else
+  jq -n --arg reason "$reason" '{decision:"block", reason:$reason}'
+fi
 exit 0

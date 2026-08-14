@@ -1,4 +1,5 @@
-# Mirror ~/Github/dotagents/skills into every harness's skill directory.
+# Mirror ~/Github/dotagents/skills into every harness's skill directory,
+# and register the shared goal-loop Stop hook on Grok, Codex, and Agy.
 #
 # Usage:
 #   nu ~/Github/dotagents/scripts/install-skills.nu
@@ -7,6 +8,8 @@
 # Each harness gets a per-entry symlink to skills/<name>. Stale links that
 # point at this repo (or leftover pre-unify skill trees) are removed.
 # Codex's .system link to ~/.codex/system-skills is preserved.
+# Claude's Stop hook stays in ~/.claude/settings.json (already pointed
+# at hooks/goal-loop/check-goal.sh).
 
 def skill-names [src: path]: nothing -> list<string> {
   ls $src
@@ -85,6 +88,93 @@ def prune-stale [dest_root: path, live: list<string>, src: path, dry: bool] {
   | ignore
 }
 
+def hook-script []: nothing -> string {
+  $env.HOME | path join "Github" "dotagents" "hooks" "goal-loop" "check-goal.sh"
+}
+
+def write-file [dest: path, content: string, dry: bool] {
+  if ($dest | path exists) {
+    let have = (open --raw $dest)
+    if $have == $content {
+      return "ok"
+    }
+  }
+  if $dry {
+    print $"would write ($dest)"
+    return "write"
+  }
+  mkdir ($dest | path dirname)
+  $content | save --force $dest
+  print $"wrote ($dest)"
+  "write"
+}
+
+def install-hooks [dry: bool] {
+  let script = (hook-script)
+  if not ($script | path exists) {
+    print $"note: missing ($script) — skip hook install"
+    return
+  }
+
+  # Grok: dedicated file, safe to overwrite.
+  let grok = ($env.HOME | path join ".grok" "hooks" "goal-loop.json")
+  let grok_json = ({
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            { type: "command", command: $script, timeout: 30 }
+          ]
+        }
+      ]
+    }
+  } | to json)
+  write-file $grok $grok_json $dry
+
+  # Codex: write hooks.json if missing or already ours; otherwise warn.
+  let codex = ($env.HOME | path join ".codex" "hooks.json")
+  let codex_json = ({
+    description: "Shared goal-loop Stop hook from ~/Github/dotagents."
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command"
+              command: $script
+              timeout: 30
+              statusMessage: "Checking goal loop"
+            }
+          ]
+        }
+      ]
+    }
+  } | to json)
+  if ($codex | path exists) and not ((open --raw $codex) | str contains "goal-loop/check-goal.sh") {
+    print $"note: ($codex) exists without the goal-loop hook — add Stop -> ($script) by hand, then /hooks to trust it"
+  } else {
+    let result = (write-file $codex $codex_json $dry)
+    if (not $dry) and ($result == "write") {
+      print "note: Codex must trust the hook once — run /hooks in a Codex session"
+    }
+  }
+
+  # Agy: global customization root. Dedicated top-level key.
+  let agy = ($env.HOME | path join ".gemini" "config" "hooks.json")
+  let agy_json = ({
+    "goal-loop": {
+      Stop: [
+        { type: "command", command: $script, timeout: 30 }
+      ]
+    }
+  } | to json)
+  if ($agy | path exists) and not ((open --raw $agy) | str contains "goal-loop/check-goal.sh") {
+    print $"note: ($agy) exists without the goal-loop hook — merge the goal-loop Stop entry by hand"
+  } else {
+    write-file $agy $agy_json $dry
+  }
+}
+
 def main [--dry-run] {
   let src = ($env.HOME | path join "Github" "dotagents" "skills")
   if not ($src | path exists) {
@@ -128,6 +218,8 @@ def main [--dry-run] {
       print $"note: add to ($grok_cfg):\n[skills]\npaths = [\"~/Github/dotagents/skills\"]"
     }
   }
+
+  install-hooks $dry_run
 
   print $"($names | length) skills -> ($dests | length) harness dirs"
 }

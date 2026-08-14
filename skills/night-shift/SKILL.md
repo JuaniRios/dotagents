@@ -57,14 +57,16 @@ hook matches against):
   <N>   # max turns — the hard runaway cap (e.g. 40)
 ```
 
-This writes a goal state file scoped to the current directory. A global `Stop`
-hook (`check-goal.sh`) then blocks the session from stopping after every turn,
-re-feeding the condition as your next directive — until you clear the goal or
-the turn cap is hit. There is **no separate model evaluator**: *you* self-audit
-completion. Surface your verification (test/check output) in your turns so the
-audit is grounded and visible. When the condition genuinely holds and the log
-is updated — or you are truly blocked — release the loop and let the session
-stop:
+This writes a goal state file scoped to the current directory
+(`~/Github/dotagents/data/goal-loop/`). A global `Stop` hook
+(`check-goal.sh`) is registered on Claude, Grok, Codex, and Agy; it
+blocks the session from stopping after every turn, re-feeding the
+condition as your next directive — until you clear the goal or the
+turn cap is hit. There is **no separate model evaluator**: *you*
+self-audit completion. Surface your verification (test/check output)
+in your turns so the audit is grounded and visible. When the condition
+genuinely holds and the log is updated — or you are truly blocked —
+release the loop and let the session stop:
 
 ```bash
 ~/Github/dotagents/hooks/goal-loop/goal-clear.sh
@@ -72,6 +74,17 @@ stop:
 
 After arming, just keep working: the loop engages the moment you would
 otherwise stop, and the hook's injected directive carries the objective forward.
+
+Harness notes:
+
+- **Grok** hard-caps a Stop gate at 8 continuations in one turn, then
+  forces the turn to end (the next user message starts a fresh count).
+  For a long unattended run on Grok, also arm Grok's native `/goal`
+  with the same condition, or run night-shift in Claude.
+- **Codex** must trust the hook once (`/hooks` in a Codex session) or
+  the gate is silently skipped.
+- **Agy** continues with a different Stop vocabulary; the shared script
+  already emits that shape.
 
 ## Operating rules while the loop runs
 

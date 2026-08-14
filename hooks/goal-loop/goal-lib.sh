@@ -9,7 +9,7 @@
 # which a running agent cannot observe.
 
 goal_state_dir() {
-  printf '%s/.claude/goal-loop/state' "$HOME"
+  printf '%s/Github/dotagents/data/goal-loop' "$HOME"
 }
 
 # Deterministic per-directory key so setter and reader resolve the same file.

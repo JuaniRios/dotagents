@@ -23,5 +23,7 @@ Multi-lab orchestration (`review-loop`, `review-pr`, `critique-loop`,
 `implement-issue`, `plan-issue`) follows `skills/panel-runtime.md`.
 
 Shared runtime files live in `data/` (reports, teach logs, handoffs,
-skill state) and `hooks/` (goal-loop). Skills persist there — never
-under a harness home dir. All changes land on `main`.
+skill state, goal-loop) and `hooks/` (goal-loop Stop hook). Skills
+persist there — never under a harness home dir. The installer also
+registers that Stop hook on Grok, Codex, and Agy (Claude is already
+in `~/.claude/settings.json`). All changes land on `main`.
