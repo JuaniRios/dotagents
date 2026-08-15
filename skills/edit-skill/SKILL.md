@@ -35,7 +35,7 @@ confirmation, then edit.
    `~/Github/dotagents/skills/panel-runtime.md` rather than forking a
    new catalogue.
 4. Summarize the change. Iterate until the user is happy.
-5. On `main`:
+5. On the remote default branch (`main` in this repository):
 
 ```bash
 cd ~/Github/dotagents
@@ -43,7 +43,7 @@ git checkout main
 git status --short
 git add skills/<name>/SKILL.md   # explicit paths only
 git commit -m "refactor: update /<name> skill"
-git push
+git push origin main
 ```
 
 Stage only what you edited. This repo often has unrelated dirty files.
@@ -52,6 +52,8 @@ Stage only what you edited. This repo often has unrelated dirty files.
 
 1. Edit files in `~/Github/dotagents/skills/`, never in a harness dir.
 2. Do not delete a skill without explicit confirmation.
-3. Personal repo: `main` only.
+3. Personal repo: edit and commit on the remote default branch only (`main`).
 4. Show the change before committing.
-5. Push after commit.
+5. Always push the commit to `origin main` in the same session. A skill edit is
+   not complete while it exists only locally. If the push fails, report the
+   failure instead of claiming completion.
