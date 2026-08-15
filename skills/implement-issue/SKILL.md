@@ -2,9 +2,8 @@
 name: implement-issue
 description: >
   Take a Linear issue from link to finished implementation — skeleton
-  Graphite PR, cross-link Linear↔PR, plan (fable 5 if Claude is
-  reachable, else the host model) critiqued by opus 5 + sol 5.6 +
-  grok 4.6, implement via a closing child,
+  Graphite PR, cross-link Linear↔PR, proportionate plan and critique,
+  implement via a closing child,
   review via review-loop, submit, CI green. Use when the user wants an
   issue implemented end to end.
 argument-hint: "<issue-link-or-number>"
@@ -46,13 +45,23 @@ and checkpoints.
 If a Linear document titled `<ID> Implementation Plan` exists, use it
 (confirm with the user) and skip machine planning.
 
-Otherwise, per panel-runtime **Plan critics**:
+Otherwise, first classify the change:
 
-- Planner: fable 5 if the Claude harness is reachable, else the host
-  model. Write `.tmp/implement-issue/<id>-plan.md`.
-- Critics in parallel: opus 5, sol 5.6, grok 4.6. Label the run
-  `claude-host` or `portable`.
-- Incorporate critique. Wait for user approval before implementing.
+- **Trivial fast path**: one obvious, low-risk edit such as removing or
+  updating an existing config or documentation entry. It must change no logic,
+  schema, secrets, migration, dependency, public contract, or specified
+  behavior, and its verification must be direct. The host writes a concise
+  plan to `.tmp/implement-issue/<id>-plan.md`; skip the planner, critics, and a
+  separate approval checkpoint because the user's implementation request
+  already authorizes this plan. If scope expands or investigation finds hidden
+  coupling, leave the fast path before editing.
+- **Standard path**: every other change. Per panel-runtime **Plan critics**:
+
+  - Planner: fable 5 if the Claude harness is reachable, else the host
+    model. Write `.tmp/implement-issue/<id>-plan.md`.
+  - Critics in parallel: opus 5, sol 5.6, grok 4.6. Label the run
+    `claude-host` or `portable`.
+  - Incorporate critique. Wait for user approval before implementing.
 
 ## 6. Implement
 
@@ -81,8 +90,9 @@ Issue URL, PR URL, CI, one-line what shipped, plan path.
 ## Hard rules
 
 1. Version control via `gt`.
-2. No implementation before plan approval (attached plans still get a
-   quick confirm).
+2. No standard-path implementation before plan approval (attached plans still
+   get a quick confirm). Trivial fast-path plans are auto-approved by the
+   implementation request.
 3. Linear ↔ PR linked both ways.
 4. Panel and critics per panel-runtime. Never impersonate a dropped
    model.
