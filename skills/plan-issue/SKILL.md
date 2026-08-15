@@ -1,11 +1,12 @@
 ---
 name: plan-issue
 description: >
-  Research a Linear issue and publish a fable 5-drafted (or
-  host-model-drafted) implementation plan as a Linear document,
-  critiqued by opus 5 + sol 5.6 + grok 4.6. Use when the user asks to
-  plan an issue or prepare it for
-  implement-issue. Read-only on the repo.
+  Research a complex Linear issue and publish a multi-model implementation
+  plan as a Linear document, critiqued by opus 5 + sol 5.6 + grok 4.6. Use
+  only when the issue needs substantial research, architectural decisions,
+  cross-component coordination, or non-trivial sequencing. Do not use for
+  simple, localized, or mechanically obvious changes such as removing one
+  config entry. Read-only on the repo.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write
 ---
@@ -19,6 +20,29 @@ contract for `implement-issue`). Read
 
 Never edit code or mutate git. The Linear document is the only side
 effect.
+
+## Complexity gate
+
+Use this skill only when a multi-model plan would materially reduce execution
+risk. At least one of these must apply:
+
+- The issue spans multiple components or repositories with meaningful coupling.
+- The implementation requires an architectural or domain-model decision.
+- Several plausible approaches need research and comparison.
+- The work has dependent phases, migration risks, or difficult rollback needs.
+- The issue is ambiguous enough that implementation should wait for explicit
+  design sign-off.
+
+Do not use this skill for small, localized work with an obvious implementation,
+including config entry changes, asset additions or removals, straightforward
+dependency bumps, copy edits, narrow renames, or isolated one-file fixes. Handle
+those directly with a proportionate inline plan or the trivial fast path in
+`implement-issue`.
+
+If the user explicitly invokes `plan-issue` for a trivial issue, explain that a
+multi-model plan would add overhead without reducing risk and offer a concise
+inline plan instead. Proceed with this skill only if the user then explicitly
+insists on the full multi-model plan.
 
 ## 1. Read the issue
 
