@@ -73,15 +73,21 @@ Large plans (>~6 tasks): two implementer children by task group.
 
 ## 7. Review and describe
 
-Run `review-loop` (current branch, no `stack`) per that skill and
-panel-runtime. Ambiguous findings: collect, don't mid-loop ask. After
+For the trivial fast path: self-review the parent-aware diff, run only the
+direct checks named in the plan, then update the PR body. Skip `review-loop`
+and external reviewers. Escalate to the standard path if review exposes hidden
+coupling or operational risk.
+
+For the standard path: run `review-loop` (current branch, no `stack`) per that
+skill and panel-runtime. Ambiguous findings: collect, don't mid-loop ask. After
 convergence: `gt modify -a`, then `pr-description` for the real body.
 
 ## 8. Submit and CI
 
-`gt ss`. Wait for the GitHub run whose `headSha` is this HEAD. Red →
-`ci-fix`, resubmit. No run (6th+ in a Graphite stack) → local
-`nix run .#ci`. Cap a few rounds.
+`gt ss`. Wait for the GitHub run whose `headSha` is this HEAD. Red → `ci-fix`,
+resubmit. No run (6th+ in a Graphite stack) → local `nix run .#ci`. Cap a few
+rounds. On the trivial fast path, do not run full local CI before submission;
+the direct checks plus GitHub CI are the gate.
 
 ## 9. Report
 
