@@ -1,7 +1,7 @@
 ---
 name: simplicity-inspector
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(awk:*), Bash(test:*), Read, Grep, Glob
-description: Lightweight review that asks whether this is the simplest solution that works. Flags over-built designs, missed lower-hanging fixes, and code that can be deleted, and reports the line budget with a concrete smaller alternative.
+description: Lightweight review that asks whether this is the simplest solution that works. Use only when the user explicitly requests this inspector or a review workflow explicitly selects its simplicity lane; do not auto-trigger for a general review. Flags over-built designs, missed lower-hanging fixes, and code that can be deleted, and reports the line budget with a concrete smaller alternative.
 argument-hint: "[pr-number | pr-url]"
 ---
 

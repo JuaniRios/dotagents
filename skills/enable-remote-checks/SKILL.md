@@ -1,7 +1,7 @@
 ---
 name: enable-remote-checks
 allowed-tools: Bash(gt:*), Bash(gh:*), Bash(git:*), Bash(cargo:*), Read, Edit, Write, Grep, Glob
-description: Offload heavy verification to remote CI instead of running it locally — amend, submit, then poll the CI run until it finishes.
+description: Offload heavy verification to remote CI instead of running it locally. Use only when the user explicitly asks to enable remote checks, avoid local CI, or submit and wait for remote CI; do not auto-trigger for ordinary verification or CI status questions. Amends, submits, and polls the CI run until it finishes.
 ---
 
 Switch this session into **remote-checks mode**: stop burning local machine time

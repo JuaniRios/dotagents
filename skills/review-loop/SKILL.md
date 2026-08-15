@@ -3,8 +3,11 @@ name: review-loop
 description: >
   Cross-review the current branch with a multi-model panel (opus 5,
   sol 5.6, grok 4.6, flash 3.7, fable 5 deep), auto-fix findings, and
-  re-review until clean. Use before you submit something you wrote.
-  Pass `stack` to walk the whole upstack.
+  re-review until clean. Use only when the user explicitly asks for
+  review-loop, a multi-model review, or an applicable complex implementation
+  workflow explicitly requires it. Do not auto-trigger for ordinary review,
+  self-review, submission, or trivial/localized changes. Pass `stack` to walk
+  the whole upstack.
   If the PR grows too big, offer to split it. Group verified out-of-scope
   fixes under one Linear parent and implement them with implement-issue-stack.
 argument-hint: "[stack]"

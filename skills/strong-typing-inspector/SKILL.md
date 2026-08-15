@@ -1,7 +1,7 @@
 ---
 name: strong-typing-inspector
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(test:*), Bash(date:*), Read, Grep, Glob
-description: Lightweight review — flags primitives used where a domain type already exists (e.g. String for a USD field when Usd exists) and missed newtype opportunities.
+description: Lightweight review of domain typing. Use only when the user explicitly requests this inspector or a review workflow explicitly selects its strong-typing lane; do not auto-trigger for a general review. Flags primitives used where a domain type already exists and missed newtype opportunities.
 argument-hint: "[pr-number | pr-url]"
 ---
 

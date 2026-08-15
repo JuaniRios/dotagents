@@ -1,7 +1,7 @@
 ---
 name: test-inspector
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(wc:*), Bash(test:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Read, Grep, Glob
-description: Review tests in a PR for quality — flags useless tests, over-mocking, implementation-detail coupling, and tests that don't verify real behavior.
+description: Review tests in a PR for quality. Use only when the user explicitly requests this inspector or a review workflow explicitly selects its test-quality lane; do not auto-trigger for a general review or whenever tests change. Flags useless tests, over-mocking, implementation-detail coupling, and tests that do not verify real behavior.
 argument-hint: "[pr-number | pr-url]"
 ---
 

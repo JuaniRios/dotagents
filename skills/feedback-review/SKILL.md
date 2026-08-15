@@ -1,7 +1,7 @@
 ---
 name: feedback-review
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(jq:*), Bash(mktemp:*), Bash(rm:*), Bash(wc:*), Bash(date:*), Bash(test:*), Bash(linear:*), Bash(cat:*), Bash(python3:*), Read, Edit, Write, Grep, Glob
-description: "Triage and address review feedback on the current branch's PR. Use whenever CodeRabbit or a human reviewer has left comments, or the user says address the review, handle the feedback, respond to the comments, or CodeRabbit found things. Summarizes each comment (CodeRabbit inline, out-of-diff, and human) with severity and an opinion, asks which to implement, fixes those, drafts replies for the rest, and resolves every human thread it answers."
+description: "Triage and address review feedback on the current branch's PR. Use only when the user asks to address, handle, or respond to review feedback, or an active PR workflow explicitly requires feedback resolution. Do not auto-trigger merely because CodeRabbit or a human left comments, or when the user only asks to inspect or summarize them. Summarizes each unresolved comment with severity and an opinion, asks which to implement, fixes selected findings, drafts replies, and resolves answered human threads."
 ---
 
 Triage and address review feedback on the current branch's PR. Pulls all

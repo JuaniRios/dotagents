@@ -1,7 +1,7 @@
 ---
 name: external-contract-inspector
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(test:*), Bash(date:*), Read, Grep, Glob
-description: Lightweight review — flags assumptions the diff makes about an external API/contract (types, units, encoding, field presence, error shapes) that aren't backed by cited documentation or a test encoding a real response.
+description: Lightweight review of external-contract assumptions. Use only when the user explicitly requests this inspector or a review workflow explicitly selects its external-contract lane; do not auto-trigger merely because a task touches an API, SDK, or contract. Flags assumptions about types, units, encoding, field presence, and error shapes that lack authoritative documentation or a real-response test.
 argument-hint: "[pr-number | pr-url]"
 ---
 

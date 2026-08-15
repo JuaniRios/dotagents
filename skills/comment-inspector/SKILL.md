@@ -1,7 +1,7 @@
 ---
 name: comment-inspector
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(rg:*), Bash(grep:*), Bash(wc:*), Bash(awk:*), Bash(test:*), Read, Grep, Glob
-description: Lightweight review that flags comment slop. Catches ticket IDs, change history, narration, importance labels, and test comments restating the test name, and reports the comment-to-code ratio.
+description: Lightweight review that flags comment slop. Use only when the user explicitly requests this inspector or a review workflow explicitly selects its comment lane; do not auto-trigger for a general review. Catches ticket IDs, change history, narration, importance labels, and test comments restating the test name, and reports the comment-to-code ratio.
 argument-hint: "[pr-number | pr-url]"
 ---
 

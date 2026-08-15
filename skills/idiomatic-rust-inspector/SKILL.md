@@ -1,7 +1,7 @@
 ---
 name: idiomatic-rust-inspector
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(wc:*), Bash(test:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Read, Grep, Glob
-description: Review Rust code in a PR for idiomatic patterns — flags non-idiomatic constructs, missed std library usage, ownership anti-patterns, and code that fights the borrow checker instead of working with it.
+description: Review Rust code in a PR for idiomatic patterns. Use only when the user explicitly requests this inspector or a review workflow explicitly selects its Rust-idiom lane; do not auto-trigger for a general Rust task or review. Flags non-idiomatic constructs, missed standard-library usage, ownership anti-patterns, and code that fights the borrow checker.
 argument-hint: "[pr-number | pr-url]"
 ---
 

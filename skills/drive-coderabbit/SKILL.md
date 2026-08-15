@@ -1,7 +1,7 @@
 ---
 name: drive-coderabbit
 allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(python3:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(cat:*), Bash(sleep:*), Bash(seq:*), Bash(cargo:*), Bash(grep:*), Bash(wc:*), Read, Edit, Write, Grep, Glob
-description: Drive CodeRabbit across an entire graphite stack in parallel — comment "@coderabbitai full review" on every PR, wait for each review (auto-retrying through rate limits), then autonomously address each PR's findings with feedback-review's judgment and amend the stack.
+description: Drive CodeRabbit across an entire Graphite stack in parallel. Use only when the user explicitly asks to run or drive CodeRabbit across the stack; do not auto-trigger from a CodeRabbit mention, an ordinary review request, or existing bot comments. Requests a full review on every PR, waits through rate limits, then addresses findings and amends the stack.
 argument-hint: [current]
 ---
 
