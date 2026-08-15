@@ -132,7 +132,7 @@ def install-hooks [dry: bool] {
   write-file $grok $grok_json $dry
 
   # Codex: write hooks.json if missing or already ours; otherwise warn.
-  let codex = ($env.HOME | path join ".codex" "hooks.json")
+  # ~/.codex-2 is the second ChatGPT account (ccxx / default `codex`).
   let codex_json = ({
     description: "Shared goal-loop Stop hook from ~/Github/dotagents."
     hooks: {
@@ -150,12 +150,15 @@ def install-hooks [dry: bool] {
       ]
     }
   } | to json)
-  if ($codex | path exists) and not ((open --raw $codex) | str contains "goal-loop/check-goal.sh") {
-    print $"note: ($codex) exists without the goal-loop hook — add Stop -> ($script) by hand, then /hooks to trust it"
-  } else {
-    let result = (write-file $codex $codex_json $dry)
-    if (not $dry) and ($result == "write") {
-      print "note: Codex must trust the hook once — run /hooks in a Codex session"
+  for home_name in [".codex" ".codex-2"] {
+    let codex = ($env.HOME | path join $home_name "hooks.json")
+    if ($codex | path exists) and not ((open --raw $codex) | str contains "goal-loop/check-goal.sh") {
+      print $"note: ($codex) exists without the goal-loop hook — add Stop -> ($script) by hand, then /hooks to trust it"
+    } else {
+      let result = (write-file $codex $codex_json $dry)
+      if (not $dry) and ($result == "write") {
+        print $"note: Codex must trust the hook once — run /hooks in a ($home_name) session"
+      }
     }
   }
 
@@ -184,6 +187,7 @@ def main [--dry-run] {
   let dests = [
     ($env.HOME | path join ".claude" "skills")
     ($env.HOME | path join ".codex" "skills")
+    ($env.HOME | path join ".codex-2" "skills")
     ($env.HOME | path join ".grok" "skills")
     ($env.HOME | path join ".gemini" "config" "skills")
     ($env.HOME | path join ".gemini" "antigravity-cli" "skills")
@@ -199,14 +203,17 @@ def main [--dry-run] {
     prune-stale $dest $names $src $dry_run
   }
 
-  # Codex ships system skills next to user skills.
+  # Codex ships system skills next to user skills. The second account
+  # (CODEX_HOME=~/.codex-2) reuses the copy under ~/.codex.
   let system_src = ($env.HOME | path join ".codex" "system-skills")
-  let system_dst = ($env.HOME | path join ".codex" "skills" ".system")
-  if ($system_src | path exists) and not ($system_dst | path exists) {
-    if $dry_run {
-      print $"would link ($system_dst) -> ($system_src)"
-    } else {
-      ^ln -s $system_src $system_dst
+  for home_name in [".codex" ".codex-2"] {
+    let system_dst = ($env.HOME | path join $home_name "skills" ".system")
+    if ($system_src | path exists) and not ($system_dst | path exists) {
+      if $dry_run {
+        print $"would link ($system_dst) -> ($system_src)"
+      } else {
+        ^ln -s $system_src $system_dst
+      }
     }
   }
 
