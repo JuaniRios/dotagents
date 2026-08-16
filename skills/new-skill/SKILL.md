@@ -14,6 +14,10 @@ Creates one agent-neutral skill in `~/Github/dotagents/skills/<name>/`.
 Then runs `scripts/install-skills.nu` so Claude, Codex, Grok, and
 Antigravity can load it.
 
+Skill maintenance in `~/Github/dotagents` is an explicit exception to the
+`graphite` skill. Do not invoke Graphite, initialize it, or run any `gt` command
+for this workflow. Use direct Git on `main` exactly as described below.
+
 ## Architecture
 
 ```
@@ -64,3 +68,4 @@ git push
 3. Show the draft before writing.
 4. Run the install script after writing.
 5. Push after commit.
+6. Never use Graphite for skill maintenance in `~/Github/dotagents`.

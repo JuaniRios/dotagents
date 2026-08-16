@@ -18,6 +18,10 @@ existing symlink.
 
 If the request is to create a skill, stop and use `new-skill`.
 
+Skill maintenance in `~/Github/dotagents` is an explicit exception to the
+`graphite` skill. Do not invoke Graphite, initialize it, or run any `gt` command
+for this workflow. Use direct Git on `main` exactly as described below.
+
 ## Improve mode
 
 `/edit-skill improve` with no other argument: find the last skill that
@@ -57,3 +61,4 @@ Stage only what you edited. This repo often has unrelated dirty files.
 5. Always push the commit to `origin main` in the same session. A skill edit is
    not complete while it exists only locally. If the push fails, report the
    failure instead of claiming completion.
+6. Never use Graphite for skill maintenance in `~/Github/dotagents`.

@@ -1,6 +1,6 @@
 ---
 name: graphite
-description: Use for ANY git, branch, commit, rebase, merge, push, pull, stack, PR, or version-control operation. Graphite (`gt`) is the authoritative tool for mutating version-control state in this user's repos — never use raw `git` for commits, branches, rebases, amends, or pushes. Use when the user says commit, push, branch, rebase, amend, stack, submit PR, sync, restack, check out branch, create PR, update PR, or any similar phrasing.
+description: Use for git, branch, commit, rebase, merge, push, pull, stack, PR, or version-control operations, except dotagents skill maintenance governed by edit-skill or new-skill. Graphite (`gt`) is the authoritative tool for mutating version-control state in the user's other repos. Use when the user says commit, push, branch, rebase, amend, stack, submit PR, sync, restack, check out branch, create PR, update PR, or similar.
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*)
 ---
 
@@ -9,11 +9,14 @@ allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*)
 **Read this before touching version control.** This user uses Graphite stacked
 PRs. `gt` wraps git, preserves stack metadata, and keeps parent/child branches
 consistent through rebases. Using raw `git` for mutations silently breaks the
-stack.
+stack. The explicit exception is skill maintenance in `~/Github/dotagents`,
+which follows the direct-Git-on-`main` workflow in `edit-skill` or `new-skill`.
+Do not initialize or invoke Graphite there.
 
 ## The Core Rule
 
-> **Never use `git` to mutate state. Always use `gt`.**
+> **Outside the dotagents skill-maintenance exception, never use `git` to
+> mutate state. Always use `gt`.**
 
 | Task                                  | Correct                   | Wrong                  |
 | ------------------------------------- | ------------------------- | ---------------------- |
@@ -44,9 +47,13 @@ is fine (and expected):
 - `git stash list` / `git stash show`
 - `git merge-base`, `git rev-parse`
 
-**Never** run: `git commit`, `git commit --amend`, `git checkout -b`, `git
-rebase`, `git reset --hard`, `git push`, `git pull`, `git merge`, `git cherry-pick`,
-`git branch -D`. Use the `gt` equivalent.
+For skill maintenance in `~/Github/dotagents`, follow `edit-skill` or
+`new-skill` instead: use direct Git on `main`, including commit and push, and do
+not run `gt`.
+
+Outside that exception, **never** run: `git commit`, `git commit --amend`, `git
+checkout -b`, `git rebase`, `git reset --hard`, `git push`, `git pull`, `git
+merge`, `git cherry-pick`, `git branch -D`. Use the `gt` equivalent.
 
 ## Command reference (grouped by workflow)
 
@@ -186,7 +193,8 @@ Example: `gt submit --stack --no-interactive --no-edit-description`
 ## Hard rules
 
 1. Never run `git commit`, `git push`, `git rebase`, or `git checkout -b` in a
-   graphite-managed repo.
+   graphite-managed repo, except for the direct-Git dotagents skill-maintenance
+   workflow defined by `edit-skill` and `new-skill`.
 2. Always diff a stacked branch against `gt parent`, never against `main`.
 3. When a `gt` operation conflicts, use `gt continue`/`gt abort`, never the git
    equivalents.
