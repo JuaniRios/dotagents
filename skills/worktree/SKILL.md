@@ -1,21 +1,21 @@
 ---
 name: worktree
 allowed-tools: Bash(git:*), Bash(gt:*), Bash(rm:*), Bash(mkdir:*), Bash(basename:*), Bash(ls:*), Bash(test:*), Bash(cat:*), Bash(wc:*), Bash(shuf:*), Bash(printf:*), Bash(direnv:*), Read
-description: Create or remove a git worktree for the current repo. Creates worktrees in ../<repo>-worktrees/<adjective-noun> detached at trunk, with project setup (direnv, sqlx, graphite). Use /worktree to create, /worktree remove <name> to delete.
+description: Create or remove a git worktree for the current repo. Creates worktrees in the main repo's git-excluded .worktrees/<adjective-noun> directory, detached at trunk, with project setup (direnv, sqlx, graphite). Use /worktree to create, /worktree remove <name> to delete.
 argument-hint: [remove <name> | list | detach-all]
 ---
 
 # Worktree — fast parallel working copies
 
 Create or remove git worktrees for the current repo. Worktrees land in a
-sibling directory alongside the repo, with memorable random names.
+git-excluded `.worktrees/` directory inside the main repo, with memorable
+random names.
 
 ## Layout
 
 ```
-~/Github/
-  st0x.liquidity/                    # main repo
-  st0x.liquidity-worktrees/          # worktree container
+~/Github/st0x.liquidity/             # main repo
+  .worktrees/                        # git-excluded worktree container
     curious-banana/                  # a worktree
     bold-octopus/                    # another worktree
 ```
@@ -32,9 +32,9 @@ Parse the user's arguments:
 ## Step 1 — Resolve repo info
 
 ```bash
-repo_root=$(git rev-parse --show-toplevel)
-repo_name=$(basename "$repo_root")
-worktree_dir="$(dirname "$repo_root")/${repo_name}-worktrees"
+git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+repo_root=$(dirname "$git_common_dir")
+worktree_dir="$repo_root/.worktrees"
 trunk=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
 if [ -z "$trunk" ]; then
   # Fallback: check for main or master
@@ -48,6 +48,10 @@ if [ -z "$trunk" ]; then
 fi
 trunk_sha=$(git rev-parse "origin/$trunk")
 ```
+
+Resolve the main repo through the common Git directory so invoking this skill
+from an existing linked worktree still places new worktrees under the main
+checkout.
 
 ## Step 2 — Generate a memorable name
 
@@ -70,8 +74,16 @@ If the name already exists (unlikely), regenerate once.
 
 ```bash
 mkdir -p "$worktree_dir"
+if ! git -C "$repo_root" check-ignore --quiet .worktrees; then
+  printf '\n.worktrees/\n' >> "$git_common_dir/info/exclude"
+fi
 git worktree add --detach "$wt_path" "$trunk_sha"
 ```
+
+Use the repository-local `.git/info/exclude`, not the tracked `.gitignore`, so
+creating worktrees does not alter the project. The ignore check prevents
+duplicate entries and accepts an existing `.gitignore` rule if the project
+already has one.
 
 Print the name and path clearly:
 
@@ -183,9 +195,9 @@ When the user's arguments starts with `remove`:
 2. Resolve the path:
 
    ```bash
-   repo_root=$(git rev-parse --show-toplevel)
-   repo_name=$(basename "$repo_root")
-   worktree_dir="$(dirname "$repo_root")/${repo_name}-worktrees"
+   git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+   repo_root=$(dirname "$git_common_dir")
+   worktree_dir="$repo_root/.worktrees"
    wt_path="$worktree_dir/<name>"
    ```
 
@@ -216,9 +228,9 @@ When the user's arguments starts with `remove`:
 When the user's arguments is `list`:
 
 ```bash
-repo_root=$(git rev-parse --show-toplevel)
-repo_name=$(basename "$repo_root")
-worktree_dir="$(dirname "$repo_root")/${repo_name}-worktrees"
+git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+repo_root=$(dirname "$git_common_dir")
+worktree_dir="$repo_root/.worktrees"
 
 echo "Worktrees in $worktree_dir:"
 if [ -d "$worktree_dir" ]; then
@@ -313,8 +325,8 @@ When the user's arguments is `detach-all`:
 
 1. Always create worktrees detached at trunk — never on a branch.
 2. Always use `--reference` for submodule init to avoid network fetches.
-3. Never remove a worktree without verifying the path is inside the
-   expected `-worktrees/` directory — prevent accidental `rm -rf` of
+3. Never remove a worktree without verifying the path is inside the main
+   repo's expected `.worktrees/` directory — prevent accidental `rm -rf` of
    the main repo.
 4. If `git worktree remove --force` fails and `rm -rf` is needed, ask
    the user first.
