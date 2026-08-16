@@ -1,15 +1,22 @@
 ---
 name: worktree
-allowed-tools: Bash(git:*), Bash(gt:*), Bash(rm:*), Bash(mkdir:*), Bash(basename:*), Bash(ls:*), Bash(test:*), Bash(cat:*), Bash(wc:*), Bash(shuf:*), Bash(printf:*), Bash(direnv:*), Read
-description: Create or remove a git worktree for the current repo. Creates worktrees in the main repo's git-excluded .worktrees/<adjective-noun> directory, detached at trunk, with project setup (direnv, sqlx, graphite). Use /worktree to create, /worktree remove <name> to delete.
-argument-hint: [remove <name> | list | detach-all]
+allowed-tools: Bash(wt:*), Bash(git:*), Bash(gt:*), Bash(nix:*), Bash(sqlx:*), Bash(jq:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(tr:*), Bash(test:*), Bash(wc:*), Bash(printf:*), Bash(command:*), Bash(dirname:*), Bash(echo:*), Bash(direnv:*), Read
+description: Create, list, or remove branch-backed worktrees with Worktrunk (`wt`). Worktrees use the configured path inside the primary repo at .worktrees/<branch>, start from current remote trunk, and receive project setup (submodules, direnv, sqlx, Graphite). Use /worktree to create, /worktree remove <name> to delete, or /worktree list.
+argument-hint: [remove <name> | list]
 ---
 
-# Worktree — fast parallel working copies
+# Worktree — Worktrunk-managed parallel copies
 
-Create or remove git worktrees for the current repo. Worktrees land in a
-git-excluded `.worktrees/` directory inside the main repo, with memorable
-random names.
+Use Worktrunk (`wt`) as the authority for creating, listing, and removing git
+worktrees. The user configuration sets:
+
+```toml
+worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"
+```
+
+Therefore every linked checkout belongs under the primary repository's
+`.worktrees/` directory. Do not duplicate Worktrunk's path calculation or use
+`git worktree add/remove` directly.
 
 ## Layout
 
@@ -24,39 +31,37 @@ random names.
 
 Parse the user's arguments:
 
-- **Empty** or missing: create a new worktree (step 1).
-- **`remove <name>`**: remove the named worktree (step 5).
-- **`list`**: list existing worktrees (step 6).
-- **`detach-all`**: detach all worktrees from their branches (step 7).
+- **Empty** or missing: create a new worktree.
+- **`remove <name>`**: remove the named worktree through `wt`.
+- **`list`**: list worktrees through `wt`.
 
-## Step 1 — Resolve repo info
+## Step 1 — Verify Worktrunk and resolve the primary repo
 
 ```bash
+command -v wt >/dev/null || { echo "Worktrunk (wt) is not installed"; exit 1; }
 git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 repo_root=$(dirname "$git_common_dir")
-worktree_dir="$repo_root/.worktrees"
-trunk=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+trunk=$(git -C "$repo_root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
 if [ -z "$trunk" ]; then
-  # Fallback: check for main or master
-  if git show-ref --verify --quiet refs/heads/main; then
+  if git -C "$repo_root" show-ref --verify --quiet refs/heads/main; then
     trunk="main"
-  elif git show-ref --verify --quiet refs/heads/master; then
+  elif git -C "$repo_root" show-ref --verify --quiet refs/heads/master; then
     trunk="master"
   else
     echo "Cannot determine trunk branch"; exit 1
   fi
 fi
-trunk_sha=$(git rev-parse "origin/$trunk")
+git -C "$repo_root" fetch origin
 ```
 
 Resolve the main repo through the common Git directory so invoking this skill
-from an existing linked worktree still places new worktrees under the main
-checkout.
+from an existing linked worktree still asks Worktrunk to operate on the
+primary checkout.
 
 ## Step 2 — Generate a memorable name
 
-Pick an adjective-noun combo that's easy to remember and type. Use this
-word list and `$RANDOM` to select:
+Worktrunk is branch-oriented, so the memorable adjective-noun is both the
+branch name and the configured `.worktrees/<name>` leaf.
 
 ```bash
 adjectives="swift bold calm cool crisp deft dry eager fair fast fond free glad gold green keen kind lean lush mild neat pale pure raw red rich ripe safe sharp shy slim soft tall tame thin vast warm wide wild wise"
@@ -65,32 +70,41 @@ nouns="apple arrow badge beach bell bloom bolt bread brook brush cedar charm cla
 adj_arr=($adjectives)
 noun_arr=($nouns)
 name="${adj_arr[$((RANDOM % ${#adj_arr[@]}))]}-${noun_arr[$((RANDOM % ${#noun_arr[@]}))]}"
-wt_path="$worktree_dir/$name"
 ```
 
-If the name already exists (unlikely), regenerate once.
+If `refs/heads/$name` already exists, regenerate once.
 
-## Step 3 — Create the worktree
+## Step 3 — Create through Worktrunk
 
 ```bash
-mkdir -p "$worktree_dir"
 if ! git -C "$repo_root" check-ignore --quiet .worktrees; then
   printf '\n.worktrees/\n' >> "$git_common_dir/info/exclude"
 fi
-git worktree add --detach "$wt_path" "$trunk_sha"
+result=$(wt -y -C "$repo_root" switch --create "$name" \
+  --base "origin/$trunk" --no-cd --format=json)
+wt_path=$(printf '%s' "$result" | jq -r '.path')
+test -n "$wt_path" && test "$wt_path" != "null"
 ```
 
-Use the repository-local `.git/info/exclude`, not the tracked `.gitignore`, so
-creating worktrees does not alter the project. The ignore check prevents
-duplicate entries and accepts an existing `.gitignore` rule if the project
-already has one.
+Verify Worktrunk honored the configured location before continuing:
+
+```bash
+case "$wt_path" in
+  "$repo_root"/.worktrees/*) ;;
+  *) echo "Worktrunk returned unexpected path: $wt_path"; exit 1 ;;
+esac
+```
+
+The repository-local exclude prevents the in-repo worktree container from
+appearing as an untracked directory without modifying tracked `.gitignore`.
 
 Print the name and path clearly:
 
 ```
 Worktree created: <name>
   Path: <wt_path>
-  Detached at: <trunk> (<short sha>)
+  Branch: <name>
+  Based on: origin/<trunk> (<short sha>)
 ```
 
 ## Step 4 — Initialize submodules (if any)
@@ -187,60 +201,39 @@ Print confirmation:
 Graphite: initialized (trunk: <trunk>)
 ```
 
-## Step 5 — Remove a worktree
+## Step 5 — Remove through Worktrunk
 
 When the user's arguments starts with `remove`:
 
-1. Extract the worktree name from the arguments.
-2. Resolve the path:
+1. Extract the worktree branch name or path.
+2. Resolve `repo_root` through the common Git directory as in step 1.
+3. Run foreground removal so completion is known before reporting success:
 
    ```bash
-   git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
-   repo_root=$(dirname "$git_common_dir")
-   worktree_dir="$repo_root/.worktrees"
-   wt_path="$worktree_dir/<name>"
+   wt -y -C "$repo_root" remove --foreground "<name-or-path>"
    ```
 
-3. Verify it exists:
-
-   ```bash
-   test -d "$wt_path" || { echo "Worktree '<name>' not found at $wt_path"; exit 1; }
-   ```
-
-4. Remove it:
-
-   ```bash
-   git worktree remove --force "$wt_path"
-   git worktree prune
-   ```
-
-5. If the directory still exists (e.g., worktree had untracked files and
-   `--force` wasn't enough), ask the user before running `rm -rf`.
-
-6. Print confirmation:
+4. Do not add `--force` or `--force-delete` unless the user explicitly asks to
+   discard dirty or unmerged work. Worktrunk safely deletes the branch only
+   when its changes are already integrated.
+5. Print confirmation:
 
    ```
-   Worktree '<name>' removed and pruned.
+   Worktree '<name>' removed through Worktrunk.
    ```
 
-## Step 6 — List worktrees
+## Step 6 — List through Worktrunk
 
 When the user's arguments is `list`:
 
 ```bash
 git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 repo_root=$(dirname "$git_common_dir")
-worktree_dir="$repo_root/.worktrees"
-
-echo "Worktrees in $worktree_dir:"
-if [ -d "$worktree_dir" ]; then
-  ls "$worktree_dir"
-else
-  echo "  (none)"
-fi
+wt -C "$repo_root" list
 ```
 
-Also show `git worktree list` for the full picture.
+Do not substitute `git worktree list`; Worktrunk's view includes branch,
+status, integration state, and the configured path.
 
 ## Final output
 
@@ -251,7 +244,8 @@ After creating a worktree, print a ready-to-use summary:
 Worktree ready: <name>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Path:       <wt_path>
-  Detached at: <trunk> (<short sha>)
+  Branch:     <name>
+  Based on:   origin/<trunk> (<short sha>)
   Submodules: <count> initialized  (only if .gitmodules exists)
   Setup:      <commands run, or "none needed">
   Graphite:   initialized (trunk: <trunk>)
@@ -263,70 +257,12 @@ To remove later:
   /worktree remove <name>
 ```
 
-## Step 7 — Detach all worktrees at trunk
-
-When the user's arguments is `detach-all`:
-
-1. Fetch the latest from the remote:
-
-   ```bash
-   git fetch origin
-   ```
-
-2. Determine the trunk branch name (`main` or `master`):
-
-   ```bash
-   git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null
-   ```
-
-   If that fails, check which of `origin/main` or `origin/master` exists.
-   Store the result as `trunk_ref` (e.g., `origin/main`).
-
-3. List all worktrees:
-
-   ```bash
-   git worktree list --porcelain
-   ```
-
-   Parse the output: each worktree block has `worktree <path>`, `HEAD <sha>`,
-   and either `branch refs/heads/<name>` or `detached`. Skip the main repo
-   worktree (the bare repo root).
-
-4. For each worktree (whether on a branch or already detached at an old
-   commit), reset it to the latest trunk and detach:
-
-   ```bash
-   git -C "<wt_path>" checkout --detach "$trunk_ref"
-   ```
-
-   A worktree is **already up to date** only if it is detached AND its HEAD
-   already matches the resolved sha of `$trunk_ref`. Skip those.
-
-5. Print a summary:
-
-   ```
-   Detached <count> worktree(s) at <trunk_ref> (<short sha>):
-     <name>: <previous state> -> detached at <short sha>
-     ...
-
-   Already up to date: <count>
-   Skipped (main repo): <main path>
-   ```
-
-   `<previous state>` is either the branch name or `detached at <old short sha>`.
-
-   If no worktrees needed updating, print:
-
-   ```
-   All worktrees are already detached at <trunk_ref>.
-   ```
-
 ## Hard rules
 
-1. Always create worktrees detached at trunk — never on a branch.
-2. Always use `--reference` for submodule init to avoid network fetches.
-3. Never remove a worktree without verifying the path is inside the main
-   repo's expected `.worktrees/` directory — prevent accidental `rm -rf` of
-   the main repo.
-4. If `git worktree remove --force` fails and `rm -rf` is needed, ask
-   the user first.
+1. Use `wt` for create, list, and remove. Never call `git worktree add/remove`
+   from this skill.
+2. Worktrees are branch-backed and start at the latest `origin/<trunk>`.
+3. Require Worktrunk's returned path to be inside the primary repo's
+   `.worktrees/` directory.
+4. Never force removal or branch deletion without explicit user approval.
+5. Always use `--reference` for submodule init to avoid network fetches.
