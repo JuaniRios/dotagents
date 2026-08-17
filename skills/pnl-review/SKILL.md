@@ -313,10 +313,10 @@ printing a wall of zeros.
    verify the window.
 8. Default env is **prod**; only use the staging host when the user says
    `staging`.
-9. **Query over HTTPS, never over SSH.** Do not shell into the box with
-   `prod-remote`/`staging-remote` to reach `localhost:8001` -- `/pnl` is proxied
-   on the tailnet vhost, and SSHing in as root to read a report is needless
-   privilege.
+9. **Query over HTTPS, never over SSH.** Do not use raw SSH, a repo remote
+   executable, or a flake remote app to reach `localhost:8001` -- `/pnl` is
+   proxied on the tailnet vhost, and SSHing in as root to read a report is
+   needless privilege.
 10. **Plain business language in every answer.** The reader may be a
     non-technical stakeholder: no JSON field names, no internal bucket names
     unglossed, no infrastructure vocabulary. Precision lives in the numbers

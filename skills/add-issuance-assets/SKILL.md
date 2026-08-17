@@ -1,7 +1,7 @@
 ---
 name: add-issuance-assets
 description: Add newly deployed tokenized assets to the production issuance bot. Use when given a registry PR, deployment output, or asset-address table and asked to register, restart, and verify issuance assets.
-allowed-tools: Bash(ssh:*), Bash(ssh-keyscan:*), Bash(curl:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(gh:*), Bash(awk:*), Bash(grep:*), Bash(sed:*), Bash(date:*), Read
+allowed-tools: Bash(ssh:*), Bash(nix:*), Bash(age:*), Bash(curl:*), Bash(sqlite3:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(gh:*), Bash(awk:*), Bash(grep:*), Bash(sed:*), Bash(date:*), Read
 ---
 
 # Add issuance assets
@@ -17,8 +17,9 @@ and verify persistence and monitoring.
 - Database: `/mnt/data/issuance.db`
 - Deployed revision: `/run/st0x/st0x-issuance.git-rev`
 - Secrets: `/run/agenix/st0x-issuance.env`
-- Host: explicit argument, otherwise `ISSUANCE_HOST` in
-  `~/Github/dotagents/.env`
+- SSH identity: discover the single locally held key whose public key is in
+  `keys.nix` under `roles.prod.ssh`
+- Host: decrypt `infra/.remote-prod.age` with that identity
 - No Docker, Python, or jq on the host
 
 Never print secrets. Read them only inside the remote command that uses them.
@@ -65,13 +66,95 @@ The receipt address is not an API field. Issuance discovers it by calling
    - If any history exists, do not seed to the current head. Run a complete
      backfill instead.
 
-3. Establish one multiplexed SSH connection.
-   - Use `ControlMaster`, `ControlPersist`, and one fixed `ControlPath`.
+3. Resolve the authorized identity and establish one multiplexed SSH
+   connection.
+   - Run from `~/Github/st0x.issuance`.
+   - Enumerate public sidecars under `~/.ssh/*.pub`. Compare each algorithm and
+     base64 body (excluding its optional comment) with `roles.prod.ssh` from
+     `keys.nix`, and require the corresponding private file to exist.
+   - Require exactly one match. If there are zero or multiple matches, stop and
+     request user direction. Never assume a filename, fingerprint, key owner,
+     or key comment, and never inspect or try unmatched private keys.
+   - Decrypt `infra/.remote-prod.age` with `age -d -i "$identity"` and keep the
+     resulting host only in a shell variable. Never print it or write the
+     decrypted value to disk.
+   - Use raw SSH with `-F /dev/null -i "$identity" -o IdentitiesOnly=yes
+     -o IdentityAgent=none -o BatchMode=yes`. `-F /dev/null` is required:
+     the user's global SSH config may add an identity that is not in the
+     issuance SSH whitelist.
+   - Use `set -euo pipefail`, `ControlMaster`, `ControlPersist`, and one fixed
+     `ControlPath`. Do not issue a follow-up SSH command if master creation
+     fails.
    - Keep the `ControlPath` short, e.g. `/tmp/.ssh-<tag>.sock`. A long path
      (such as one under a session scratchpad) exceeds the ~104-character Unix
      domain socket limit and the connection fails outright.
+   - Run `ssh -O check` through the same explicit options once. If connection
+     or authentication fails, stop immediately; do not retry or inspect other
+     keys.
    - Reuse it for every command and batch loops inside the remote shell.
    - Close it when finished.
+
+   Use this setup exactly; do not reconstruct it from memory:
+
+   ```bash
+   set -euo pipefail
+
+   socket=/tmp/.ssh-issuance-assets.sock
+
+   test ! -e "$socket"
+   shopt -s nullglob
+   matching_identities=()
+
+   for public_identity in "$HOME"/.ssh/*.pub; do
+     held_public_key=$(awk 'NR == 1 { print $1 " " $2 }' "$public_identity")
+     authorization=$(
+       ST0X_HELD_PUBLIC_KEY="$held_public_key" \
+       nix eval --raw --impure --expr '
+         let keyConfig = import ./keys.nix;
+         in
+           if builtins.elem
+             (builtins.getEnv "ST0X_HELD_PUBLIC_KEY")
+             keyConfig.roles.prod.ssh
+           then "authorized"
+           else "unauthorized"
+       '
+     )
+     private_identity="${public_identity%.pub}"
+     if [ "$authorization" = authorized ] && [ -s "$private_identity" ]; then
+       matching_identities+=("$private_identity")
+     fi
+   done
+
+   if [ "${#matching_identities[@]}" -ne 1 ]; then
+     printf 'Expected exactly one locally held identity authorized by keys.nix; found %s\n' \
+       "${#matching_identities[@]}" >&2
+     exit 1
+   fi
+   identity="${matching_identities[0]}"
+
+   host_ip=$(age -d -i "$identity" infra/.remote-prod.age)
+   test -n "$host_ip"
+   target="root@$host_ip"
+   ssh_options=(
+     -F /dev/null
+     -i "$identity"
+     -o IdentitiesOnly=yes
+     -o IdentityAgent=none
+     -o BatchMode=yes
+     -o ControlPath="$socket"
+   )
+
+   ssh "${ssh_options[@]}" \
+     -o ControlMaster=yes \
+     -o ControlPersist=600 \
+     -MNf \
+     "$target"
+   ssh "${ssh_options[@]}" -O check "$target"
+
+   run_remote() {
+     ssh "${ssh_options[@]}" "$target" "$1"
+   }
+   ```
 
 4. Preflight production.
    - Record the deployed revision and service state.
@@ -208,6 +291,10 @@ The receipt address is not an API field. Issuance discovers it by calling
 
 - Never use wrapper or receipt addresses as the issuance `vault`.
 - Never invent an address, symbol, network, head block, or checkpoint key.
+- Never use an SSH identity other than the single dynamically discovered,
+  whitelist-verified local key.
+- Never allow SSH to consult the agent, default identities, or the user's
+  global SSH config.
 - Never print credentials or RPC URLs.
 - Never add assets outside the approved source set.
 - Never freeze unless explicitly requested.

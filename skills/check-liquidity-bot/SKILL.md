@@ -1,62 +1,112 @@
 ---
 name: check-liquidity-bot
-allowed-tools: Bash(nu:*), Bash(nix:*), Bash(sqlite3:*), Bash(tail:*), Bash(head:*), Read, Grep, Glob
-description: Diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) by querying the live server through the managed Nushell `prod-remote`/`staging-remote` accessors.
+allowed-tools: Bash(ssh:*), Bash(nix:*), Bash(age:*), Bash(tailscale:*), Bash(awk:*), Bash(sqlite3:*), Bash(tail:*), Bash(head:*), Read, Grep, Glob
+description: Diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) by querying the live server over SSH with the repository-whitelisted local identity.
 argument-hint: <prod|staging>
 ---
 
 **Required argument**: `prod` or `staging` -- which environment to check.
 
-This command queries the **live server directly** via the `<env>-remote` SSH
-shim. There is no snapshot/download mode: every DB and log query runs against
-the live server. This is fast, always-fresh, and avoids downloading the ~100MB
-DB.
+This command queries the **live server directly** over SSH. There is no
+snapshot/download mode: every DB and log query runs against the live server.
+This is fast, always-fresh, and avoids downloading the ~100MB DB.
 
 If the argument is missing or not one of `prod`/`staging`, tell the user:
 "Usage: `/check-liquidity-bot <prod|staging>`" -- and stop.
 
-Set the remote shim based on the environment:
-- `staging` -> `staging-remote`
-- `prod` -> `prod-remote`
-
-These names are managed Nushell functions, not ordinary commands to invoke
-from a non-interactive Bash tool shell. They call `st0x-remote-identity`, which
-retrieves the approved 1Password identity into a 0600 cache and passes it as
-`SSH_IDENTITY` to the underlying remote helper. This prevents OpenSSH from
-offering every agent key and triggering fail2ban.
-
-From the liquidity repo, load the generated Nushell config inside the repo's
-dev shell and define a local adapter for the current Bash call:
+Run from `~/Github/st0x.liquidity`. Resolve and validate the one authorized
+identity before opening any connection:
 
 ```bash
-nu_config=$(nu -c '$nu.config-path')
-remote_shim='<validated prod-remote or staging-remote>'
+set -euo pipefail
+
+environment='<validated prod or staging>'
+shopt -s nullglob
+matching_identities=()
+
+for public_identity in "$HOME"/.ssh/*.pub; do
+  held_public_key=$(awk 'NR == 1 { print $1 " " $2 }' "$public_identity")
+  authorization=$(
+    ST0X_ENVIRONMENT="$environment" \
+    ST0X_HELD_PUBLIC_KEY="$held_public_key" \
+    nix eval --raw --impure --expr '
+      let
+        keyConfig = import ./keys.nix;
+        role = builtins.getAttr (builtins.getEnv "ST0X_ENVIRONMENT") keyConfig.roles;
+      in
+        if builtins.elem (builtins.getEnv "ST0X_HELD_PUBLIC_KEY") role.ssh
+        then "authorized"
+        else "unauthorized"
+    '
+  )
+  private_identity="${public_identity%.pub}"
+  if [ "$authorization" = authorized ] && [ -s "$private_identity" ]; then
+    matching_identities+=("$private_identity")
+  fi
+done
+
+if [ "${#matching_identities[@]}" -ne 1 ]; then
+  printf 'Expected exactly one locally held identity authorized by keys.nix; found %s\n' \
+    "${#matching_identities[@]}" >&2
+  exit 1
+fi
+identity="${matching_identities[0]}"
+
+if tailscale status >/dev/null 2>&1; then
+  target_host=$(
+    ST0X_ENVIRONMENT="$environment" \
+    nix eval --raw --impure --expr '
+      builtins.getAttr
+        (builtins.getEnv "ST0X_ENVIRONMENT")
+        (import ./keys.nix).tailscaleHost
+    '
+  )
+else
+  encrypted_host="infra/.remote-$environment.age"
+  target_host=$(age -d -i "$identity" "$encrypted_host")
+fi
+test -n "$target_host"
+
+target="root@$target_host"
+ssh_options=(
+  -F /dev/null
+  -i "$identity"
+  -o IdentitiesOnly=yes
+  -o IdentityAgent=none
+  -o BatchMode=yes
+)
+
 run_remote() {
-  REMOTE_COMMAND="$1" nix develop --command nu -c \
-    "source '$nu_config'; $remote_shim \$env.REMOTE_COMMAND"
+  ssh "${ssh_options[@]}" "$target" "$1"
 }
 ```
 
-Every `<env>-remote ...` example below means `run_remote '<remote command>'`.
-Never call raw `ssh`, the underlying external shim (`^prod-remote` /
-`^staging-remote`), a direct flake remote app, or SSH-agent inspection/key
-selection. If the managed accessor cannot be loaded, stop and report that
-local configuration problem without attempting SSH.
+`keys.nix` is authoritative. Discover identities only through public sidecars
+under `~/.ssh/*.pub`, compare their algorithm and base64 body to the selected
+environment's `roles.<env>.ssh`, and require the corresponding private file.
+Do not assume a filename, fingerprint, key owner, or key comment. Require
+exactly one match; zero means this machine lacks an authorized key, while
+multiple matches are ambiguous and require user direction. Never inspect or
+try unmatched private keys.
 
-All DB queries go through `<env>-remote sqlite3 /mnt/data/st0x-hedge.db "..."`
-and all log queries through `<env>-remote journalctl -u st0x-hedge ...`. Filter
-at the source -- never pull the full journal.
+`-F /dev/null` prevents the user's global SSH config from adding another
+identity. Every SSH call must use the same explicit `ssh_options`; never call
+the repo's remote executable or a direct flake remote app, because those
+abstractions obscure the exact SSH identity set.
 
-> **sqlite3 quoting through the shim:** the SSH shim re-splits arguments, so
+All DB and log queries go through `run_remote`. Filter at the source -- never
+pull the full journal.
+
+> **sqlite3 quoting through SSH:** the remote shell re-splits arguments, so
 > pass the whole `sqlite3 ... "SELECT ..."` invocation as one string:
 > `run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'`.
 > Unquoted parentheses and semicolons in the SQL will otherwise break.
 
 ## 0. Connectivity gate (MANDATORY -- before any other remote command)
 
-SSH goes through the 1Password SSH agent. If the user is AFK they cannot
-approve the agent prompt, and **each failed attempt counts toward fail2ban**.
-Spamming probes will ban the IP and make recovery harder.
+SSH uses only the dynamically discovered, whitelist-verified local key. Each
+failed attempt still counts toward fail2ban, so spamming probes will ban the IP
+and make recovery harder.
 
 **Run exactly one probe first -- never parallelize it with other remote calls:**
 
@@ -66,18 +116,18 @@ run_remote 'echo ok'
 
 - **Success** (prints `ok`): proceed to section 1. Batch subsequent queries into
   as few `run_remote` calls as possible; do not parallelize SSH calls.
-- **Any failure** (non-zero exit, `agent refused operation`, `Permission
-  denied`, `Connection refused`, timeout, or a hang you have to kill):
+- **Any failure** (non-zero exit, `Permission denied`, `Connection refused`,
+  timeout, or a hang you have to kill):
   **STOP immediately.**
 
 On failure:
 
 1. Report the exact error from that **single** probe.
-2. Tell the user to come back, approve 1Password if prompted, unban the IP if
-   already fail2ban'd, then re-run `/check-liquidity-bot <env>` once SSH works.
+2. Tell the user to correct the host key, network, or fail2ban state, then
+   re-run `/check-liquidity-bot <env>` once SSH works.
 3. **FORBIDDEN after a failed probe** (until the user re-runs the skill or
    explicitly confirms SSH works again):
-   - any second `<env>-remote` / `ssh` attempt
+   - any second `run_remote` / `ssh` attempt
    - retries, "one more try", verbose `ssh -v` diagnostics
    - key scanning (`ssh-add -l`, alternate identities, `IdentityAgent` tricks)
    - port scans (`nc`, checking 22/2222/public IP)
@@ -100,8 +150,9 @@ conclusions.
 Instead, inspect the code at the exact commit deployed to that environment:
 
 1. **Determine the deployed commit/version.** Query the server for the running
-   build, e.g. `<env>-remote systemctl status st0x-hedge --no-pager` (start
-   time) and `<env>-remote "readlink -f /nix/var/nix/profiles/per-service/st0x-hedge/bin/server"`
+   build, e.g. `run_remote 'systemctl status st0x-hedge --no-pager'` (start
+   time) and
+   `run_remote 'readlink -f /nix/var/nix/profiles/per-service/st0x-hedge/bin/server'`
    (nix store path), and resolve it to a git commit.
 2. **Read the code at that commit, read-only.** Use
    `git show <commit>:<path>` or `git grep <pattern> <commit>` against the
@@ -120,15 +171,15 @@ querying the views directly is the scriptable equivalent.
 
 **Service health:**
 ```bash
-<env>-remote systemctl is-active st0x-hedge
-<env>-remote systemctl status st0x-hedge --no-pager   # uptime, restarts, PID
+run_remote 'systemctl is-active st0x-hedge'
+run_remote 'systemctl status st0x-hedge --no-pager'   # uptime, restarts, PID
 ```
 If stopped, this is the most critical finding -- lead the report with it.
 
 **Counter-trades (offchain hedge orders) -- status distribution + recent:**
 ```bash
-<env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT status, COUNT(*) FROM offchain_order_view GROUP BY status;"'
-<env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT view_id, status, substr(payload,1,120) FROM offchain_order_view ORDER BY rowid DESC LIMIT 30;"'
+run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT status, COUNT(*) FROM offchain_order_view GROUP BY status;"'
+run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT view_id, status, substr(payload,1,120) FROM offchain_order_view ORDER BY rowid DESC LIMIT 30;"'
 ```
 
 > **CRITICAL blind spot -- the dashboard hides failed counter-trades.** The
@@ -144,7 +195,7 @@ If stopped, this is the most critical finding -- lead the report with it.
 neatest way to spot a stranded transfer is to find any aggregate whose LATEST
 event is a failure:
 ```bash
-<env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "
+run_remote 'sqlite3 /mnt/data/st0x-hedge.db "
   WITH latest AS (SELECT aggregate_id, MAX(sequence) ms FROM events GROUP BY aggregate_id)
   SELECT e.event_type, COUNT(*) FROM events e JOIN latest l
     ON e.aggregate_id=l.aggregate_id AND e.sequence=l.ms
@@ -156,7 +207,7 @@ carries the symbol/quantity) to see exactly what is stranded.
 
 **Positions / inventory:**
 ```bash
-<env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'
+run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'
 ```
 
 **Profitability:** for any "are we making money?" question, use `/pnl-review`
@@ -172,8 +223,8 @@ section below.
 
 Pull a recent window from the server (filter at the source):
 ```bash
-<env>-remote "journalctl -u st0x-hedge --since '1 hour ago' --no-pager | grep -iE 'error|warn|panic'"
-<env>-remote "journalctl -u st0x-hedge -n 200 --no-pager"
+run_remote "journalctl -u st0x-hedge --since '1 hour ago' --no-pager | grep -iE 'error|warn|panic'"
+run_remote "journalctl -u st0x-hedge -n 200 --no-pager"
 ```
 Focus on:
 - **Errors/warnings**, categorized: transient network issues (RPC timeouts,
@@ -192,7 +243,7 @@ Focus on:
 to be hedged. Onchain trades on disabled assets produce no offchain hedge by
 design -- note as INFO, never WARNING/CRITICAL. Read the deployed config:
 ```bash
-<env>-remote "grep -iE '\[assets|trading|rebalancing' /run/st0x/st0x-hedge.config"
+run_remote "grep -iE '\[assets|trading|rebalancing' /run/st0x/st0x-hedge.config"
 ```
 
 Check (only for **trade-enabled assets**), using the `offchain_order_view`
@@ -210,7 +261,7 @@ data from section 1:
 
 Event-type distribution (useful for spotting anomalies):
 ```bash
-<env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY COUNT(*) DESC;"'
+run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY COUNT(*) DESC;"'
 ```
 
 ### 2c. Inventory and positions
@@ -223,7 +274,7 @@ From `position_view` (section 1):
   `fetched_at` -- if stale (>~30 min while the bot is running), the inventory
   polling loop may have stopped.
   ```bash
-  <env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,120) FROM events WHERE event_type LIKE \"InventorySnapshot%\" ORDER BY rowid DESC LIMIT 6;"'
+  run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,120) FROM events WHERE event_type LIKE \"InventorySnapshot%\" ORDER BY rowid DESC LIMIT 6;"'
   ```
 - **Onchain vs offchain split**: large imbalances may be intentional (vault
   funding) or indicate a rebalancing issue.
@@ -233,9 +284,9 @@ From `position_view` (section 1):
 If rebalancing is **enabled** for any asset (per config):
 - Query recent rebalance events:
   ```bash
-  <env>-remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,160) FROM events WHERE event_type LIKE \"%Rebalanc%\" ORDER BY rowid DESC LIMIT 20;"'
+  run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,160) FROM events WHERE event_type LIKE \"%Rebalanc%\" ORDER BY rowid DESC LIMIT 20;"'
   ```
-- Scan logs: `<env>-remote "journalctl -u st0x-hedge --since '24 hours ago' --no-pager | grep -i rebalanc | grep -ivE 'trace'"`.
+- Scan logs: `run_remote "journalctl -u st0x-hedge --since '24 hours ago' --no-pager | grep -i rebalanc | grep -ivE 'trace'"`.
 - Reconcile any failure buckets found in section 1 (stuck mints/redemptions/USDC
   bridges) against what actually happened on-chain / at the broker before
   concluding value is stranded -- a "timeout" failure often self-heals or is
@@ -244,7 +295,7 @@ If rebalancing is **enabled** for any asset (per config):
 If rebalancing is **disabled** for all assets, note it briefly and skip.
 
 On-chain vault balances / Raindex order state are not exposed over
-`<env>-remote`; if you need them, read them on-chain via `cast`/RPC against the
+SSH; if you need them, read them on-chain via `cast`/RPC against the
 deployed OrderBook and token contracts (addresses in the deployed config), and
 say so in the report rather than guessing.
 
@@ -289,8 +340,8 @@ are problems, lead with the worst ones and be specific about what's wrong.
 
 ## 4. Follow-up diagnostic queries
 
-Everything in this command is already live via `<env>-remote`, so follow-up
-questions need no special handling -- keep using `<env>-remote` to query the
+Everything in this command is already live via `run_remote`, so follow-up
+questions need no special handling -- keep using `run_remote` to query the
 live DB (`/mnt/data/st0x-hedge.db`) and logs (`journalctl -u st0x-hedge`).
 Filter at the source and pull only what you need.
 
@@ -303,14 +354,14 @@ Filter at the source and pull only what you need.
    `/run/agenix/*`). Read the plaintext config (`/run/st0x/st0x-hedge.config`)
    only for operational flags, never secrets.
 4. **One SSH probe, then stop on failure.** After section 0 fails, do not open
-   any more SSH sessions -- extra attempts risk fail2ban while 1Password is
-   unapproved. Report the single error and wait for the user. Do not guess
-   credentials.
-5. Use only the managed Nushell remote accessor through `run_remote`. Raw SSH,
-   direct flake remote apps, underlying external shims, and SSH-agent key
-   discovery are forbidden.
-6. Never use `Read` on the `.db` file -- always use `sqlite3` queries via the
-   remote shim.
+   any more SSH sessions -- extra attempts risk fail2ban. Report the single
+   error and wait for the user. Do not guess credentials.
+5. Use only `run_remote` with the dynamically discovered, whitelist-verified
+   identity and explicit SSH options defined above. Repo remote executables,
+   direct flake remote apps, alternate identities, and SSH-agent key discovery
+   are forbidden.
+6. Never use `Read` on the `.db` file -- always use `sqlite3` queries through
+   `run_remote`.
 7. Report findings honestly -- don't minimize issues or speculate beyond what
    the data shows.
 8. When inspecting source code to explain behavior, read the code at the
@@ -320,10 +371,11 @@ Filter at the source and pull only what you need.
 
 ## Failure modes
 
-- **`<env>-remote` unreachable / agent refused / permission denied**: section 0
-  already failed. Report that one error and stop. Do **not** retry, key-scan,
-  port-scan, or open more SSH sessions -- that is how fail2ban bans the IP when
-  the user is AFK and cannot approve 1Password.
+- **SSH unreachable / permission denied**: section 0 already failed. Report
+  that one error and stop. Do **not** retry, key-scan, port-scan, or open more
+  SSH sessions -- that is how fail2ban bans the IP.
+- **Identity or whitelist validation failure**: report which prerequisite
+  failed and stop without trying another key.
 - **Empty DB / no events**: the bot may have just been deployed or the DB reset.
   Note this rather than reporting "everything is broken."
 - **Dashboard looks fine but hedging is broken**: remember the blind spot in

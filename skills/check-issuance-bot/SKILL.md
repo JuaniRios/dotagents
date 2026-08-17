@@ -1,7 +1,7 @@
 ---
 name: check-issuance-bot
-allowed-tools: Bash(nu:*), Bash(nix:*), Bash(sqlite3:*), Bash(curl:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(git:*), Read, Grep, Glob
-description: Diagnose the issuance bot's health in production or staging through the managed Nushell remote accessors. Runs a general read-only service, API, event-store, signer, backfill, vault-poller, RPC, and Alpaca check first; investigates stuck mints/redemptions and guides carefully confirmed recovery only when needed.
+allowed-tools: Bash(ssh:*), Bash(nix:*), Bash(age:*), Bash(awk:*), Bash(sqlite3:*), Bash(curl:*), Bash(cast:*), Bash(systemctl:*), Bash(journalctl:*), Bash(git:*), Read, Grep, Glob
+description: Diagnose the issuance bot's health in production or staging over SSH with the repository-whitelisted local identity. Runs a general read-only service, API, event-store, signer, backfill, vault-poller, RPC, and Alpaca check first; investigates stuck mints/redemptions and guides carefully confirmed recovery only when needed.
 argument-hint: <prod|staging>
 ---
 
@@ -20,39 +20,78 @@ If the argument is missing or invalid, say:
 
 and stop.
 
-Set:
-
-- `staging` -> `staging-remote`
-- `prod` -> `prod-remote`
-
 Run from `~/Github/st0x.issuance`.
 
 ## Access the live server safely
 
-The remote names are managed Nushell functions, not ordinary Bash commands.
-They call `st0x-remote-identity`, obtain the approved 1Password identity through
-its protected cache, and pass it to the issuance repo's remote helper. This
-prevents OpenSSH from trying every agent key and triggering fail2ban.
-
-Load the generated Nushell config inside the repo's dev shell and define one
-adapter for the selected, validated environment:
+The SSH identity is a plain local key, not a Nushell function, 1Password
+identity, SSH-agent selection, or repo remote wrapper. Resolve and validate it
+before opening any connection:
 
 ```bash
-nu_config=$(nu -c '$nu.config-path')
-remote_shim='<validated prod-remote or staging-remote>'
+set -euo pipefail
+
+environment='<validated prod or staging>'
+shopt -s nullglob
+matching_identities=()
+
+for public_identity in "$HOME"/.ssh/*.pub; do
+  held_public_key=$(awk 'NR == 1 { print $1 " " $2 }' "$public_identity")
+  authorization=$(
+    ST0X_ENVIRONMENT="$environment" \
+    ST0X_HELD_PUBLIC_KEY="$held_public_key" \
+    nix eval --raw --impure --expr '
+      let
+        keyConfig = import ./keys.nix;
+        role = builtins.getAttr (builtins.getEnv "ST0X_ENVIRONMENT") keyConfig.roles;
+      in
+        if builtins.elem (builtins.getEnv "ST0X_HELD_PUBLIC_KEY") role.ssh
+        then "authorized"
+        else "unauthorized"
+    '
+  )
+  private_identity="${public_identity%.pub}"
+  if [ "$authorization" = authorized ] && [ -s "$private_identity" ]; then
+    matching_identities+=("$private_identity")
+  fi
+done
+
+if [ "${#matching_identities[@]}" -ne 1 ]; then
+  printf 'Expected exactly one locally held identity authorized by keys.nix; found %s\n' \
+    "${#matching_identities[@]}" >&2
+  exit 1
+fi
+identity="${matching_identities[0]}"
+
+encrypted_host="infra/.remote-$environment.age"
+host_ip=$(age -d -i "$identity" "$encrypted_host")
+test -n "$host_ip"
+target="root@$host_ip"
+ssh_options=(
+  -F /dev/null
+  -i "$identity"
+  -o IdentitiesOnly=yes
+  -o IdentityAgent=none
+  -o BatchMode=yes
+)
+
 run_remote() {
-  REMOTE_COMMAND="$1" nix develop --command nu -c \
-    "source '$nu_config'; $remote_shim \$env.REMOTE_COMMAND"
+  ssh "${ssh_options[@]}" "$target" "$1"
 }
 ```
 
-Every `<env>-remote ...` example below means
-`run_remote '<remote payload>'`.
+`keys.nix` is authoritative. Discover identities only through public sidecars
+under `~/.ssh/*.pub`, compare their algorithm and base64 body to the selected
+environment's `roles.<env>.ssh`, and require the corresponding private file.
+Do not assume a filename, fingerprint, key owner, or key comment. Require
+exactly one match; zero means this machine lacks an authorized key, while
+multiple matches are ambiguous and require user direction. Never inspect or
+try unmatched private keys.
 
-Never call raw `ssh`, `^prod-remote`, `^staging-remote`, a direct flake remote
-app, decrypt `.remote-*.age`, inspect SSH-agent identities, or choose a key
-manually. If the managed accessor cannot be loaded, report the local
-configuration problem and stop.
+`-F /dev/null` is mandatory so the user's global SSH config cannot add another
+identity. Every SSH call must use the same explicit `ssh_options`; never call
+the repo's remote executable or a direct flake remote app, because those
+abstractions obscure the exact SSH identity set.
 
 ### Connectivity gate
 
@@ -71,8 +110,8 @@ On any failure, timeout, refusal, permission error, or host-key error:
 2. Stop all remote work immediately.
 3. Do not retry, use another transport, inspect keys, run `ssh -v`, key-scan,
    port-scan, or add Tailscale probes.
-4. Tell the user to approve 1Password if needed, correct the managed host key or
-   fail2ban state, and rerun `/check-issuance-bot <env>` after access works.
+4. Tell the user to correct the host key, network, or fail2ban state and rerun
+   `/check-issuance-bot <env>` after access works.
 
 ## Know the deployed layout
 
@@ -368,9 +407,10 @@ speculation.
 ## Hard rules
 
 1. The general check is read-only and always comes first.
-2. Use only the selected managed Nushell accessor through `run_remote`.
+2. Use only `run_remote` with the dynamically discovered, whitelist-verified
+   identity and explicit SSH options defined above.
 3. Run one connectivity probe; after failure, stop without retrying.
-4. Never parallelize remote accessor calls; batch sequential diagnostics.
+4. Never parallelize SSH calls; batch sequential diagnostics.
 5. Never reveal secrets or access secret files locally.
 6. Never mutate API, CLI, systemd, deploy, database, or chain state without
    explicit current-session confirmation.
@@ -385,9 +425,11 @@ speculation.
 
 ## Failure modes
 
-- Managed accessor failure: report the one exact error and stop.
-- Host-key verification failure: the managed key record must be updated; do not
-  bypass it or run `ssh-keyscan`.
+- Identity or whitelist validation failure: report which prerequisite failed
+  and stop without trying another key.
+- SSH failure: report the one exact error and stop.
+- Host-key verification failure: the known-host record must be corrected; do
+  not bypass verification or run `ssh-keyscan`.
 - `docker` or legacy-volume path errors: use the NixOS layout above.
 - Missing on-host `python3`/`jq`: consume raw output remotely and process
   locally.
