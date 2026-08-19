@@ -233,8 +233,11 @@ Focus on:
   succession suggests crash-looping.
 - **Last activity timestamp**: if the service is active but the last log is
   hours old (during market hours), it may be hung.
-- **Market hours context**: during market close (nights, weekends), reduced
-  offchain activity is normal -- note it if relevant.
+- **Market hours context**: the bot trades during regular hours, plus extended
+  hours only for assets with `extended_hours_counter_trading = "enabled"`.
+  Outside those windows -- overnight, weekends, holidays -- expect NO activity
+  at all, not merely less of it: zero fills, zero hedges, zero rebalancing
+  checks. An empty window there is the correct state, never a finding.
 
 ### 2b. Hedging
 
@@ -269,9 +272,14 @@ From `position_view` (section 1):
 - **Net position**: for trade-enabled assets, near-zero is expected -- a large
   absolute value means hedging is failing. For trade-disabled assets, non-zero
   is expected (unhedged by design) -- report as INFO.
-- **Inventory snapshot freshness**: check the latest `InventorySnapshotEvent::*`
-  `fetched_at` -- if stale (>~30 min while the bot is running), the inventory
-  polling loop may have stopped.
+- **Inventory snapshot recency -- NOT a liveness signal.** The poller runs on a
+  fixed `inventory_poll_interval` and re-fetches every venue each tick, but the
+  `InventorySnapshot` aggregate SUPPRESSES a command whose value is unchanged.
+  So the newest event tells you when a balance last *moved*, never when polling
+  last ran, and a static book (market closed, no fills) legitimately leaves it
+  frozen for hours. Do NOT report a stale timestamp as "the polling loop
+  stopped". Confirm against whether balances had any reason to move, and scan
+  for `Inventory polling failed` on `target: "inventory"`.
   ```bash
   run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,120) FROM events WHERE event_type LIKE \"InventorySnapshot%\" ORDER BY rowid DESC LIMIT 6;"'
   ```
@@ -330,7 +338,7 @@ Structure the report as:
    - CRITICAL: bot stopped, panics, hedging failure on enabled assets, crash
      loops, stranded equity/USDC value
    - WARNING: repeated failed orders on enabled assets, hedging gaps on enabled
-     assets, stale inventory snapshots, growing net position on enabled assets
+     assets, growing net position on enabled assets
    - INFO: minor transient errors, expected market-hours gaps, unhedged
      positions on trade-disabled assets (working as designed)
 
