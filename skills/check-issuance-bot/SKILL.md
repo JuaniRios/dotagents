@@ -9,6 +9,11 @@ argument-hint: <prod|staging>
 
 **Required argument**: `prod` or `staging`.
 
+> **There is no deployed staging issuance host yet.** The repo carries staging
+> keys, `config.staging.toml`, and staging infra apps, but nothing runs behind
+> them. If the user asks for `staging`, say so and confirm they meant `prod`
+> before connecting -- do not report an unreachable host as an outage.
+
 This command queries the selected live issuance server directly. It is
 health-check-first and read-only by default. Do not recover, restart, deploy,
 edit the database, or run an operator mutation merely because a problem is
@@ -223,7 +228,7 @@ Use the actual service start timestamp and filter at the source:
 Scan logs before making any probe that could create a warning. Attribute
 warnings caused by this check to the check itself.
 
-A quiet staging environment can have little business activity; that is not a
+A quiet environment can have little business activity; that is not a
 failure if service loops and block cursors are advancing.
 
 ### API and stuck work
