@@ -182,14 +182,13 @@ run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT status, COUNT(*) FROM offcha
 run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT view_id, status, substr(payload,1,120) FROM offchain_order_view ORDER BY rowid DESC LIMIT 30;"'
 ```
 
-> **CRITICAL blind spot -- the dashboard hides failed counter-trades.** The
-> dashboard trade view only renders **Filled** counter-trades: the history
-> loader's `try_to_trade()` drops any non-filled order and the live broadcast
-> no-ops on the `Failed` status. A hedge that errors out (e.g. an un-fillable
-> symbol the broker rejects dozens of times a day) will **never appear on the
-> dashboard**. So "the dashboard looks fine" does NOT mean hedging is fine --
-> always query `offchain_order_view` for `Failed` counts here, and scan logs
-> for `Offchain venue rejected` / `broker reports Failed` in section 2.
+> **Always query this even when the dashboard looks clean.** The dashboard does
+> render failed and cancelled counter-trades (with the broker error), in both
+> loaded history and the live feed, so it is no longer blind to them. But the
+> status distribution above is the fastest way to see the whole Filled / Failed
+> / Cancelled / Pending split across every symbol at once, which is what tells
+> you whether hedging is working. Pair it with a log scan for
+> `Offchain venue rejected` / `broker reports Failed` in section 2.
 
 **Stuck / failed rebalance transfers (mints, redemptions, USDC bridges).** The
 neatest way to spot a stranded transfer is to find any aggregate whose LATEST
@@ -378,6 +377,7 @@ Filter at the source and pull only what you need.
   failed and stop without trying another key.
 - **Empty DB / no events**: the bot may have just been deployed or the DB reset.
   Note this rather than reporting "everything is broken."
-- **Dashboard looks fine but hedging is broken**: remember the blind spot in
-  section 1 -- failed counter-trades never render on the dashboard. Always
-  confirm via `offchain_order_view` Failed counts and logs.
+- **A repeatedly-rejected symbol**: `offchain_order_view` shows a high `Failed`
+  count for one symbol while the rest are clean. Usually an un-fillable or
+  restricted symbol the broker rejects post-acceptance -- flag it and consider
+  whether it should be `trading = "disabled"`.
