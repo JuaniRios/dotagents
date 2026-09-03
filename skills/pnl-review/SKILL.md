@@ -18,9 +18,12 @@ are `not_ingested`, and oracle writes are structurally zero for the current
 setup. Net PnL is therefore an **upper bound**. Always confirm against
 `costs.coverage[]` rather than assuming a zero line means a zero cost.
 
-`/pnl` is on the IAP dashboard host, same path the SPA uses. Query it over
-HTTPS with a Google identity token. Do not SSH. Do not use `/liquidity-read/pnl`
-(that backend rejects gcloud tokens).
+`/pnl` is served by the bot on `:8001`. From this headless box, reach it with
+IAP SSH + curl to `http://127.0.0.1:8001/pnl`. Do not curl
+`https://liquidity.t0trade.com/pnl` with a gcloud user token: IAP returns
+`Invalid JWT audience`, and `gcloud auth print-identity-token --audiences=...`
+refuses user accounts. `/liquidity-read/pnl` needs `st0x-liquidity-client`
+(not installed here). The public host is for a browser.
 
 Parse the user's request. Parse it into a timeframe, optional filters, and
 environment, then query and summarize. **Default timeframe: last 24h.**
@@ -29,10 +32,10 @@ environment, then query and summarize. **Default timeframe: last 24h.**
 
 The user's request is free text. Extract, in any order (all parts optional):
 
-- **Environment**: `staging` ->
-  `https://liquidity-staging.t0trade.com`. Anything else / omitted -> `prod` ->
-  `https://liquidity.t0trade.com`. Both sit behind IAP (Google-managed OAuth on
-  the dashboard backend). Mint the token once per invocation (see step 3).
+- **Environment**: `staging` -> VM `t0-liquidity-staging` in project
+  `t0-liquidity-staging`. Anything else / omitted -> `prod` -> VM
+  `t0-liquidity` in project `t0-liquidity`. Zone `europe-west3-b`. Query
+  `http://127.0.0.1:8001/pnl` over IAP SSH (see step 3).
 - **Timeframe** (natural language, ET calendar days -- see step 2):
   - empty / `last 24h` / `24h` -> **default**: yesterday..today (ET)
   - `today` -> today..today
@@ -87,35 +90,26 @@ TZ=America/New_York date -d '29 days ago' +%F || TZ=America/New_York date -v-29d
 
 ## 3. Query the endpoint
 
-Mint an IAP identity token for the dashboard backend, then GET `/pnl`. Build
-the request with `curl -G --data-urlencode` (never string-interpolate user
-input into the URL). `limit` only bounds the per-fill `entries[]` array (the
-fill-level drill-down -- see **Response schema**); `summary`, `costs`,
+IAP-SSH to the VM and GET `http://127.0.0.1:8001/pnl` there. Build the query
+string with `--data-urlencode` on the remote curl (never string-interpolate
+user input into the URL). `limit` only bounds the per-fill `entries[]` array
+(the fill-level drill-down -- see **Response schema**); `summary`, `costs`,
 `symbols`, and `windows` always cover the **full** range, so a modest limit is
 fine for report runs. For a fill-level question, raise `limit` and check
-`hasMore`/`total` to confirm you pulled every matching lot. Save the JSON to
-the scratchpad and check the HTTP code:
-
-Write the body to a file with `-o` and let `-w` print the status as the *only*
-stdout. Do not append the status to the body -- splitting it back off needs
-`tail`/`head`, which are not in `allowed-tools`. `$OUT` is a path in your session
-scratchpad directory.
+`hasMore`/`total` to confirm you pulled every matching lot. Capture the JSON
+from SSH stdout into the scratchpad.
 
 ```bash
-# prod; staging uses project t0-liquidity-staging, backend
-# t0-liquidity-staging-dashboard, host https://liquidity-staging.t0trade.com
-CLIENT_ID=$(gcloud compute backend-services describe t0-liquidity-dashboard \
-  --global --project t0-liquidity --format='value(iap.oauth2ClientId)')
-TOKEN=$(gcloud auth print-identity-token --audiences="$CLIENT_ID" --include-email)
-
-curl -sS -m 90 -o "$OUT/pnl.json" -w '%{http_code}\n' \
-  -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
-  -G "https://liquidity.t0trade.com/pnl" \
-  --data-urlencode 'fromDate=2026-07-08' \
-  --data-urlencode 'toDate=2026-07-09' \
-  --data-urlencode 'marketSessionFilter=post' \
-  --data-urlencode 'symbol=COIN,QQQM' \
-  --data-urlencode 'limit=500'
+# prod; staging: --project t0-liquidity-staging, instance t0-liquidity-staging
+gcloud compute ssh t0-liquidity --project t0-liquidity --zone europe-west3-b \
+  --tunnel-through-iap --quiet --command \
+  "curl -sS -m 90 -G 'http://127.0.0.1:8001/pnl' \
+    --data-urlencode 'fromDate=2026-07-08' \
+    --data-urlencode 'toDate=2026-07-09' \
+    --data-urlencode 'marketSessionFilter=post' \
+    --data-urlencode 'symbol=COIN,QQQM' \
+    --data-urlencode 'limit=500'" \
+  > "$OUT/pnl.json"
 ```
 
 **Use `-m 90`, not a short timeout.** Each `/pnl` request replays the full FIFO
@@ -135,17 +129,14 @@ the same event snapshot instead of straddling fills that landed between them.
 Caveat: `asOfRowid` pins persisted SQLite events only; the live Alpaca activity
 fetch is **not** snapshotted. Quote the `asOfRowid` in the report footer.
 
-- `200` -> parse and report (step 4). **A `200` does not mean your filters were
-  honored** -- see the symbol-skip trap under Failure modes.
-- `401` / `403` -> IAP rejected the identity (wrong account, wrong audience, or
-  not in `liquidity-readers@` / `liquidity-admins@`). Show the status and stop.
-- `404` -> this host isn't serving `/pnl` (dashboard container too old, or the
-  path is wrong). Say so plainly and stop.
-- `400` -> bad date filter, or **every** symbol in the filter was invalid; show
-  the body (it names the field) and fix the parse.
-- `000` / empty -> timeout or transport error. Retry once, then check `gcloud
-  auth list` and that the host resolves.
-- `502` -> the IAP load balancer is up but the bot listener on `:8001` is down.
+- JSON with `summary` -> parse and report (step 4). **A 200-shaped body does
+  not mean your filters were honored** -- see the symbol-skip trap under
+  Failure modes.
+- SSH / IAP tunnel failure -> report the error and stop.
+- empty / timeout -> bot `:8001` down or `/pnl` too slow. Retry once with the
+  same `-m 90`.
+- JSON `error` / HTTP 400 text in the body -> bad date filter, or **every**
+  symbol in the filter was invalid; show it and fix the parse.
 
 ## 4. Answer the ask
 
@@ -323,9 +314,9 @@ printing a wall of zeros.
    verify the window.
 8. Default env is **prod**; only use the staging host when the user says
    `staging`.
-9. **Query over HTTPS with IAP, never over SSH.** Do not IAP-SSH to curl
-   `:8001` and do not use `/liquidity-read/pnl` (gcloud tokens are rejected
-   there). The dashboard host is enough.
+9. **Query `http://127.0.0.1:8001/pnl` over IAP SSH.** Do not curl the
+   public dashboard with a gcloud user token. Do not use `/liquidity-read/pnl`
+   until `st0x-liquidity-client` is installed.
 10. **Plain business language in every answer.** The reader may be a
     non-technical stakeholder: no JSON field names, no internal bucket names
     unglossed, no infrastructure vocabulary. Precision lives in the numbers
@@ -339,10 +330,10 @@ means for them: "the reporting service is unreachable; the trading itself is
 unaffected") plus one short technical line for whoever will fix it. Details
 below are for diagnosis, not for pasting into the answer.
 
-- **401 / 403**: IAP identity or group. State it and stop -- do not fall back
-  to SSH or Datasette SQL PnL.
-- **404**: this host isn't serving `/pnl`. State it and stop -- do not fall
-  back to hand-rolled SQL PnL, and do not SSH in to reach `:8001` directly.
+- **IAP SSH failure**: identity, OS Login, or tunnel role. State it and stop
+  -- do not fall back to Datasette SQL PnL.
+- **Public dashboard 401 Invalid JWT audience**: expected. Use the SSH
+  localhost path above.
 - **400**: invalid `fromDate`/`toDate`, or **every** symbol in the filter was
   invalid; the body names the field. Re-parse.
 - **Silent symbol skip (a `200` you must not trust)**: if *some* symbols in the
@@ -353,13 +344,11 @@ below are for diagnosis, not for pasting into the answer.
   grep `warnings[]` for `invalid symbol` before reporting anything**; if present,
   re-check your parse and tell the user which symbols were dropped. Do not
   present a narrowed result as the requested one.
-- **`000` / timeout**: the request exceeded `-m 90`, or the network/IAP path
-  failed. Retry **once**; if it fails again check `gcloud auth list` and DNS for
-  the dashboard host. Do not retry blindly in a loop -- each attempt costs a
-  live Alpaca API call.
-- **`502`**: load balancer up, bot listener down. Say so; don't retry.
-- **DNS / no route to host**: dashboard host unreachable (staging is
-  frequently down). Do not try the retired Tailscale MagicDNS names.
+- **timeout**: the remote curl exceeded `-m 90`, or the bot is down. Retry
+  **once**. Do not retry blindly in a loop -- each attempt costs a live Alpaca
+  API call.
+- **curl to :8001 fails after SSH works**: bot listener down. Say so; don't
+  retry.
 - **`summary` present but all zeros / `total: 0`**: no fills matched the window
   or filters. Report "no activity in <range>" rather than a zero-filled table.
 - **Staging unreachable**: staging is often offline; say so and offer prod.

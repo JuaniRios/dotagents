@@ -1,7 +1,7 @@
 ---
 name: check-liquidity-bot
 allowed-tools: Bash(gcloud:*), Bash(curl:*), Bash(jq:*), Bash(git:*), Bash(date:*), Bash(gh:*), Read, Grep
-description: Diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) via the IAP dashboard APIs, Cloud Logging, and Datasette. SSH is not used for the check.
+description: Diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) via Cloud Logging and IAP-SSH curls to the bot's localhost APIs and Datasette. Browser IAP is humans-only.
 argument-hint: <prod|staging>
 ---
 
@@ -10,11 +10,15 @@ argument-hint: <prod|staging>
 **Required argument**: `prod` or `staging`. Anything else: say
 `Usage: /check-liquidity-bot <prod|staging>` and stop.
 
-This command is **read-only**. It does not SSH into an operator session, does
-not run `st0x-cli`, and does not POST `/liquidity-write`. Those are the fix
-path (see **Fix path** at the end). Jakub is exposing the same CLI through the
-ops API and a local client; until that is the default, diagnosis stays on
-HTTPS + logs + Datasette.
+This command is **read-only**. It does not run `st0x-cli`, does not
+`docker exec` a mutation, and does not POST `/liquidity-write`. IAP SSH is
+used only as a transport to `curl` localhost on the VM. The fix path is at
+the end. The public dashboard (`liquidity.t0trade.com`) is browser-IAP;
+`gcloud auth print-identity-token` cannot satisfy that audience (user
+accounts cannot pass `--audiences`, and a token without it is
+`Invalid JWT audience`). `st0x-liquidity-client` is the future programmatic
+path (`/liquidity-read/*`, desktop OAuth). Until that is installed here,
+do not curl the public host.
 
 ## Access
 
@@ -49,46 +53,31 @@ environment='<validated prod or staging>'
 ZONE=europe-west3-b
 if [ "$environment" = staging ]; then
   PROJECT=t0-liquidity-staging
-  HOST=https://liquidity-staging.t0trade.com
-  BACKEND=t0-liquidity-staging-dashboard
   INSTANCE=t0-liquidity-staging
   LOGNAME='projects/t0-liquidity-staging/logs/liquidity-botlogs'
   CONFIG_PATH=terraform/staging-liquidity/st0x-hedge.toml
 else
   PROJECT=t0-liquidity
-  HOST=https://liquidity.t0trade.com
-  BACKEND=t0-liquidity-dashboard
   INSTANCE=t0-liquidity
   LOGNAME='projects/t0-liquidity/logs/liquidity-botlogs'
   CONFIG_PATH=terraform/production-liquidity/st0x-hedge.toml
 fi
-```
 
-### IAP token for dashboard DTO APIs
+remote() {
+  gcloud compute ssh "$INSTANCE" --project "$PROJECT" --zone "$ZONE" \
+    --tunnel-through-iap --quiet --command "$1"
+}
 
-The SPA paths (`/health`, `/pnl`, `/trades`, `/logs`, `/orders/*`,
-`/transfers/*`, `/performance/*`) sit on the **dashboard** IAP backend
-(Google-managed OAuth). Mint a user identity token whose audience is that
-backend's IAP client. Do **not** use `/liquidity-read/*` here: those backends
-reject gcloud tokens on purpose (desktop OAuth client only, used by
-`st0x-liquidity-client`).
-
-```bash
-CLIENT_ID=$(gcloud compute backend-services describe "$BACKEND" \
-  --global --project "$PROJECT" --format='value(iap.oauth2ClientId)')
-TOKEN=$(gcloud auth print-identity-token --audiences="$CLIENT_ID" --include-email)
-
+# DTO APIs are on the bot container, published at :8001 on the VM.
+# Path may include a query string (already encoded).
 api() {
-  # usage: api /health   or   api /trades --data-urlencode 'limit=30'
-  local path="$1"; shift
-  curl -sS -m 90 -o "$OUT/body.json" -w '%{http_code}\n' \
-    -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
-    -G "$HOST$path" "$@"
+  local path="$1"
+  remote "curl -sS -m 90 'http://127.0.0.1:8001${path}'"
 }
 ```
 
-`$OUT` is the session scratchpad. Write the body with `-o` and let `-w` print
-only the status.
+The public dashboard is for humans in a browser. Do not mint an IAP identity
+token with gcloud for it.
 
 ### Cloud Logging
 
@@ -131,7 +120,8 @@ datasette() {
 
 Use this for views the HTTP API does not expose (`position_view`, full
 `offchain_order_view` status split, raw `events`). Prefer the DTO APIs when
-they already answer the question.
+they already answer the question. If curl to `:8081` fails, Datasette is
+down (prod has been observed exited); continue with DTO APIs and logs.
 
 ## 0. Connectivity gate
 
@@ -141,21 +131,21 @@ One `/health` call first. Do not parallelize it with anything else.
 api /health
 ```
 
-- **200** and JSON with `status`, `gitCommit`, `uptimeSeconds`: continue.
-- **401/403**: IAP rejected the identity. Report the status and body, stop.
-  Common causes: not logged in as `@t0trade.com`, wrong audience, not in
-  `liquidity-readers@` / `liquidity-admins@`.
-- **000** / timeout: transport. Retry once. Then stop.
-- **502**: the dashboard LB is up but the bot/dashboard container is not.
-  Critical. Continue only with Cloud Logging to see why.
+- JSON with `status`, `gitCommit`, `uptimeSeconds`: continue. `gitCommit`
+  may be the literal `"dev"` if the image did not bake `ST0X_GIT_COMMIT`.
+- SSH / IAP tunnel failure: report the exact error and stop. Common causes:
+  not `@t0trade.com`, missing `roles/iap.tunnelResourceAccessor` /
+  OS Login, or the VM is down.
+- curl to `:8001` fails but SSH works: bot container is down. Critical.
+  Continue only with Cloud Logging.
 
 ## Inspecting the codebase
 
-Do not reason from the current checkout. `/health` returns `gitCommit` (the
-image's `ST0X_GIT_COMMIT`). Read source with `git show <commit>:<path>` /
+Do not reason from the current checkout. `/health` returns `gitCommit`.
+If it is a real SHA, read source with `git show <commit>:<path>` /
 `git grep <pattern> <commit>` against `~/Github/st0x.liquidity`. Never
-`git checkout`. If the SHA is missing locally, say so and treat code claims
-as provisional.
+`git checkout`. If `gitCommit` is `"dev"` or otherwise not a SHA, say so
+and treat code claims as provisional (the live images have shipped `"dev"`).
 
 Trading flags come from the live config, not the app repo:
 
@@ -170,15 +160,15 @@ fills with no hedge are INFO.
 ## 1. First pass
 
 Batch after `/health` is 200. Profitability questions go to `/pnl-review`
-(same IAP host; that skill owns `/pnl`).
+(same localhost:8001 transport; that skill owns `/pnl`).
 
 ```bash
 api /orders/pending
-api /trades --data-urlencode 'limit=30'
-api /transfers --data-urlencode 'limit=30'
+api '/trades?limit=30'
+api '/transfers?limit=30'
 api /transfers/interrupted
 api /performance/reliability
-api /logs --data-urlencode 'level=ERROR,WARN' --data-urlencode 'limit=100'
+api '/logs?level=ERROR,WARN&limit=100'
 ```
 
 Then Datasette for the two views the DTO APIs do not fully cover:
@@ -291,18 +281,21 @@ operator SSH session for more of the same questions.
    POST to `/liquidity-write`, no `systemctl`, no deploy.
 2. Never interpolate user input into URLs; use `--data-urlencode`.
 3. Never print secrets or Secret Manager payloads.
-4. One `/health` probe first; after 401/403, stop.
-5. Reason from the deployed `gitCommit`, not the working tree.
+4. One `/health` probe first; after SSH/IAP failure, stop.
+5. Reason from the deployed `gitCommit` when it is a real SHA, not the
+   working tree.
 6. Do not treat a stale inventory snapshot as a dead poller.
 7. `/pnl-review` for profitability, not eyeballing trades.
 
 ## Failure modes
 
 - **gcloud missing / not `@t0trade.com`**: report `gcloud auth list` and stop.
-- **IAP 401/403**: identity or group. Stop. Do not fall back to SSH for the
-  check.
-- **Datasette curl fails**: container down or port not published. Note it;
-  continue with DTO APIs and logs.
+- **IAP SSH failure**: identity, OS Login, or tunnel role. Report the error
+  and stop.
+- **Public dashboard 401 Invalid JWT audience**: expected from gcloud user
+  tokens. Do not retry that path.
+- **Datasette curl fails**: container down (prod has been observed
+  `Exited`). Note it; continue with DTO APIs and logs.
 - **Per-project logging 403**: retry via the `t0-observability` hub bucket.
 - **Empty DB / no events**: just deployed, or DB reset. Note, do not call
   everything broken.
