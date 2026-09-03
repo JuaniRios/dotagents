@@ -302,9 +302,9 @@ Notes:
 - **Cross-check against daily-report PnL claims** (feeds Step 6b): when
   the endpoint and a daily report disagree, prefer the endpoint (it's
   live data) and note the discrepancy instead of silently picking one.
-- If the endpoint is unreachable (not on the tailnet, host down), fall
-  back to the daily-report-quoted numbers and mark them "as reported on
-  <date>, not independently verified".
+- If the endpoint is unreachable (IAP 401/403, 502, or the dashboard host
+  down), fall back to the daily-report-quoted numbers and mark them "as
+  reported on <date>, not independently verified".
 
 ## Step 4 — Fetch Linear issues
 
@@ -771,8 +771,8 @@ correcting.
   config file at `~/Github/dotagents/data/progress-tracking.json`.
 - **No issues found**: report git activity only, note no Linear activity.
 - **No commits found**: report Linear activity only, note no git activity.
-- **`/pnl` endpoint unreachable** (hedge-bot): fall back to
-  daily-report-quoted PnL figures, marked "as reported on <date>, not
+- **`/pnl` endpoint unreachable** (hedge-bot, IAP or dashboard host): fall
+  back to daily-report-quoted PnL figures, marked "as reported on <date>, not
   independently verified"; note the endpoint was unavailable.
 - **`tdl` not installed / not logged in / export fails**: fall back to the
   locally saved daily reports

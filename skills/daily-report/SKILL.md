@@ -367,10 +367,20 @@ gh search issues --author="$gh_user" --closed=">=PREV_DATE" --json title,url,rep
 
 echo "### Deploy runs (what actually LANDED vs merely merged)"
 # A merged PR is only in prod if it merged BEFORE the latest successful prod
-# deploy. Query each repo's deploy workflow(s) — never trust a session's
-# "deployed" claim, they are frequently wrong. The deploy run's headSha +
-# createdAt is the source of truth. Common names: deploy-prod.yaml,
-# deploy-staging.yaml (liquidity), deploy.yaml (issuance).
+# deploy. Never trust a session's "deployed" claim. Liquidity prod is NOT a
+# workflow in st0x.liquidity (the droplet deploy-prod.yaml is dead): it is a
+# t0.devops production-liquidity workflow_dispatch after merging
+# terraform/production-liquidity/images.yaml. Staging auto-rolls from
+# st0x.liquidity build-oci.yml on master. Issuance still uses its own
+# deploy.yaml. Also query T0Trade/t0.devops.
+echo "### Liquidity prod applies (t0.devops production-liquidity)"
+gh run list --repo T0Trade/t0.devops --workflow production-liquidity.yml --limit 15 \
+  --json headSha,conclusion,createdAt,displayTitle,event \
+  --jq '.[] | select(.createdAt >= "START_UTC") | "\(.createdAt)|\(.event)|\(.conclusion)|\(.headSha[0:9])|\(.displayTitle)"' 2>/dev/null
+echo "### Liquidity staging rolls (st0x.liquidity build-oci.yml)"
+gh run list --repo ST0x-Technology/st0x.liquidity --workflow build-oci.yml --limit 15 \
+  --json headSha,conclusion,createdAt,displayTitle \
+  --jq '.[] | select(.createdAt >= "START_UTC") | "\(.createdAt)|\(.conclusion)|\(.headSha[0:9])|\(.displayTitle)"' 2>/dev/null
 for repo in ~/Github/*/; do
   if [[ "$repo" == *-worktrees* ]]; then continue; fi
   if [ ! -d "$repo/.git" ] && [ ! -f "$repo/.git" ]; then continue; fi

@@ -1,6 +1,6 @@
 ---
 name: pnl-review
-allowed-tools: Bash(curl:*), Bash(jq:*), Bash(date:*), Bash(tailscale:*), Read
+allowed-tools: Bash(curl:*), Bash(jq:*), Bash(date:*), Bash(gcloud:*), Read
 description: Answer any question about the liquidity bot's profitability -- from a vague "are we making money?" to a per-fill drill-down -- via the backend /pnl endpoint (realized PnL net of observed costs; an upper bound). Written for a mixed audience; answers are plain business language, no internal jargon. Default last 24h; supports natural-language ranges (last week, yesterday, this month), market-session and symbol filters, and prod/staging.
 argument-hint: [question or timeframe e.g. "last week"] [SYMBOL] [pre|rth|post|overnight|weekend] [staging]
 ---
@@ -18,9 +18,9 @@ are `not_ingested`, and oracle writes are structurally zero for the current
 setup. Net PnL is therefore an **upper bound**. Always confirm against
 `costs.coverage[]` rather than assuming a zero line means a zero cost.
 
-`/pnl` is proxied by nginx on each host's Tailscale MagicDNS vhost (`os.nix`:
-`"/pnl" = apiProxy "/pnl"`), so **query it directly over HTTPS -- no SSH.** Any
-tailnet member can run this command; a root SSH key is not required.
+`/pnl` is on the IAP dashboard host, same path the SPA uses. Query it over
+HTTPS with a Google identity token. Do not SSH. Do not use `/liquidity-read/pnl`
+(that backend rejects gcloud tokens).
 
 Parse the user's request. Parse it into a timeframe, optional filters, and
 environment, then query and summarize. **Default timeframe: last 24h.**
@@ -29,10 +29,10 @@ environment, then query and summarize. **Default timeframe: last 24h.**
 
 The user's request is free text. Extract, in any order (all parts optional):
 
-- **Environment**: `staging` -> base URL
-  `https://st0x-liquidity-staging.tail6094d7.ts.net`. Anything else / omitted ->
-  `prod` -> `https://st0x-liquidity-nixos.taile5cf8a.ts.net`. (MagicDNS names
-  from `flake.nix` `tailscaleMagicDnsName`; reachable only over the tailnet.)
+- **Environment**: `staging` ->
+  `https://liquidity-staging.t0trade.com`. Anything else / omitted -> `prod` ->
+  `https://liquidity.t0trade.com`. Both sit behind IAP (Google-managed OAuth on
+  the dashboard backend). Mint the token once per invocation (see step 3).
 - **Timeframe** (natural language, ET calendar days -- see step 2):
   - empty / `last 24h` / `24h` -> **default**: yesterday..today (ET)
   - `today` -> today..today
@@ -87,13 +87,14 @@ TZ=America/New_York date -d '29 days ago' +%F || TZ=America/New_York date -v-29d
 
 ## 3. Query the endpoint
 
-Curl the vhost directly. Build the request with `curl -G --data-urlencode`
-(never string-interpolate user input into the URL). `limit` only bounds the
-per-fill `entries[]` array (the fill-level drill-down -- see **Response
-schema**); `summary`, `costs`, `symbols`, and `windows` always cover the
-**full** range, so a modest limit is fine for report runs. For a fill-level
-question, raise `limit` and check `hasMore`/`total` to confirm you pulled every
-matching lot. Save the JSON to the scratchpad and check the HTTP code:
+Mint an IAP identity token for the dashboard backend, then GET `/pnl`. Build
+the request with `curl -G --data-urlencode` (never string-interpolate user
+input into the URL). `limit` only bounds the per-fill `entries[]` array (the
+fill-level drill-down -- see **Response schema**); `summary`, `costs`,
+`symbols`, and `windows` always cover the **full** range, so a modest limit is
+fine for report runs. For a fill-level question, raise `limit` and check
+`hasMore`/`total` to confirm you pulled every matching lot. Save the JSON to
+the scratchpad and check the HTTP code:
 
 Write the body to a file with `-o` and let `-w` print the status as the *only*
 stdout. Do not append the status to the body -- splitting it back off needs
@@ -101,7 +102,15 @@ stdout. Do not append the status to the body -- splitting it back off needs
 scratchpad directory.
 
 ```bash
-curl -s -m 90 -o "$OUT/pnl.json" -w '%{http_code}\n' -G "https://st0x-liquidity-nixos.taile5cf8a.ts.net/pnl" \
+# prod; staging uses project t0-liquidity-staging, backend
+# t0-liquidity-staging-dashboard, host https://liquidity-staging.t0trade.com
+CLIENT_ID=$(gcloud compute backend-services describe t0-liquidity-dashboard \
+  --global --project t0-liquidity --format='value(iap.oauth2ClientId)')
+TOKEN=$(gcloud auth print-identity-token --audiences="$CLIENT_ID" --include-email)
+
+curl -sS -m 90 -o "$OUT/pnl.json" -w '%{http_code}\n' \
+  -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
+  -G "https://liquidity.t0trade.com/pnl" \
   --data-urlencode 'fromDate=2026-07-08' \
   --data-urlencode 'toDate=2026-07-09' \
   --data-urlencode 'marketSessionFilter=post' \
@@ -128,14 +137,15 @@ fetch is **not** snapshotted. Quote the `asOfRowid` in the report footer.
 
 - `200` -> parse and report (step 4). **A `200` does not mean your filters were
   honored** -- see the symbol-skip trap under Failure modes.
-- `404` -> nginx on this host isn't proxying `/pnl` (the vhost `locations` block
-  in `os.nix` is missing `"/pnl"`, or the host is running an older closure).
-  Say so plainly and stop.
+- `401` / `403` -> IAP rejected the identity (wrong account, wrong audience, or
+  not in `liquidity-readers@` / `liquidity-admins@`). Show the status and stop.
+- `404` -> this host isn't serving `/pnl` (dashboard container too old, or the
+  path is wrong). Say so plainly and stop.
 - `400` -> bad date filter, or **every** symbol in the filter was invalid; show
   the body (it names the field) and fix the parse.
-- `000` / empty -> timeout or tailnet transport error. Retry once, then check
-  `tailscale status`.
-- `502` -> nginx is up but the bot's listener on `:8001` is down.
+- `000` / empty -> timeout or transport error. Retry once, then check `gcloud
+  auth list` and that the host resolves.
+- `502` -> the IAP load balancer is up but the bot listener on `:8001` is down.
 
 ## 4. Answer the ask
 
@@ -171,7 +181,7 @@ internals, or crypto plumbing. This command is used by non-engineers; write
 every answer accordingly:
 
 - **No internal jargon or field names in the answer.** JSON keys, `jq`, curl,
-  HTTP codes, nginx, tailnet, FIFO internals -- all invisible. The parenthetical
+  HTTP codes, IAP, FIFO internals -- all invisible. The parenthetical
   resolved-interpretation line (step 1) may stay technical; the report may not.
 - **Translate the PnL buckets** every time they appear:
   - counter-trade PnL -> "hedged spread capture" -- profit from an onchain
@@ -313,10 +323,9 @@ printing a wall of zeros.
    verify the window.
 8. Default env is **prod**; only use the staging host when the user says
    `staging`.
-9. **Query over HTTPS, never over SSH.** Do not use raw SSH, a repo remote
-   executable, or a flake remote app to reach `localhost:8001` -- `/pnl` is
-   proxied on the tailnet vhost, and SSHing in as root to read a report is
-   needless privilege.
+9. **Query over HTTPS with IAP, never over SSH.** Do not IAP-SSH to curl
+   `:8001` and do not use `/liquidity-read/pnl` (gcloud tokens are rejected
+   there). The dashboard host is enough.
 10. **Plain business language in every answer.** The reader may be a
     non-technical stakeholder: no JSON field names, no internal bucket names
     unglossed, no infrastructure vocabulary. Precision lives in the numbers
@@ -330,8 +339,10 @@ means for them: "the reporting service is unreachable; the trading itself is
 unaffected") plus one short technical line for whoever will fix it. Details
 below are for diagnosis, not for pasting into the answer.
 
-- **404**: nginx isn't proxying `/pnl` on this host. State it and stop -- do not
-  fall back to hand-rolled SQL PnL, and do not SSH in to reach `:8001` directly.
+- **401 / 403**: IAP identity or group. State it and stop -- do not fall back
+  to SSH or Datasette SQL PnL.
+- **404**: this host isn't serving `/pnl`. State it and stop -- do not fall
+  back to hand-rolled SQL PnL, and do not SSH in to reach `:8001` directly.
 - **400**: invalid `fromDate`/`toDate`, or **every** symbol in the filter was
   invalid; the body names the field. Re-parse.
 - **Silent symbol skip (a `200` you must not trust)**: if *some* symbols in the
@@ -342,12 +353,13 @@ below are for diagnosis, not for pasting into the answer.
   grep `warnings[]` for `invalid symbol` before reporting anything**; if present,
   re-check your parse and tell the user which symbols were dropped. Do not
   present a narrowed result as the requested one.
-- **`000` / timeout**: the request exceeded `-m 90`, or the tailnet is down.
-  Retry **once**; if it fails again check `tailscale status`. Do not retry blindly
-  in a loop -- each attempt costs a live Alpaca API call.
-- **`502`**: nginx up, bot listener down. Say so; don't retry.
-- **DNS / no route to host**: not on the tailnet (or the host is offline --
-  staging is frequently down). Check `tailscale status`.
+- **`000` / timeout**: the request exceeded `-m 90`, or the network/IAP path
+  failed. Retry **once**; if it fails again check `gcloud auth list` and DNS for
+  the dashboard host. Do not retry blindly in a loop -- each attempt costs a
+  live Alpaca API call.
+- **`502`**: load balancer up, bot listener down. Say so; don't retry.
+- **DNS / no route to host**: dashboard host unreachable (staging is
+  frequently down). Do not try the retired Tailscale MagicDNS names.
 - **`summary` present but all zeros / `total: 0`**: no fills matched the window
   or filters. Report "no activity in <range>" rather than a zero-filled table.
 - **Staging unreachable**: staging is often offline; say so and offer prod.

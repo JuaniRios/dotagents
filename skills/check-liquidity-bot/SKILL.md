@@ -1,391 +1,329 @@
 ---
 name: check-liquidity-bot
-allowed-tools: Bash(ssh:*), Bash(nix:*), Bash(age:*), Bash(tailscale:*), Bash(awk:*), Bash(sqlite3:*), Bash(tail:*), Bash(head:*), Read, Grep, Glob
-description: Diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) by querying the live server over SSH with the repository-whitelisted local identity.
+allowed-tools: Bash(gcloud:*), Bash(curl:*), Bash(jq:*), Bash(git:*), Bash(date:*), Bash(gh:*), Read, Grep
+description: Diagnose the liquidity bot's health (hedging, rebalancing, errors, overall status) via the IAP dashboard APIs, Cloud Logging, and Datasette. SSH is not used for the check.
 argument-hint: <prod|staging>
 ---
 
-**Required argument**: `prod` or `staging` -- which environment to check.
+# /check-liquidity-bot
 
-This command queries the **live server directly** over SSH. There is no
-snapshot/download mode: every DB and log query runs against the live server.
-This is fast, always-fresh, and avoids downloading the ~100MB DB.
+**Required argument**: `prod` or `staging`. Anything else: say
+`Usage: /check-liquidity-bot <prod|staging>` and stop.
 
-If the argument is missing or not one of `prod`/`staging`, tell the user:
-"Usage: `/check-liquidity-bot <prod|staging>`" -- and stop.
+This command is **read-only**. It does not SSH into an operator session, does
+not run `st0x-cli`, and does not POST `/liquidity-write`. Those are the fix
+path (see **Fix path** at the end). Jakub is exposing the same CLI through the
+ops API and a local client; until that is the default, diagnosis stays on
+HTTPS + logs + Datasette.
 
-Run from `~/Github/st0x.liquidity`. Resolve and validate the one authorized
-identity before opening any connection:
+## Access
+
+Both environments are GCE VMs under docker compose. Humans reach them with a
+`@t0trade.com` Google identity (`gcloud auth login you@t0trade.com`). Membership
+of `engineering@t0trade.com` reads logs and Grafana; dashboard IAP is
+`liquidity-readers@` + `liquidity-admins@`.
+
+| | prod | staging |
+|---|---|---|
+| GCP project | `t0-liquidity` | `t0-liquidity-staging` |
+| VM / zone | `t0-liquidity` / `europe-west3-b` | `t0-liquidity-staging` / `europe-west3-b` |
+| Dashboard | `https://liquidity.t0trade.com` | `https://liquidity-staging.t0trade.com` |
+| IAP backend | `t0-liquidity-dashboard` | `t0-liquidity-staging-dashboard` |
+| Bot log | `projects/t0-liquidity/logs/liquidity-botlogs` | `projects/t0-liquidity-staging/logs/liquidity-botlogs` |
+| Grafana `var-env` | `t0-liquidity` | `t0-liquidity-staging` |
+
+Other log streams (same project): `liquidity-orders`, `gcplogs-docker-driver`
+(raw stdout, TRACE-heavy), `syslog`. Grafana:
+[Deployments](https://grafana.t0trade.com/d/t0-deployments/deployments),
+`t0-liquidity`, `t0-liquidity-orders`, `t0-liquidity-performance`,
+`t0-liquidity-pnl`, `t0-liquidity-logs`.
+
+Config-as-data lives in `T0Trade/t0.devops`
+(`terraform/<env>-liquidity/st0x-hedge.toml`), not in this repo.
+
+### Bind the environment (once)
 
 ```bash
 set -euo pipefail
-
 environment='<validated prod or staging>'
-shopt -s nullglob
-matching_identities=()
-
-for public_identity in "$HOME"/.ssh/*.pub; do
-  held_public_key=$(awk 'NR == 1 { print $1 " " $2 }' "$public_identity")
-  authorization=$(
-    ST0X_ENVIRONMENT="$environment" \
-    ST0X_HELD_PUBLIC_KEY="$held_public_key" \
-    nix eval --raw --impure --expr '
-      let
-        keyConfig = import ./keys.nix;
-        role = builtins.getAttr (builtins.getEnv "ST0X_ENVIRONMENT") keyConfig.roles;
-      in
-        if builtins.elem (builtins.getEnv "ST0X_HELD_PUBLIC_KEY") role.ssh
-        then "authorized"
-        else "unauthorized"
-    '
-  )
-  private_identity="${public_identity%.pub}"
-  if [ "$authorization" = authorized ] && [ -s "$private_identity" ]; then
-    matching_identities+=("$private_identity")
-  fi
-done
-
-if [ "${#matching_identities[@]}" -ne 1 ]; then
-  printf 'Expected exactly one locally held identity authorized by keys.nix; found %s\n' \
-    "${#matching_identities[@]}" >&2
-  exit 1
-fi
-identity="${matching_identities[0]}"
-
-if tailscale status >/dev/null 2>&1; then
-  target_host=$(
-    ST0X_ENVIRONMENT="$environment" \
-    nix eval --raw --impure --expr '
-      builtins.getAttr
-        (builtins.getEnv "ST0X_ENVIRONMENT")
-        (import ./keys.nix).tailscaleHost
-    '
-  )
+ZONE=europe-west3-b
+if [ "$environment" = staging ]; then
+  PROJECT=t0-liquidity-staging
+  HOST=https://liquidity-staging.t0trade.com
+  BACKEND=t0-liquidity-staging-dashboard
+  INSTANCE=t0-liquidity-staging
+  LOGNAME='projects/t0-liquidity-staging/logs/liquidity-botlogs'
+  CONFIG_PATH=terraform/staging-liquidity/st0x-hedge.toml
 else
-  encrypted_host="infra/.remote-$environment.age"
-  target_host=$(age -d -i "$identity" "$encrypted_host")
+  PROJECT=t0-liquidity
+  HOST=https://liquidity.t0trade.com
+  BACKEND=t0-liquidity-dashboard
+  INSTANCE=t0-liquidity
+  LOGNAME='projects/t0-liquidity/logs/liquidity-botlogs'
+  CONFIG_PATH=terraform/production-liquidity/st0x-hedge.toml
 fi
-test -n "$target_host"
+```
 
-target="root@$target_host"
-ssh_options=(
-  -F /dev/null
-  -i "$identity"
-  -o IdentitiesOnly=yes
-  -o IdentityAgent=none
-  -o BatchMode=yes
-)
+### IAP token for dashboard DTO APIs
 
-run_remote() {
-  ssh "${ssh_options[@]}" "$target" "$1"
+The SPA paths (`/health`, `/pnl`, `/trades`, `/logs`, `/orders/*`,
+`/transfers/*`, `/performance/*`) sit on the **dashboard** IAP backend
+(Google-managed OAuth). Mint a user identity token whose audience is that
+backend's IAP client. Do **not** use `/liquidity-read/*` here: those backends
+reject gcloud tokens on purpose (desktop OAuth client only, used by
+`st0x-liquidity-client`).
+
+```bash
+CLIENT_ID=$(gcloud compute backend-services describe "$BACKEND" \
+  --global --project "$PROJECT" --format='value(iap.oauth2ClientId)')
+TOKEN=$(gcloud auth print-identity-token --audiences="$CLIENT_ID" --include-email)
+
+api() {
+  # usage: api /health   or   api /trades --data-urlencode 'limit=30'
+  local path="$1"; shift
+  curl -sS -m 90 -o "$OUT/body.json" -w '%{http_code}\n' \
+    -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
+    -G "$HOST$path" "$@"
 }
 ```
 
-`keys.nix` is authoritative. Discover identities only through public sidecars
-under `~/.ssh/*.pub`, compare their algorithm and base64 body to the selected
-environment's `roles.<env>.ssh`, and require the corresponding private file.
-Do not assume a filename, fingerprint, key owner, or key comment. Require
-exactly one match; zero means this machine lacks an authorized key, while
-multiple matches are ambiguous and require user direction. Never inspect or
-try unmatched private keys.
+`$OUT` is the session scratchpad. Write the body with `-o` and let `-w` print
+only the status.
 
-`-F /dev/null` prevents the user's global SSH config from adding another
-identity. Every SSH call must use the same explicit `ssh_options`; never call
-the repo's remote executable or a direct flake remote app, because those
-abstractions obscure the exact SSH identity set.
+### Cloud Logging
 
-All DB and log queries go through `run_remote`. Filter at the source -- never
-pull the full journal.
-
-> **sqlite3 quoting through SSH:** the remote shell re-splits arguments, so
-> pass the whole `sqlite3 ... "SELECT ..."` invocation as one string:
-> `run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'`.
-> Unquoted parentheses and semicolons in the SQL will otherwise break.
-
-## 0. Connectivity gate (MANDATORY -- before any other remote command)
-
-SSH uses only the dynamically discovered, whitelist-verified local key. Each
-failed attempt still counts toward fail2ban, so spamming probes will ban the IP
-and make recovery harder.
-
-**Run exactly one probe first -- never parallelize it with other remote calls:**
+Prefer the project's own log (you hold PAM, so `logging.viewer` on the project
+works). If that 403s, the hub bucket is the `engineering@` path:
 
 ```bash
-run_remote 'echo ok'
+gcloud logging logs list --project "$PROJECT"
+
+gcloud logging read "logName=\"${LOGNAME}\" AND jsonPayload.level!=\"TRACE\" AND jsonPayload.level!=\"DEBUG\"" \
+  --project "$PROJECT" --freshness 1h --limit 200 --order desc --format json
 ```
 
-- **Success** (prints `ok`): proceed to section 1. Batch subsequent queries into
-  as few `run_remote` calls as possible; do not parallelize SSH calls.
-- **Any failure** (non-zero exit, `Permission denied`, `Connection refused`,
-  timeout, or a hang you have to kill):
-  **STOP immediately.**
+Hub fallback (same lines, no per-project viewer):
 
-On failure:
-
-1. Report the exact error from that **single** probe.
-2. Tell the user to correct the host key, network, or fail2ban state, then
-   re-run `/check-liquidity-bot <env>` once SSH works.
-3. **FORBIDDEN after a failed probe** (until the user re-runs the skill or
-   explicitly confirms SSH works again):
-   - any second `run_remote` / `ssh` attempt
-   - retries, "one more try", verbose `ssh -v` diagnostics
-   - key scanning (`ssh-add -l`, alternate identities, `IdentityAgent` tricks)
-   - port scans (`nc`, checking 22/2222/public IP)
-   - extra Tailscale diagnostics (do **not** run `tailscale status` /
-     `tailscale ping` as a follow-up -- just report the probe error)
-
-Do not try to "help fix" connectivity with more SSH. One probe, stop, wait for
-the user.
-
-## Inspecting the codebase to interpret behavior
-
-Whenever you need to read the bot's source code to explain its behavior --
-what a log line means, how hedging/rebalancing logic works, what an error
-implies, which code path produced an observation -- **do NOT read the current
-working-tree or checked-out branch.** The current branch may contain unmerged
-or unreleased changes that do not reflect what is actually running in the
-environment you are diagnosing. Reasoning from it will produce wrong
-conclusions.
-
-Instead, inspect the code at the exact commit deployed to that environment:
-
-1. **Determine the deployed commit/version.** Query the server for the running
-   build, e.g. `run_remote 'systemctl status st0x-hedge --no-pager'` (start
-   time) and
-   `run_remote 'readlink -f /nix/var/nix/profiles/per-service/st0x-hedge/bin/server'`
-   (nix store path), and resolve it to a git commit.
-2. **Read the code at that commit, read-only.** Use
-   `git show <commit>:<path>` or `git grep <pattern> <commit>` against the
-   local repo history. Never `git checkout`, never edit files, never assume the
-   working tree matches.
-3. If you cannot resolve the deployed commit, say so explicitly and state that
-   any code-behavior claims are provisional -- do not silently fall back to the
-   current branch.
-
-## 1. First pass -- dashboard-backed status views
-
-Before grepping logs, get a status-at-a-glance from the read-model views that
-back the dashboard. This surfaces most problems immediately and tells you where
-to dig. The live dashboard renders this same data over its `/ws` websocket;
-querying the views directly is the scriptable equivalent.
-
-**Service health:**
 ```bash
-run_remote 'systemctl is-active st0x-hedge'
-run_remote 'systemctl status st0x-hedge --no-pager'   # uptime, restarts, PID
+gcloud logging read "logName=\"${LOGNAME}\" AND jsonPayload.level!=\"TRACE\"" \
+  --project=t0-observability --bucket=aggregated-logs --location=europe-west3 \
+  --view=_AllLogs --freshness=1h --limit=200 --order=desc --format=json
 ```
-If stopped, this is the most critical finding -- lead the report with it.
 
-**Counter-trades (offchain hedge orders) -- status distribution + recent:**
+Filter on `jsonPayload.message` and `jsonPayload.level`, never `textPayload`
+(a textPayload filter returns nothing). `gcplogs-docker-driver` is TRACE-heavy:
+always add `AND NOT jsonPayload.message:"TRACE"`.
+
+### Datasette (ad-hoc SQL)
+
+Datasette serves the live DB on the VM at `127.0.0.1:8081`. It is **not** on
+the public load balancer. Reach it with one IAP-SSH curl; that is a Datasette
+query, not an operator session. Do not `docker exec`, do not open a shell.
+
 ```bash
-run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT status, COUNT(*) FROM offchain_order_view GROUP BY status;"'
-run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT view_id, status, substr(payload,1,120) FROM offchain_order_view ORDER BY rowid DESC LIMIT 30;"'
+datasette() {
+  local sql="$1"
+  gcloud compute ssh "$INSTANCE" --project "$PROJECT" --zone "$ZONE" \
+    --tunnel-through-iap --quiet \
+    --command "curl -sS --get 'http://127.0.0.1:8081/st0x-hedge.json' --data-urlencode 'sql=${sql}' --data-urlencode '_shape=objects'"
+}
 ```
 
-> **Always query this even when the dashboard looks clean.** The dashboard does
-> render failed and cancelled counter-trades (with the broker error), in both
-> loaded history and the live feed, so it is no longer blind to them. But the
-> status distribution above is the fastest way to see the whole Filled / Failed
-> / Cancelled / Pending split across every symbol at once, which is what tells
-> you whether hedging is working. Pair it with a log scan for
-> `Offchain venue rejected` / `broker reports Failed` in section 2.
+Use this for views the HTTP API does not expose (`position_view`, full
+`offchain_order_view` status split, raw `events`). Prefer the DTO APIs when
+they already answer the question.
 
-**Stuck / failed rebalance transfers (mints, redemptions, USDC bridges).** The
-neatest way to spot a stranded transfer is to find any aggregate whose LATEST
-event is a failure:
+## 0. Connectivity gate
+
+One `/health` call first. Do not parallelize it with anything else.
+
 ```bash
-run_remote 'sqlite3 /mnt/data/st0x-hedge.db "
-  WITH latest AS (SELECT aggregate_id, MAX(sequence) ms FROM events GROUP BY aggregate_id)
-  SELECT e.event_type, COUNT(*) FROM events e JOIN latest l
-    ON e.aggregate_id=l.aggregate_id AND e.sequence=l.ms
-  WHERE e.event_type LIKE \"%Failed%\" OR e.event_type LIKE \"%Rejected%\" OR e.event_type LIKE \"%DetectionFailed%\"
-  GROUP BY e.event_type ORDER BY COUNT(*) DESC;"'
+api /health
 ```
-For any non-zero bucket, list the offending aggregates (their seq-1 event
-carries the symbol/quantity) to see exactly what is stranded.
 
-**Positions / inventory:**
+- **200** and JSON with `status`, `gitCommit`, `uptimeSeconds`: continue.
+- **401/403**: IAP rejected the identity. Report the status and body, stop.
+  Common causes: not logged in as `@t0trade.com`, wrong audience, not in
+  `liquidity-readers@` / `liquidity-admins@`.
+- **000** / timeout: transport. Retry once. Then stop.
+- **502**: the dashboard LB is up but the bot/dashboard container is not.
+  Critical. Continue only with Cloud Logging to see why.
+
+## Inspecting the codebase
+
+Do not reason from the current checkout. `/health` returns `gitCommit` (the
+image's `ST0X_GIT_COMMIT`). Read source with `git show <commit>:<path>` /
+`git grep <pattern> <commit>` against `~/Github/st0x.liquidity`. Never
+`git checkout`. If the SHA is missing locally, say so and treat code claims
+as provisional.
+
+Trading flags come from the live config, not the app repo:
+
 ```bash
-run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT * FROM position_view;"'
+gh api -H 'Accept: application/vnd.github.raw' \
+  "repos/T0Trade/t0.devops/contents/${CONFIG_PATH}"
 ```
 
-**Profitability:** for any "are we making money?" question, use `/pnl-review`
-(which wraps the backend `/pnl` endpoint) rather than eyeballing trades.
+Only assets with `trading = "enabled"` are expected to hedge. Disabled-asset
+fills with no hedge are INFO.
 
-If everything above looks clean, the bot is probably healthy -- do a quick log
-scan (2a) to confirm, then report. If anything looks off, dig into the relevant
-section below.
+## 1. First pass
+
+Batch after `/health` is 200. Profitability questions go to `/pnl-review`
+(same IAP host; that skill owns `/pnl`).
+
+```bash
+api /orders/pending
+api /trades --data-urlencode 'limit=30'
+api /transfers --data-urlencode 'limit=30'
+api /transfers/interrupted
+api /performance/reliability
+api /logs --data-urlencode 'level=ERROR,WARN' --data-urlencode 'limit=100'
+```
+
+Then Datasette for the two views the DTO APIs do not fully cover:
+
+```bash
+datasette 'SELECT status, COUNT(*) AS n FROM offchain_order_view GROUP BY status'
+datasette 'SELECT * FROM position_view'
+datasette 'WITH latest AS (SELECT aggregate_id, MAX(sequence) AS ms FROM events GROUP BY aggregate_id)
+SELECT e.event_type, COUNT(*) AS n
+FROM events e JOIN latest l ON e.aggregate_id = l.aggregate_id AND e.sequence = l.ms
+WHERE e.event_type LIKE "%Failed%" OR e.event_type LIKE "%Rejected%" OR e.event_type LIKE "%DetectionFailed%"
+GROUP BY e.event_type ORDER BY n DESC'
+```
+
+Always look at the offchain-order status split even when the dashboard looks
+clean. Filled / Failed / Cancelled / Pending across every symbol is the
+fastest hedge-health signal. Pair it with a log scan for
+`Offchain venue rejected` / `broker reports Failed`.
+
+If `/health` is 200, interrupted transfers are empty, pending orders are not
+stuck, net positions on trade-enabled assets are near zero, and ERROR/WARN
+logs are empty or expected noise, do a short log scan (2a) and report Healthy.
 
 ## 2. Detailed analysis
 
 ### 2a. Logs
 
-Pull a recent window from the server (filter at the source):
-```bash
-run_remote "journalctl -u st0x-hedge --since '1 hour ago' --no-pager | grep -iE 'error|warn|panic'"
-run_remote "journalctl -u st0x-hedge -n 200 --no-pager"
-```
+Cloud Logging is the historical source; `/logs` is the bot's own rotated
+files (same process, shorter window).
+
 Focus on:
-- **Errors/warnings**, categorized: transient network issues (RPC timeouts,
-  subgraph errors, otel export timeouts) -- usually noise; logic bugs or
-  unexpected states -- critical; panics (`panic`, `thread.*panicked`) -- crash.
-- **Restart loops**: repeated "Started st0x" / "Initializing" in quick
-  succession suggests crash-looping.
-- **Last activity timestamp**: if the service is active but the last log is
-  hours old (during market hours), it may be hung.
-- **Market hours context**: the bot trades during regular hours, plus extended
-  hours only for assets with `extended_hours_counter_trading = "enabled"`.
-  Outside those windows -- overnight, weekends, holidays -- expect NO activity
-  at all, not merely less of it: zero fills, zero hedges, zero rebalancing
-  checks. An empty window there is the correct state, never a finding.
+
+- **Errors/warnings**: RPC timeouts / otel export = usually noise; logic bugs
+  or unexpected states = critical; `panic` / `thread.*panicked` = crash.
+- **Restart loops**: repeated "Started st0x" / "Initializing".
+- **Last activity**: active process, last line hours old during market hours
+  = hung.
+- **Market hours**: regular hours, plus extended hours only for assets with
+  `extended_hours_counter_trading = "enabled"`. Overnight / weekend / holiday
+  with zero fills is the correct state, never a finding.
+- Known lines: `database or disk is full`, `Order fill poll failed`,
+  `Skipping Alpaca-to-Base USDC rebalance` (unsettled Alpaca cash; vault
+  refills next morning in 10k slices), `withdraw4 from vault`,
+  `Alpaca to Base rebalance completed`.
 
 ### 2b. Hedging
 
-**Config-aware analysis.** Only assets with `trading = "enabled"` are expected
-to be hedged. Onchain trades on disabled assets produce no offchain hedge by
-design -- note as INFO, never WARNING/CRITICAL. Read the deployed config:
-```bash
-run_remote "grep -iE '\[assets|trading|rebalancing' /run/st0x/st0x-hedge.config"
-```
-
-Check (only for **trade-enabled assets**), using the `offchain_order_view`
-data from section 1:
-- **Are offchain orders being placed?** Onchain trades on enabled assets with
-  no corresponding offchain orders = hedging broken.
-- **Success rate**: Filled vs Failed vs Pending. High failure rate = problem.
-- **Failed order patterns**: extract error messages. Common: "insufficient
-  buying power" (underfunded), "market is closed" (outside hours), auth errors,
-  "Order failed with no error reason" (often an un-fillable/restricted symbol
-  the broker rejects post-acceptance -- if it repeats many times, flag it and
-  consider whether the symbol should be `trading = "disabled"`).
-- **Direction correctness**: onchain buys -> offchain sells and vice versa.
-- **Post-deploy hedging**: if recently redeployed, confirm hedging resumed.
-
-Event-type distribution (useful for spotting anomalies):
-```bash
-run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY COUNT(*) DESC;"'
-```
+Only trade-enabled assets. Onchain trade on an enabled asset with no
+offsetting offchain order = hedging broken. High Failed rate = problem.
+Common rejects: insufficient buying power, market closed, auth,
+"Order failed with no error reason" (un-fillable symbol — consider
+`trading = "disabled"`). Onchain buy -> offchain sell and vice versa.
 
 ### 2c. Inventory and positions
 
-From `position_view` (section 1):
-- **Net position**: for trade-enabled assets, near-zero is expected -- a large
-  absolute value means hedging is failing. For trade-disabled assets, non-zero
-  is expected (unhedged by design) -- report as INFO.
-- **Inventory snapshot recency -- NOT a liveness signal.** The poller runs on a
-  fixed `inventory_poll_interval` and re-fetches every venue each tick, but the
-  `InventorySnapshot` aggregate SUPPRESSES a command whose value is unchanged.
-  So the newest event tells you when a balance last *moved*, never when polling
-  last ran, and a static book (market closed, no fills) legitimately leaves it
-  frozen for hours. Do NOT report a stale timestamp as "the polling loop
-  stopped". Confirm against whether balances had any reason to move, and scan
-  for `Inventory polling failed` on `target: "inventory"`.
-  ```bash
-  run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,120) FROM events WHERE event_type LIKE \"InventorySnapshot%\" ORDER BY rowid DESC LIMIT 6;"'
-  ```
-- **Onchain vs offchain split**: large imbalances may be intentional (vault
-  funding) or indicate a rebalancing issue.
+From `position_view`: near-zero net on trade-enabled assets is expected; a
+large absolute value means hedging is failing. Non-zero on trade-disabled
+assets is INFO.
+
+Inventory snapshot recency is **not** a liveness signal. The poller
+suppresses unchanged snapshots, so a static book (market closed) freezes
+the newest event for hours. Do not report that as "polling stopped". Scan
+logs for `Inventory polling failed` on `target: "inventory"` instead.
+
+```bash
+datasette 'SELECT event_type, substr(payload,1,120) AS payload FROM events WHERE event_type LIKE "InventorySnapshot%" ORDER BY rowid DESC LIMIT 6'
+```
 
 ### 2d. Rebalancing
 
-If rebalancing is **enabled** for any asset (per config):
-- Query recent rebalance events:
-  ```bash
-  run_remote 'sqlite3 /mnt/data/st0x-hedge.db "SELECT event_type, substr(payload,1,160) FROM events WHERE event_type LIKE \"%Rebalanc%\" ORDER BY rowid DESC LIMIT 20;"'
-  ```
-- Scan logs: `run_remote "journalctl -u st0x-hedge --since '24 hours ago' --no-pager | grep -i rebalanc | grep -ivE 'trace'"`.
-- Reconcile any failure buckets found in section 1 (stuck mints/redemptions/USDC
-  bridges) against what actually happened on-chain / at the broker before
-  concluding value is stranded -- a "timeout" failure often self-heals or is
-  premature.
+If any asset has rebalancing enabled: `/transfers`, `/transfers/interrupted`,
+`/performance/rebalances`, `/performance/equity-rebalances`, plus logs
+matching `rebalanc`. A "timeout" failure often self-heals; reconcile against
+broker / chain before calling value stranded.
 
-If rebalancing is **disabled** for all assets, note it briefly and skip.
+On-chain vault balances are not in these APIs. Read them with `cast` against
+addresses in the t0.devops config, and say so.
 
-On-chain vault balances / Raindex order state are not exposed over
-SSH; if you need them, read them on-chain via `cast`/RPC against the
-deployed OrderBook and token contracts (addresses in the deployed config), and
-say so in the report rather than guessing.
+## 3. Health report
 
-## 3. Produce the health report
-
-Structure the report as:
-
-1. **Overall verdict**: one line -- Healthy / Degraded / Critical
-2. **Service**: running/stopped, uptime since last start, deployed version
-3. **Hedging**: working/broken/degraded, success rate, error patterns, gaps
-4. **Rebalancing**: enabled/disabled, working/broken (if enabled), any stranded
-   transfers
-5. **Inventory**: net position, snapshot freshness, balance overview
-6. **Issues found**: ranked by severity (CRITICAL > WARNING > INFO). For each
-   issue, use this structured format so the user can copy-paste it directly to
-   their team channel:
+1. **Verdict**: Healthy / Degraded / Critical
+2. **Service**: `/health` status, `uptimeSeconds`, `gitCommit`
+3. **Hedging**: working/broken/degraded, success rate, error patterns
+4. **Rebalancing**: enabled/disabled, stranded transfers
+5. **Inventory**: net position, snapshot freshness
+6. **Issues**, ranked CRITICAL > WARNING > INFO, each as:
 
    ### `<Short issue name>`
 
-   **What it does**: What the component/subsystem is supposed to do.
+   **What it does**:
+   **How it's erroring**:
+   **Why it errors**:
+   **Impact**: (say "None" if none)
 
-   **How it's erroring**: The exact error message pattern, how frequently it
-   occurs, and where it appears (log source, DB status, etc.).
+   CRITICAL: bot down, panics, hedging failure on enabled assets, crash
+   loops, stranded equity/USDC. WARNING: repeated failed orders or growing
+   net on enabled assets. INFO: expected market-hours gaps, unhedged
+   disabled assets.
 
-   **Why it errors**: Root cause or most likely explanation based on the data
-   available.
+If healthy, 3-4 lines. If not, lead with the worst issue.
 
-   **Impact**: Whether it affects bot operation (trading, hedging, rebalancing)
-   or is purely noise/observability. Be definitive -- say "None" if there's no
-   operational impact, not "probably fine."
+## 4. Follow-up
 
-   Severity categories for reference:
-   - CRITICAL: bot stopped, panics, hedging failure on enabled assets, crash
-     loops, stranded equity/USDC value
-   - WARNING: repeated failed orders on enabled assets, hedging gaps on enabled
-     assets, growing net position on enabled assets
-   - INFO: minor transient errors, expected market-hours gaps, unhedged
-     positions on trade-disabled assets (working as designed)
-
-Be direct. If everything is healthy, say so in 3-4 lines. Don't pad. If there
-are problems, lead with the worst ones and be specific about what's wrong.
-
-## 4. Follow-up diagnostic queries
-
-Everything in this command is already live via `run_remote`, so follow-up
-questions need no special handling -- keep using `run_remote` to query the
-live DB (`/mnt/data/st0x-hedge.db`) and logs (`journalctl -u st0x-hedge`).
-Filter at the source and pull only what you need.
+Keep using `api`, Cloud Logging, and `datasette`. Do not switch to an
+operator SSH session for more of the same questions.
 
 ## Hard rules
 
-1. Never modify any files or state -- this is a read-only diagnostic command.
-   (Recovery/mutating CLI commands are out of scope here.)
-2. Never run `cargo run` or start any services.
-3. Never read secret files (`.env`, credentials, keys, the decrypted
-   `/run/agenix/*`). Read the plaintext config (`/run/st0x/st0x-hedge.config`)
-   only for operational flags, never secrets.
-4. **One SSH probe, then stop on failure.** After section 0 fails, do not open
-   any more SSH sessions -- extra attempts risk fail2ban. Report the single
-   error and wait for the user. Do not guess credentials.
-5. Use only `run_remote` with the dynamically discovered, whitelist-verified
-   identity and explicit SSH options defined above. Repo remote executables,
-   direct flake remote apps, alternate identities, and SSH-agent key discovery
-   are forbidden.
-6. Never use `Read` on the `.db` file -- always use `sqlite3` queries through
-   `run_remote`.
-7. Report findings honestly -- don't minimize issues or speculate beyond what
-   the data shows.
-8. When inspecting source code to explain behavior, read the code at the
-   deployed commit, never the current working-tree branch (see "Inspecting the
-   codebase to interpret behavior"). Never `git checkout` -- use
-   `git show <commit>:<path>` / `git grep <commit>`.
+1. Read-only. No `st0x-cli`, no `docker exec` of a mutating command, no
+   POST to `/liquidity-write`, no `systemctl`, no deploy.
+2. Never interpolate user input into URLs; use `--data-urlencode`.
+3. Never print secrets or Secret Manager payloads.
+4. One `/health` probe first; after 401/403, stop.
+5. Reason from the deployed `gitCommit`, not the working tree.
+6. Do not treat a stale inventory snapshot as a dead poller.
+7. `/pnl-review` for profitability, not eyeballing trades.
 
 ## Failure modes
 
-- **SSH unreachable / permission denied**: section 0 already failed. Report
-  that one error and stop. Do **not** retry, key-scan, port-scan, or open more
-  SSH sessions -- that is how fail2ban bans the IP.
-- **Identity or whitelist validation failure**: report which prerequisite
-  failed and stop without trying another key.
-- **Empty DB / no events**: the bot may have just been deployed or the DB reset.
-  Note this rather than reporting "everything is broken."
-- **A repeatedly-rejected symbol**: `offchain_order_view` shows a high `Failed`
-  count for one symbol while the rest are clean. Usually an un-fillable or
-  restricted symbol the broker rejects post-acceptance -- flag it and consider
-  whether it should be `trading = "disabled"`.
+- **gcloud missing / not `@t0trade.com`**: report `gcloud auth list` and stop.
+- **IAP 401/403**: identity or group. Stop. Do not fall back to SSH for the
+  check.
+- **Datasette curl fails**: container down or port not published. Note it;
+  continue with DTO APIs and logs.
+- **Per-project logging 403**: retry via the `t0-observability` hub bucket.
+- **Empty DB / no events**: just deployed, or DB reset. Note, do not call
+  everything broken.
+- **Repeated Failed on one symbol**: usually broker-rejected / un-fillable.
+  Flag `trading = "disabled"`.
+
+## Fix path (out of scope for this command)
+
+Mutations still need IAP SSH into the bot container, until the local ops
+client is the default:
+
+```bash
+gcloud compute ssh "$INSTANCE" --project "$PROJECT" --zone "$ZONE" --tunnel-through-iap \
+  --command 'sudo docker exec "$(sudo docker ps -qf name=bot)" /bin/st0x-cli \
+    --config /run/t0-config/st0x-hedge.toml \
+    --secrets /run/t0-secrets/t0-liquidity-secrets.toml \
+    <command>'
+```
+
+`sudo` is required (OS Login user is not in `docker`). The image has no
+shell; `docker exec` must invoke `/bin/st0x-cli` directly. The IAP-gated
+write API is `POST /liquidity-write/transfers/recheck/{kind}/{id}` and
+`POST /liquidity-write/transfers/resume`, via `st0x-liquidity-client`
+(desktop OAuth, not gcloud tokens). Do not run either from this skill.
