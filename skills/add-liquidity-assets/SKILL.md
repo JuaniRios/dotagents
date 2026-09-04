@@ -124,9 +124,8 @@ before applying.
 7. Staging: merge. The apply is automatic. Prod: merge, then
    Actions → `production-liquidity` → Run workflow. The apply job
    requests PAM entitlement `tf-apply-owner` on project `t0-liquidity`
-   and waits up to 60 minutes. Approvers act in GCP console → Security
-   → Privileged Access Manager → Grants (2 of N). Missed window:
-   `gh run rerun <id> --failed`.
+   and waits up to 60 minutes. Approvers follow the `review-pam-grants`
+   skill (2 of 4). Missed window: `gh run rerun <id> --failed`.
 8. Wait for the roll (timer ticks every 2 minutes). Confirm on the VM:
    - `CONFIG_VERSION` in `/etc/t0-liquidity/images.env` advanced
    - `/etc/t0-liquidity/secrets/st0x-hedge.toml` contains the new tables
