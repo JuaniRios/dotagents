@@ -67,7 +67,7 @@ workflow. No em dashes. Do not restate repo docs — point at them.
 
 ## 5. Critique
 
-Panel-runtime **Plan critics**: planner is fable 5 if the Claude
+Panel-runtime **Plan critics**: planner is fable 5.1 if the Claude
 harness is reachable, else the host model. Critics: opus 5, sol 5.6,
 grok 4.6 in parallel. Label `claude-host` vs `portable`. Append
 `### Critique` (adopted / rejected).

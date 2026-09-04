@@ -15,7 +15,7 @@ One generalist lane per **model**. No specialists. No fix loop. The
 host harness assembles; it does not add a fifth opinion.
 
 **Lanes:** `review-opus` (opus 5), `review-sol` (sol 5.6),
-`review-grok` (grok 4.6), `review-flash` (flash 3.7). fable 5 is not
+`review-grok` (grok 4.6), `review-flash` (flash 3.7). fable 5.1 is not
 a council lane.
 
 CLI recipes and native-vs-foreign rules: `panel-runtime.md`.
@@ -197,7 +197,7 @@ Do not auto-fix. Do not start review-loop.
 ## Hard rules
 
 1. Four generalists only (opus 5, sol 5.6, grok 4.6, flash 3.7). No
-   fable 5. No inspectors. No re-review loop.
+   fable 5.1. No inspectors. No re-review loop.
 2. Never `claude -p` when the host harness is Claude. Never `grok -p`
    when it is Grok. Never `codex exec` when it is Codex. Never `agy -p`
    when it is Agy. Home-harness lanes are native children pinned to

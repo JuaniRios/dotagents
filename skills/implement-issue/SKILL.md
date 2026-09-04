@@ -57,7 +57,7 @@ Otherwise, first classify the change:
   coupling, leave the fast path before editing.
 - **Standard path**: every other change. Per panel-runtime **Plan critics**:
 
-  - Planner: fable 5 if the Claude harness is reachable, else the host
+  - Planner: fable 5.1 if the Claude harness is reachable, else the host
     model. Write `.tmp/implement-issue/<id>-plan.md`.
   - Critics in parallel: opus 5, sol 5.6, grok 4.6. Label the run
     `claude-host` or `portable`.

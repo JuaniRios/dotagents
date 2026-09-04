@@ -2,7 +2,7 @@
 name: review-loop
 description: >
   Cross-review the current branch with a multi-model panel (opus 5,
-  sol 5.6, grok 4.6, flash 3.7, fable 5 deep), auto-fix findings, and
+  sol 5.6, grok 4.6, flash 3.7, fable 5.1 deep), auto-fix findings, and
   re-review until clean. Use only when the user explicitly asks for
   review-loop, a multi-model review, or an applicable complex implementation
   workflow explicitly requires it. Do not auto-trigger for ordinary review,

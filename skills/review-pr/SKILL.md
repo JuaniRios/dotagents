@@ -3,7 +3,7 @@ name: review-pr
 description: >
   Cross-review a pull request by number or URL without checking it out.
   Plain-language TL;DR, then the same multi-model panel as review-loop
-  (opus 5, sol 5.6, grok 4.6, flash 3.7, fable 5 deep). Stays in the session so you can
+  (opus 5, sol 5.6, grok 4.6, flash 3.7, fable 5.1 deep). Stays in the session so you can
   decide which findings to post. Use when reviewing someone else's PR.
 argument-hint: "<pr-number | pr-url>"
 allowed-tools: Bash(*), Read, Write
