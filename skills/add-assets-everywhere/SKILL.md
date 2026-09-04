@@ -42,7 +42,7 @@ Live config is `T0Trade/t0.devops`, not the app-repo baked copies.
 | 3 | Prod Bebop quoter | `terraform/production-bebop/t0-bebop.toml` | **Dispatch** `production-bebop.yml` then PAM |
 | 4 | Issuance | API on the NixOS host | `add-issuance-assets` (stop/seed/start) |
 | 5 | Liquidity | `terraform/{staging,production}-liquidity/st0x-hedge.toml` | Staging: merge auto, **trading disabled**. Prod: **dispatch** `production-liquidity.yml`, 2-of-N PAM, 2-min roll timer, **trading enabled** |
-| 6 | Dashboards | `terraform/modules/gcp-observability/price-parity/<SYM>-{buy,sell}.bin` (oracle probe bodies only) | Merge auto. Skip if the bins cannot be produced |
+| 6 | Price-parity monitoring | `terraform/production-observability/main.tf` (`parity_pyth_feed_ids`) + `terraform/modules/gcp-observability/price-parity/<SYM>-{buy,sell}.bin` | Merge auto-applies Terraform; then an observability admin must converge the running probe config and restart both timers |
 
 Same hunks go in **both** staging and prod toml copies in **one PR**. That is
 not a promotion. Image digests promote staging → prod via `images.yaml`;
@@ -84,7 +84,6 @@ Do **not** wait for a staging-first cycle before the prod files.
   `"not found in tokencache"` is wait-or-ask-Alpaca, not a retry loop.
 - **Fireblocks whitelist.** Issuance signs with Turnkey. If a mint fails on
   a Turnkey policy, that is a human console task.
-- **Pyth / `parity_pyth_feed_ids`.** Out of this flow. Do not add feed ids.
 
 ## Address map
 
@@ -150,12 +149,40 @@ env split (that skill's own default is all-enabled):
 
 Do not ask. Only flip a flag if the user named a different set.
 
-Observability: Pyth is out of this flow (no `parity_pyth_feed_ids` row).
-The probe discovers symbols from pricing `/metrics`. The remaining optional
-artifact is the oracle-leg body pair
-`price-parity/<SYM>-buy.bin` / `<SYM>-sell.bin` (ABI-encoded `/context/v5`
-orders). Do **not** copy another symbol's bins. If you cannot produce them,
-omit them and list them as a leftover.
+Observability: the Grafana dashboard has no per-symbol list. The price-parity
+probe discovers symbols from pricing `/metrics`, then expects two explicit
+inputs for every discovered symbol:
+
+1. `parity_pyth_feed_ids` in `terraform/production-observability/main.tf`.
+   Resolve the exact Hermes `Equity.US.<SYM>/USD` feed and verify that it has
+   published a live price. Never infer an id. If no live feed exists, add
+   `SYM = ""`; presence is the explicit coverage acknowledgment and keeps the
+   internal oracle-vs-pricing checks enabled.
+2. `price-parity/<SYM>-buy.bin` and `<SYM>-sell.bin`: 640-byte ABI-encoded
+   `/context/v5` orders. The established recipe is to copy one current body
+   pair as a structural template and replace only the 20-byte token slots at
+   offsets `0x1EC` (input) and `0x24C` (output): buy is USDC in / wrapped token
+   out; sell is wrapped token in / USDC out. ABI-decode both directions and
+   verify each differs from the template in exactly the wrapper's 20 bytes.
+
+Missing either input exports `price_parity_symbol_coverage=0`, raises the
+symbol-coverage-gap alert, and leaves the dashboard row incomplete. If a feed
+id or verified body pair cannot be produced, stop and list that item as a
+leftover; do not invent it.
+
+The production-observability workflow auto-applies on merge, but the feed map
+and `bodies.json` are rendered into GCE user-data. Updating instance metadata
+does **not** rerun cloud-init on the existing `t0-observability` VM. The plan
+must therefore assign an observability admin to converge these live files from
+the merged config:
+
+- `/opt/observability/price-parity/bodies.json`
+- `/opt/observability/price-parity/env-staging`
+- `/opt/observability/price-parity/env-production`
+
+Then restart `price-parity@staging.timer` and
+`price-parity@production.timer`. Do not edit Grafana JSON for a listing; its
+queries render newly emitted symbol labels automatically.
 
 ## Phase A — plan (no mutation)
 
@@ -182,7 +209,7 @@ On-chain: tSYM/wtSYM/decimals/receipt OK
 3  Prod Bebop         [[pairs]]                      PR review; you dispatch production-bebop.yml; PAM
 4  Issuance           POST + seed checkpoints        none (this session, ~2 min downtime)
 5  Liquidity          staging disabled, prod enabled dispatch production-liquidity.yml; 2-of-N PAM
-6  Observability      oracle bins if we can make them merge auto; else leftover
+6  Observability      Pyth map + verified oracle bins PR review; admin converges running probe + restarts timers
 7  Registry merge     no                             launch Phase 6 (unless you asked)
 8  Alpaca tokencache  no                             wait / ask Alpaca after issuance
 9  Hydrex / pools     no                             ops
@@ -218,9 +245,17 @@ Reuse an already-correct open PR rather than rewriting it. If you author:
    4. Liquidity: `add-liquidity-assets` twice — staging with all flags
       `"disabled"`, prod with all flags `"enabled"`. Prod dispatch + PAM +
       roll + `check-liquidity-bot`.
-7. Issuance: `add-issuance-assets` with the same address table. Can run as
+7. Observability: after `production-observability` succeeds, have an admin
+   converge the live `bodies.json` and both `env-*` files as described above,
+   then restart both price-parity timers. From the observability VM, verify the
+   new symbols in VictoriaMetrics:
+   - `price_parity_symbol_coverage{symbol=~"SYM1|SYM2"}`: every emitted leg is 1.
+   - `price_parity_price{symbol=~"SYM1|SYM2",source=~"oracle_mid|pricing_mark|pyth"}`:
+     pricing and oracle are present; Pyth is present when its mapped feed is live.
+   This is the listing-specific dashboard activation; no panel edit is needed.
+8. Issuance: `add-issuance-assets` with the same address table. Can run as
    soon as the plan is confirmed; it does not wait for the t0.devops merge.
-8. Do not merge the registry PR unless the confirmed plan said to.
+9. Do not merge the registry PR unless the confirmed plan said to.
 
 Missed PAM window (job waits ~60 min): `gh run rerun <id> --failed`.
 
@@ -243,6 +278,8 @@ registry, bins, Hydrex).
 8. Never merge unsigned `t0.devops` commits.
 9. Never treat staging as a dry run of prod quoting or of mainnet inventory.
 10. Never skip overlapping-PR detection.
+11. Never call observability complete because Terraform applied: verify the
+    running price-parity config and coverage metrics after the timer restart.
 
 ## Failure modes
 
