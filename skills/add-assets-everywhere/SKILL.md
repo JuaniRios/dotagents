@@ -41,8 +41,8 @@ Live config is `T0Trade/t0.devops`, not the app-repo baked copies.
 | 2 | Signed oracle | `terraform/{staging,production}-oracle/oracle-config.toml` | Staging: merge auto. Prod: **dispatch** `production-oracle.yml` then PAM. `release-oracle.yml` watches `images.yaml` only |
 | 3 | Prod Bebop quoter | `terraform/production-bebop/t0-bebop.toml` | **Dispatch** `production-bebop.yml` then PAM |
 | 4 | Issuance | API on the NixOS host | `add-issuance-assets` (stop/seed/start) |
-| 5 | Liquidity | `terraform/{staging,production}-liquidity/st0x-hedge.toml` | Staging: merge auto. Prod: **dispatch** `production-liquidity.yml`, 2-of-N PAM, 2-min roll timer |
-| 6 | Dashboards | `terraform/production-observability/main.tf` `parity_pyth_feed_ids` + `terraform/modules/gcp-observability/price-parity/<SYM>-{buy,sell}.bin` | Merge auto |
+| 5 | Liquidity | `terraform/{staging,production}-liquidity/st0x-hedge.toml` | Staging: merge auto, **trading disabled**. Prod: **dispatch** `production-liquidity.yml`, 2-of-N PAM, 2-min roll timer, **trading enabled** |
+| 6 | Dashboards | `terraform/modules/gcp-observability/price-parity/<SYM>-{buy,sell}.bin` (oracle probe bodies only) | Merge auto. Skip if the bins cannot be produced |
 
 Same hunks go in **both** staging and prod toml copies in **one PR**. That is
 not a promotion. Image digests promote staging → prod via `images.yaml`;
@@ -61,7 +61,8 @@ Do **not** wait for a staging-first cycle before the prod files.
   config the app rejects fails the startup probe; traffic stays on the
   previous revision.
 - Staging liquidity **is** live Base + Alpaca with a different EOA. Treat it
-  as real funds, not a sandbox. Default its trading flags to `"disabled"`.
+  as real funds, not a sandbox. Always add the symbol there with
+  `trading = "disabled"`. Prod gets `trading = "enabled"`.
 - Skip staging Bebop unless the user asked. Adding pairs there does not
   rehearse the prod vault-sourced maker.
 
@@ -83,6 +84,7 @@ Do **not** wait for a staging-first cycle before the prod files.
   `"not found in tokencache"` is wait-or-ask-Alpaca, not a retry loop.
 - **Fireblocks whitelist.** Issuance signs with Turnkey. If a mint fails on
   a Turnkey policy, that is a human console task.
+- **Pyth / `parity_pyth_feed_ids`.** Out of this flow. Do not add feed ids.
 
 ## Address map
 
@@ -138,17 +140,22 @@ symbol = "wtSYM"
 Prod Bebop: copy an existing `[[pairs]]` block; only `base` changes (the
 wrapped address). Shared hook/inventory/`0xfab` stay as in that file.
 
-Liquidity: both tables, per `add-liquidity-assets`. Brand-new listing
-defaults to `trading = "disabled"` (and usually rebalancing disabled) until
-the bot has booted with the symbol present, unless the user asked to enable
-for launch.
+Liquidity: both tables, per `add-liquidity-assets`, with this skill's
+flag default (it overrides that skill's "disabled until booted" default):
 
-Observability: add `SYM` to `parity_pyth_feed_ids` (Hermes
-`Equity.US.<SYM>/USD` id, or `""` if none). Do **not** copy another symbol's
-`*-buy.bin` / `*-sell.bin` (they are ABI-encoded `/context/v5` orders). If
-you cannot produce the pair, ship the Pyth id and list the bins as a leftover;
-pricing discovery still adds the symbol to the board, and the coverage-gap
-alert will name it until the oracle leg exists.
+| env | `trading` | `rebalancing` | `wrapped_equity_recovery` | `extended_hours_counter_trading` |
+|---|---|---|---|---|
+| staging | `"disabled"` | `"disabled"` | `"disabled"` | `"disabled"` |
+| prod | `"enabled"` | `"enabled"` | `"enabled"` | `"enabled"` |
+
+Do not ask. Only flip a flag if the user named a different set.
+
+Observability: Pyth is out of this flow (no `parity_pyth_feed_ids` row).
+The probe discovers symbols from pricing `/metrics`. The remaining optional
+artifact is the oracle-leg body pair
+`price-parity/<SYM>-buy.bin` / `<SYM>-sell.bin` (ABI-encoded `/context/v5`
+orders). Do **not** copy another symbol's bins. If you cannot produce them,
+omit them and list them as a leftover.
 
 ## Phase A — plan (no mutation)
 
@@ -174,8 +181,8 @@ On-chain: tSYM/wtSYM/decimals/receipt OK
 2  Oracle s+p         [[tokens]]                     PR review; you dispatch production-oracle.yml; PAM
 3  Prod Bebop         [[pairs]]                      PR review; you dispatch production-bebop.yml; PAM
 4  Issuance           POST + seed checkpoints        none (this session, ~2 min downtime)
-5  Liquidity          both tables, flags=…           dispatch production-liquidity.yml; 2-of-N PAM
-6  Observability      Pyth id [+ bins]               merge auto
+5  Liquidity          staging disabled, prod enabled dispatch production-liquidity.yml; 2-of-N PAM
+6  Observability      oracle bins if we can make them merge auto; else leftover
 7  Registry merge     no                             launch Phase 6 (unless you asked)
 8  Alpaca tokencache  no                             wait / ask Alpaca after issuance
 9  Hydrex / pools     no                             ops
@@ -188,8 +195,8 @@ Overlapping PRs: …
 Signed commits: this machine can / cannot sign.
 ```
 
-Ask explicitly: liquidity `trading` enabled or disabled; include observability
-bins or leave them; merge registry or not.
+Ask explicitly only if the bins cannot be produced (leave them, or wait), and
+whether to merge the registry. Do not ask about liquidity flags.
 
 ## Phase B — execute (only after confirm)
 
@@ -208,8 +215,10 @@ Reuse an already-correct open PR rather than rewriting it. If you author:
    2. Dispatch `production-oracle.yml` on `main`. PAM. Confirm oracle `/quote`
       no longer returns `Unknown tStock token` for the wrapper.
    3. Dispatch `production-bebop.yml`. PAM.
-   4. Liquidity: `add-liquidity-assets` for each env in the plan (prod
-      dispatch + PAM + roll + `check-liquidity-bot`).
+   4. Liquidity: `add-liquidity-assets` twice — staging with all flags
+      `"disabled"`, prod with all flags `"enabled"` (this overrides that
+      skill's "disabled until booted" default). Prod dispatch + PAM + roll
+      + `check-liquidity-bot`.
 7. Issuance: `add-issuance-assets` with the same address table. Can run as
    soon as the plan is confirmed; it does not wait for the t0.devops merge.
 8. Do not merge the registry PR unless the confirmed plan said to.
@@ -226,7 +235,7 @@ registry, bins, Hydrex).
 ## Hard rules
 
 1. No mutation before plan confirm.
-2. Never invent an address, feed id, vault id, or spread.
+2. Never invent an address, vault id, or spread.
 3. Never use the wrapper as the issuance vault.
 4. Never add `spread_model.profiles` next to `fixed_half_spread_bps`.
 5. Never bump `images.yaml` for a listing.
@@ -249,4 +258,5 @@ registry, bins, Hydrex).
 - **Issuance 422 on POST:** unconfigured network or vault already claimed.
 - **Liquidity bot Restarting after roll:** toml rejected; revert and
   re-apply. No automatic revert.
-- **Coverage-gap alert on the new symbol:** missing Pyth id or missing bins.
+- **Oracle-leg coverage gap on the new symbol:** missing `*-buy.bin` /
+  `*-sell.bin`. Pricing discovery still lists it; the oracle probe does not.
