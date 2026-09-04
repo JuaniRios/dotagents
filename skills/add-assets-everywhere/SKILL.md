@@ -141,7 +141,7 @@ Prod Bebop: copy an existing `[[pairs]]` block; only `base` changes (the
 wrapped address). Shared hook/inventory/`0xfab` stay as in that file.
 
 Liquidity: both tables, per `add-liquidity-assets`, with this skill's
-flag default (it overrides that skill's "disabled until booted" default):
+env split (that skill's own default is all-enabled):
 
 | env | `trading` | `rebalancing` | `wrapped_equity_recovery` | `extended_hours_counter_trading` |
 |---|---|---|---|---|
@@ -216,9 +216,8 @@ Reuse an already-correct open PR rather than rewriting it. If you author:
       no longer returns `Unknown tStock token` for the wrapper.
    3. Dispatch `production-bebop.yml`. PAM.
    4. Liquidity: `add-liquidity-assets` twice — staging with all flags
-      `"disabled"`, prod with all flags `"enabled"` (this overrides that
-      skill's "disabled until booted" default). Prod dispatch + PAM + roll
-      + `check-liquidity-bot`.
+      `"disabled"`, prod with all flags `"enabled"`. Prod dispatch + PAM +
+      roll + `check-liquidity-bot`.
 7. Issuance: `add-issuance-assets` with the same address table. Can run as
    soon as the plan is confirmed; it does not wait for the t0.devops merge.
 8. Do not merge the registry PR unless the confirmed plan said to.

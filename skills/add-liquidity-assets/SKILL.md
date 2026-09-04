@@ -91,10 +91,10 @@ Addresses come from `ST0x-Technology/st0x.registry` `token-lists/base.json`:
 Checksum to match siblings. `vault_id = "0xfab"` is the auto-discover
 sentinel used by every current entry; do not invent a vault.
 
-Default for a brand-new listing: `trading = "disabled"` (and usually
-rebalancing disabled) until the bot has booted with the symbol present.
-Enable in a follow-up config release. If the user asked to **enable** an
-already-issued name and named the flags, use those flags.
+Default for a brand-new listing: copy the enabled sibling flags above
+(`trading`, `rebalancing`, `wrapped_equity_recovery`,
+`extended_hours_counter_trading` all `"enabled"`). One release, not a
+disabled-then-enable pair. If the user named flags, use those.
 
 `extended_hours_counter_trading` is independent of `trading`. Off-hours
 hedges only happen when it is `"enabled"`.
