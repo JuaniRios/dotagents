@@ -38,7 +38,7 @@ and checkpoints.
 ## 4. Cross-link
 
 `linear issue link <ID> "$pr_url"`. Assignee `JuaniRios`. Reviewers
-`0xgleb` and `findolor` (only `0xgleb` in `st0x.liquidity`).
+`agryaznov` (Alex), `ueco-jb` (Jakub), `rouzwelt` (Rouz), and `findolor`.
 
 ## 5. Plan
 
