@@ -2,7 +2,8 @@
 name: add-assets-everywhere
 description: >
   Plan then apply a new tokenized-equity listing across pricing, oracle,
-  Bebop, issuance, liquidity, and dashboards. Use when asked to add, list,
+  Bebop, issuance, liquidity, and dashboards. Trigger deployments, draft PAM
+  requests, and resume timed-out applies after approval. Use when asked to add, list,
   launch, or enable new assets everywhere, on the quoting path, or from a
   registry PR.
 argument-hint: "<SYMBOL...>"
@@ -257,7 +258,59 @@ Reuse an already-correct open PR rather than rewriting it. If you author:
    soon as the plan is confirmed; it does not wait for the t0.devops merge.
 9. Do not merge the registry PR unless the confirmed plan said to.
 
-Missed PAM window (job waits ~60 min): `gh run rerun <id> --failed`.
+### Deployment and PAM handoff
+
+After plan confirmation, own the deployment steps. Do not hand the user a
+list of workflows to trigger. Reuse already-merged listing changes and
+existing runs; a merged config is not evidence that it is deployed.
+
+1. Inspect the current workflow definitions, relevant run attempts, and PAM
+   grants. Record the workflow, run URL, target commit, project, grant ID,
+   approval count, and current step. Separate running applies from failed
+   attempts and PR-only plans. Match each grant to its exact run and scope;
+   ignore unrelated grants even if they are on the same project.
+2. Trigger each authorized apply when its dependencies are ready. Preserve
+   the order above: pricing serving → oracle → Bebop; liquidity can proceed
+   after pricing. For a missing manual run, dispatch the workflow on `main`
+   after verifying that its current scope still matches the approved plan.
+   For a timed-out run, retry its failed jobs as described below. Do not
+   duplicate an active run or report a dependency-blocked deployment as
+   already triggered. SSH verifies runtime state; it does not publish the
+   t0.devops config. A verification transport failure alone is not a reason
+   to withhold an otherwise reviewed, authorized workflow trigger; report
+   the remaining verification gap separately.
+3. Review the resulting grants with `review-pam-grants`. Honor existing user
+   authorization to approve grants that pass review; do not ask again for
+   permission already given. Re-read approval counts after voting. One vote
+   does not mean quorum or deployment success.
+4. Draft a Telegram PAM request with `write-as-me` once there are actionable
+   grants. Include the assets, each project, the exact grant link or ID,
+   the run link, and remaining votes. State which deployments will follow
+   after the current stage. Do not ask colleagues to approve unrelated or
+   stale requests. Provide the draft in the conversation; use
+   `telegram-message` to send only when the user explicitly authorizes it.
+5. When the user says PAM is approved, verify the actual grant state and
+   quorum, then inspect the latest attempt of the linked Actions run. Do
+   not treat the message alone as proof that deployment happened.
+   - Still awaiting approval: report the remaining votes and update the
+     draft if needed.
+   - Grant active and run progressing: monitor through completion.
+   - Run failed while waiting for PAM, including credential expiry during
+     that wait: recheck the target commit and scope, then run
+     `gh run rerun <id> --failed --repo T0Trade/t0.devops`. An active grant
+     does not restart a failed job automatically.
+   - Grant expired, denied, or revoked: inspect the reason before proceeding.
+     Do not bypass a denial or revocation. If authorization remains valid
+     and only expiry blocked the run, retry the workflow, review any new
+     grant it requests, and draft the new PAM request.
+   - Failure elsewhere: diagnose that failure instead of blindly retrying.
+6. Verify the successful apply's runtime result and continue to the next
+   ready deployment automatically. Repeat the trigger → draft → verify
+   approval → retry if timed out cycle until all authorized surfaces are
+   complete or a specific external dependency remains.
+
+The PAM wait is normally about 60 minutes; read the run's actual state
+rather than assuming the window is still open.
 
 ## Report
 
