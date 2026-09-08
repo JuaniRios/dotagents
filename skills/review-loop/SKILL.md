@@ -17,7 +17,9 @@ allowed-tools: Bash(*), Read, Write, Edit
 # review-loop
 
 Review → fix → lean re-review until a clean independent pass. Automatic
-by default. Read `~/Github/dotagents/skills/panel-runtime.md` first — it
+by default. Review rounds run compile and targeted checks, never full CI;
+the calling workflow owns the full post-convergence CI gate. Read
+`~/Github/dotagents/skills/panel-runtime.md` first — it
 owns models, wrappers, lanes, adaptive sizing, lean rounds, quorum,
 and Max preflight. This file owns the branch loop around that panel.
 
@@ -38,7 +40,8 @@ When the user asked for `stack`, wrap steps 1–15:
 2. Run the single-branch loop on the current branch. After the first
    branch, a dirty tree from `gt up` restack is expected; stop only on
    unrelated edits.
-3. After clean + `/ci` green, `gt modify -a` if this branch changed.
+3. After clean + compile and affected tests green, `gt modify -a` if this
+   branch changed.
 4. `gt up`. Repeat from 2 until top.
 5. A 4-pass cap on any branch stops the walk.
 6. Accumulate follow-up candidates across branches; run steps 13–14
@@ -171,8 +174,10 @@ Never enter re-review with a broken compile.
 ## 12. Re-review
 
 Independent lean pass over the full updated diff (panel-runtime).
-Launch `/ci` concurrently. Formatter-only delta: skip the pass.
-Cap 4. Never end on a fix. Filter findings already fixed or dismissed.
+Run the narrow tests/checks affected by this pass concurrently, but do not
+launch `/ci`: another review fix could invalidate that expensive result.
+Formatter-only delta: skip the pass. Cap 4. Never end on a fix. Filter
+findings already fixed or dismissed.
 
 ## 13–14. Grouped follow-ups
 
@@ -203,8 +208,8 @@ mutate version control.
    submits.
 5. `--description-file` for Linear bodies.
 6. Re-read source before applying a fix.
-7. Surgical fixes. Compile gate every fix pass. `/ci` overlaps
-   re-review.
+7. Surgical fixes. Compile gate and affected tests every fix pass. Never run
+   full CI inside the loop; the caller runs it once after convergence.
 8. Cap 4. Quorum required. Never end on a fix.
 9. Panel per panel-runtime. No second orchestrator. No impersonating a
    dropped model.

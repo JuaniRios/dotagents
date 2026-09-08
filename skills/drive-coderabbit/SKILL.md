@@ -1,12 +1,13 @@
 ---
 name: drive-coderabbit
 allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(python3:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(cat:*), Bash(sleep:*), Bash(seq:*), Bash(cargo:*), Bash(grep:*), Bash(wc:*), Read, Edit, Write, Grep, Glob
-description: Drive CodeRabbit across an entire Graphite stack in parallel. Use only when the user explicitly asks to run or drive CodeRabbit across the stack; do not auto-trigger from a CodeRabbit mention, an ordinary review request, or existing bot comments. Requests a full first review and regular follow-up reviews, waits through rate limits, then addresses findings and amends the stack.
+description: Drive bounded CodeRabbit convergence across an entire Graphite stack in parallel. Use only when the user explicitly asks to run or drive CodeRabbit across the stack, or an active implementation workflow requires it. Uses one full first review, automatic or regular incremental follow-ups, batches fixes, and never waits for intermediate CI.
 argument-hint: [current]
 ---
 
-Trigger a fresh CodeRabbit review on every PR in the stack, wait for all of
-them concurrently, then autonomously apply the findings and amend the stack.
+Trigger an initial CodeRabbit review on every PR in the stack, wait for all of
+them concurrently, then autonomously apply findings and run at most two lean
+incremental follow-up rounds.
 This is the "I just pushed a stack, get CodeRabbit's pass folded in without
 me babysitting it" button.
 
@@ -22,10 +23,21 @@ out. So Phase 1 fans out the wait+analysis (no git mutation), Phase 2
 serializes the fast git apply. This runs **autonomous, no prompts mid-run** —
 you opted into letting it fix, amend, and restack on its own.
 
+**CI boundary.** This skill never runs or waits for full CI. It uses compile
+and affected-test gates for fixes. GitHub CI triggered by an intermediate push
+may run or be cancelled in the background; the calling workflow owns the one
+final CI wait after convergence.
+
 **The handle is `@coderabbitai`** (bot login `coderabbitai[bot]`). A comment
 addressed to `@coderabbit` does NOT fire the bot. Use `@coderabbitai full
 review` only when the PR has no prior completed CodeRabbit review; use
 `@coderabbitai review` for every later round.
+
+**Bound:** one initial round plus at most two follow-up rounds. A round with no
+new actionable findings converges that PR. If the last allowed round finds
+valid issues, fix and resolve them but do not request a fourth review; report
+that terminal delta explicitly. Never turn probabilistic nit discovery into
+an unbounded loop.
 
 Follow these steps precisely.
 
@@ -50,7 +62,7 @@ top. This gives **bottom-up order**, which Phase 2 relies on.
 If no open PR matches the current stack, stop and tell the user. Print the
 ordered list of PRs you're about to drive.
 
-## 2. Phase 1 — fan out one background agent per PR
+## 2. Review round — fan out one background agent per PR
 
 Launch one isolated child per PR in a single parallel batch so they
 run concurrently. Each child is fully self-contained (it does NOT
@@ -61,9 +73,9 @@ substituting the PR number and branch:
 > NOT check out, edit, commit, or restack anything — you only post a comment,
 > wait, and produce an analysis. All git reads use `git show <branch>:<path>`.
 >
-> **1. Trigger.** Check whether CodeRabbit has already completed any review on
-> this PR, choose the command once for this round, then record the trigger time
-> and post it:
+> **1. Trigger.** On the initial round, check whether CodeRabbit has already
+> completed any review on this PR, choose the command once, then record the
+> trigger time and post it:
 > ```bash
 > PRIOR_REVIEWS=$(gh api repos/{owner}/{repo}/pulls/<N>/reviews --paginate --jq \
 >   '[.[] | select(.user.login=="coderabbitai[bot]")
@@ -77,8 +89,14 @@ substituting the PR number and branch:
 > gh pr comment <N> --body "$REVIEW_COMMAND"
 > ```
 >
-> **2. Wait for the review, retrying through rate limits.** Poll every 60s
-> (cap ~40 min per attempt). On each poll check two things, only counting
+> On a follow-up round, first wait up to 3 minutes for the automatic review
+> caused by the preceding push. If a completed review newer than that push
+> appears, consume it without posting a command. Otherwise record a new
+> trigger time and post `@coderabbitai review`. Never use `full review` on a
+> follow-up round.
+>
+> **2. Wait for the review.** Poll every 60s (cap 20 min for the round). On
+> each poll check two things, only counting
 > activity with timestamp > `$TRIGGER_ISO`:
 >
 > - **Done:** a review by `coderabbitai[bot]` whose body contains
@@ -92,18 +110,19 @@ substituting the PR number and branch:
 >   `>= 1` means the review landed. (`Actionable comments posted: 0` still
 >   counts as done — nothing to fix.)
 > - **Rate limited:** an issue comment OR review body by `coderabbitai[bot]`
->   after the trigger containing `Rate limit exceeded` / `before requesting
->   another review`:
+>   after the trigger containing `Review rate limited`, `Review limit
+>   reached`, `Rate limit exceeded`, `included review limit`, or `before
+>   requesting another review`:
 >   ```bash
 >   gh api repos/{owner}/{repo}/issues/<N>/comments --paginate --jq \
 >     '.[] | select(.user.login=="coderabbitai[bot]")
 >          | select(.created_at > "'"$TRIGGER_ISO"'") | .body'
 >   ```
->   Parse the wait ("wait X minutes and Y seconds" or "try again in X
->   minutes"), `sleep` that long + 30s, re-post the unchanged
->   `$REVIEW_COMMAND`, reset `$TRIGGER_ISO`, and resume polling. Count the
->   retries. A rate-limit retry is the same round and MUST NOT change the
->   selected command.
+>   If the message says usage-based billing will continue the review, keep
+>   polling. Otherwise parse the refill time and return `status:
+>   "rate_limited"` with that time in `notes`; do not sleep for an hour or
+>   repost the command. The controller may retry this PR once later if its
+>   refill becomes available while useful work on other PRs is still running.
 >
 > If neither appears within the cap, return `status: "timeout"`.
 >
@@ -120,7 +139,7 @@ substituting the PR number and branch:
 > **4. Return a fix plan** as JSON (this text IS your return value):
 > ```json
 > {
->   "pr": <N>, "branch": "<branch>", "status": "reviewed|no_actionable|timeout|error",
+>   "pr": <N>, "branch": "<branch>", "status": "reviewed|no_actionable|rate_limited|timeout|error",
 >   "rate_limit_retries": <int>,
 >   "fixes":   [{"file":"...","locator":"fn/line","finding":"...","severity":"high","change":"precise old->new or surgical instruction"}],
 >   "replies": [{"file":"...","finding":"...","reason":"why disagree","comment_url":"..."}],
@@ -143,23 +162,44 @@ bottom-up stack order** that has a non-empty `fixes` list:
 2. For each fix, in severity order: read the file, **verify the finding is
    still applicable** (code may differ from the agent's read), apply a surgical
    `Edit`. Keep changes minimal — no scope creep.
-3. Fast-verify: `cargo check -p <crate>` (pick the crate from the touched
-   files; see CLAUDE.md). If it breaks, fix the breakage before moving on.
+3. Fast-verify with the owning package's compile gate and the affected tests.
+   Never run or wait for full CI inside a CodeRabbit round. If a targeted gate
+   breaks, fix it before moving on.
 4. `gt modify -a` to amend this branch's commit.
 
 If a `gt modify -a` triggers an upstack restack **conflict**, stop, return to a
 clean state if possible, and tell the user to run `/fix-conflicts` — do NOT
 guess at conflict resolution.
 
-After all branches are amended, restack and submit the whole stack once:
+If the round changed any branch, restack and submit the whole stack once:
 
 ```bash
 gt ss
 ```
 
-Then return to the original branch (`gt co <original>`).
+Then return to the original branch (`gt co <original>`). Reply to each fixed
+thread with the fix and verification, and resolve it if CodeRabbit did not
+auto-resolve it after the push.
 
-## 4. Report
+## 4. Convergence controller
+
+Track rounds per PR, not globally:
+
+1. A PR with `no_actionable` converges immediately.
+2. After a round that pushed fixes, start a follow-up only for PRs whose diff
+   changed. Prefer the automatic review from that push; request regular
+   `review` only after the 3-minute grace period.
+3. Re-run steps 2–3 with a lean child prompt containing the prior findings so
+   already-fixed or dismissed items are not rediscovered as new work.
+4. Stop each PR on its first clean follow-up or after two follow-ups. If the
+   last allowed round finds valid issues, apply, verify, reply, and resolve
+   them, then stop without requesting another review. Report this terminal
+   unreviewed delta explicitly.
+5. Run a final paginated thread audit. Every accepted/replied-to thread must be
+   resolved. Do not launch or wait for CI; return control to the caller for its
+   final latest-trunk CI gate.
+
+## 5. Report
 
 Print one consolidated summary:
 
@@ -200,17 +240,21 @@ unprompted. Only code fixes + amend + restack are autonomous.
    mistake a stale prior review for the new one.
 5. Verify each finding is still applicable against the checked-out code before
    editing. Keep fixes surgical.
-6. Never post replies or create Linear issues unprompted — surface them in the
-   report for the user.
+6. Reply to and resolve threads whose fixes were applied. Disagreement and
+   deferral replies remain report-only; never create Linear issues unprompted.
 7. On a restack conflict, stop and hand off to `/fix-conflicts`. Do not guess.
+8. Never run or wait for full CI. The caller owns pre-CodeRabbit and final CI
+   gates.
+9. Maximum three rounds per PR: one initial plus two follow-ups.
 
 ## Failure modes
 
 - **No open PRs in the stack:** Stop and tell the user.
 - **CodeRabbit never completes (timeout):** Mark that PR `timeout`, skip its
   fixes, keep driving the rest, surface it in the report.
-- **Persistent rate limiting:** Keep retrying through the stated waits; if it
-  exceeds the per-attempt cap repeatedly, report it as `timeout` and move on.
+- **Rate limited without usage-based continuation:** Return `rate_limited`
+  with the refill time. Retry once only if capacity returns while other useful
+  work is still running; never hold the whole workflow for an hourly reset.
 - **`cargo check` fails after a fix:** Fix the breakage before `gt modify`.
   Never amend broken code.
 - **Restack conflict:** Stop, report which branch, hand to `/fix-conflicts`.

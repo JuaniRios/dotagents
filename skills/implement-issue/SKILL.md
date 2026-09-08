@@ -3,8 +3,8 @@ name: implement-issue
 description: >
   Take a Linear issue from link to finished implementation — skeleton
   Graphite PR, cross-link Linear↔PR, proportionate plan and critique,
-  implement via a closing child,
-  review via review-loop, submit, CI green. Use when the user wants an
+  implement via a closing child, converge multi-model and CodeRabbit
+  reviews, then submit with final CI green. Use when the user wants an
   issue implemented end to end.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write, Edit
@@ -82,14 +82,40 @@ For the standard path: run `review-loop` (current branch, no `stack`) per that
 skill and panel-runtime. Ambiguous findings: collect, don't mid-loop ask. After
 convergence: `gt modify -a`, then `pr-description` for the real body.
 
-## 8. Submit and CI
+## 8. Pre-CodeRabbit CI gate
 
-`gt ss`. Wait for the GitHub run whose `headSha` is this HEAD. Red → `ci-fix`,
-resubmit. No run (6th+ in a Graphite stack) → local `nix run .#ci`. Cap a few
-rounds. On the trivial fast path, do not run full local CI before submission;
-the direct checks plus GitHub CI are the gate.
+For the standard path, run `/ci` once after `review-loop` converges. Fix local
+failures and repeat only the failed gate until green, then `gt modify -a` if
+needed. This is the only full local CI pass; never run it inside review rounds.
 
-## 9. Report
+On the trivial fast path, keep the existing direct checks and skip full local
+CI.
+
+## 9. CodeRabbit convergence
+
+1. `gt ss` once so CodeRabbit can review the implementation.
+2. Run `drive-coderabbit current`. It owns a bounded initial review plus at
+   most two incremental follow-up rounds, batches fixes per round, and never
+   waits for intermediate GitHub CI.
+3. Do not separately request CodeRabbit reviews or wait for CI runs started by
+   intermediate pushes. Those runs may be cancelled by later pushes.
+
+## 10. Final submit and CI
+
+1. Use `graphite` to sync/restack onto latest trunk once after review
+   convergence. Resolve conflicts before submission; conflict-only resolution
+   does not restart a manual CodeRabbit round.
+2. `gt ss` once and wait for the GitHub run whose `headSha` is this HEAD.
+3. Red → `ci-fix`, resubmit, and wait for the replacement run. If the CI fix
+   changes business logic rather than compatibility or formatting, run one
+   regular CodeRabbit follow-up before the replacement final gate.
+4. No run (6th+ in a Graphite stack) → local `nix run .#ci`.
+
+Cap final CI repair at a few rounds. A trunk advance during final CI requires
+one more restack when strict status checks make the PR stale; it does not
+justify re-running the full review pipeline.
+
+## 11. Report
 
 Issue URL, PR URL, CI, one-line what shipped, plan path.
 
@@ -104,3 +130,5 @@ Issue URL, PR URL, CI, one-line what shipped, plan path.
    model.
 5. Don't declare done until CI for this HEAD is green (or local full
    CI when Graphite skipped it).
+6. Full local CI runs once after multi-model convergence; full remote CI is
+   awaited only after CodeRabbit convergence and the latest-trunk restack.
