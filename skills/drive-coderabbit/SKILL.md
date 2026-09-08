@@ -1,7 +1,7 @@
 ---
 name: drive-coderabbit
 allowed-tools: Bash(gh:*), Bash(gt:*), Bash(git:*), Bash(jq:*), Bash(python3:*), Bash(date:*), Bash(mktemp:*), Bash(rm:*), Bash(test:*), Bash(cat:*), Bash(sleep:*), Bash(seq:*), Bash(cargo:*), Bash(grep:*), Bash(wc:*), Read, Edit, Write, Grep, Glob
-description: Drive CodeRabbit across an entire Graphite stack in parallel. Use only when the user explicitly asks to run or drive CodeRabbit across the stack; do not auto-trigger from a CodeRabbit mention, an ordinary review request, or existing bot comments. Requests a full review on every PR, waits through rate limits, then addresses findings and amends the stack.
+description: Drive CodeRabbit across an entire Graphite stack in parallel. Use only when the user explicitly asks to run or drive CodeRabbit across the stack; do not auto-trigger from a CodeRabbit mention, an ordinary review request, or existing bot comments. Requests a full first review and regular follow-up reviews, waits through rate limits, then addresses findings and amends the stack.
 argument-hint: [current]
 ---
 
@@ -23,8 +23,9 @@ serializes the fast git apply. This runs **autonomous, no prompts mid-run** —
 you opted into letting it fix, amend, and restack on its own.
 
 **The handle is `@coderabbitai`** (bot login `coderabbitai[bot]`). A comment
-addressed to `@coderabbit` does NOT fire the bot. Always post
-`@coderabbitai full review`.
+addressed to `@coderabbit` does NOT fire the bot. Use `@coderabbitai full
+review` only when the PR has no prior completed CodeRabbit review; use
+`@coderabbitai review` for every later round.
 
 Follow these steps precisely.
 
@@ -60,10 +61,20 @@ substituting the PR number and branch:
 > NOT check out, edit, commit, or restack anything — you only post a comment,
 > wait, and produce an analysis. All git reads use `git show <branch>:<path>`.
 >
-> **1. Trigger.** Record the trigger time, then post the review request:
+> **1. Trigger.** Check whether CodeRabbit has already completed any review on
+> this PR, choose the command once for this round, then record the trigger time
+> and post it:
 > ```bash
+> PRIOR_REVIEWS=$(gh api repos/{owner}/{repo}/pulls/<N>/reviews --paginate --jq \
+>   '[.[] | select(.user.login=="coderabbitai[bot]")
+>         | select(.body | contains("Actionable comments posted:"))] | length')
+> if [ "$PRIOR_REVIEWS" -eq 0 ]; then
+>   REVIEW_COMMAND='@coderabbitai full review'
+> else
+>   REVIEW_COMMAND='@coderabbitai review'
+> fi
 > TRIGGER_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-> gh pr comment <N> --body "@coderabbitai full review"
+> gh pr comment <N> --body "$REVIEW_COMMAND"
 > ```
 >
 > **2. Wait for the review, retrying through rate limits.** Poll every 60s
@@ -89,8 +100,10 @@ substituting the PR number and branch:
 >          | select(.created_at > "'"$TRIGGER_ISO"'") | .body'
 >   ```
 >   Parse the wait ("wait X minutes and Y seconds" or "try again in X
->   minutes"), `sleep` that long + 30s, re-post `@coderabbitai full review`,
->   reset `$TRIGGER_ISO`, and resume polling. Count the retries.
+>   minutes"), `sleep` that long + 30s, re-post the unchanged
+>   `$REVIEW_COMMAND`, reset `$TRIGGER_ISO`, and resume polling. Count the
+>   retries. A rate-limit retry is the same round and MUST NOT change the
+>   selected command.
 >
 > If neither appears within the cap, return `status: "timeout"`.
 >
@@ -175,8 +188,9 @@ unprompted. Only code fixes + amend + restack are autonomous.
 
 ## Hard rules
 
-1. Always post `@coderabbitai full review` (correct bot handle) — never
-   `@coderabbit`.
+1. Use the correct `@coderabbitai` handle -- never `@coderabbit`. Post
+   `@coderabbitai full review` only for a PR with no completed CodeRabbit
+   review; post `@coderabbitai review` for all subsequent rounds.
 2. Phase 1 agents NEVER mutate git (no checkout/edit/commit/restack) — they
    read via `git show <branch>:<path>` and return a plan. Only the main
    session mutates git, and only in Phase 2.
