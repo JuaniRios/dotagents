@@ -37,7 +37,28 @@ channels when speaking to the user.
 
 ## Credentials
 
-`zulipctl` automatically uses:
+Two credential profiles are available:
+
+- `~/.zuliprc-personal`: Juan's human account. Use only for organization-admin
+  operations, history available only to Juan, or messages the user explicitly
+  authorizes sending as himself.
+- `~/.zuliprc-bot`: Juan-Bot. Prefer this for routine inspection, automation,
+  and bot-authored operational messages when its access is sufficient.
+
+Select the identity explicitly on every command:
+
+```bash
+zulipctl --config ~/.zuliprc-personal me
+zulipctl --config ~/.zuliprc-bot me
+```
+
+An explicit `--config` takes precedence over ambient Zulip environment
+variables. Do not rely on the default `~/.zuliprc` when both identities exist.
+Do not switch to the personal identity merely to bypass an unexpected access
+error; use it only when the user's request authorizes the admin or personal
+scope.
+
+Without `--config`, `zulipctl` automatically uses:
 
 1. `ZULIP_SITE`, `ZULIP_EMAIL`, and `ZULIP_API_KEY`; or
 2. `${ZULIPRC:-$HOME/.zuliprc}`.
@@ -58,15 +79,21 @@ Distinguish inaccessible history from an empty search result.
 
 ## Connectivity gate
 
-Start every task with:
+Start every task with the selected identity's connectivity check:
 
 ```bash
-zulipctl me
+zulipctl --config ~/.zuliprc-bot me
+# Or, when the task requires Juan's identity/admin role:
+zulipctl --config ~/.zuliprc-personal me
 ```
 
 This prints safe identity and server metadata. Stop on authentication,
 TLS, permission, or organization mismatch errors. Never weaken TLS
-verification.
+verification. State which identity is acting before a mutation, and keep that
+same explicit `--config` on every command in the task.
+
+For every command example below, insert the selected `--config` immediately
+after `zulipctl`; the flag is omitted there only to keep the examples compact.
 
 ## Read operations
 
