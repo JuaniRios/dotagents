@@ -27,6 +27,9 @@ channels when speaking to the user.
   Notification Bot notice. Verify the exact channel and topic first.
 - A public channel is visible to organization members but does not
   automatically subscribe them.
+- Juan-Bot is the standing read, scraping, and summarization identity. Keep its
+  channel access in sync with Juan's, and include it as a non-human subscriber
+  when creating private channels unless the user explicitly excludes bots.
 - Confirm immediately before subscribing all active users unless that
   organization-wide scope was explicit.
 - Archiving channels, deleting messages or topics, deactivating users,
@@ -43,7 +46,8 @@ Two credential profiles are available:
   operations, history available only to Juan, or messages the user explicitly
   authorizes sending as himself.
 - `~/.zuliprc-bot`: Juan-Bot. Prefer this for routine inspection, automation,
-  and bot-authored operational messages when its access is sufficient.
+  scraping, summarization, and bot-authored operational messages. It should
+  mirror Juan's channel access, including access to private channels.
 
 Select the identity explicitly on every command:
 
@@ -76,6 +80,11 @@ paste the key into chat.
 A newly created bot may not have access to messages sent before it
 subscribed, especially in private channels with protected history.
 Distinguish inaccessible history from an empty search result.
+
+When auditing access, compare `subscriptions --full` using both profiles. Add
+Juan-Bot to anything Juan can access but the bot cannot. For a private channel,
+include Juan-Bot in the initial subscriber list: after creation, Zulip may only
+allow a current content-access member to invite it.
 
 ## Connectivity gate
 
@@ -160,7 +169,8 @@ zulipctl create-channel "<name>" \
   --description "<description>" \
   --private \
   --announce \
-  --subscriber "<email-or-id>"
+  --subscriber "<email-or-id>" \
+  --subscriber "juan-bot@raingroup.zulipchat.com"
 
 zulipctl create-channel "<name>" \
   --description "<description>" \
@@ -199,6 +209,12 @@ For channel creation, report separately:
 
 After mutation, fetch the channel again and verify its ID, description,
 visibility, archive status, and requested subscribers.
+
+Treat Juan-Bot as a standing service-account exception when the user describes
+a private channel as visible to named people only. Report human subscribers
+separately from the bot. If the user explicitly requests no bot access, honor
+that exception and point out that automated scraping and summaries will not be
+available there.
 
 ## Topic operations
 
