@@ -172,10 +172,12 @@ zulipctl unsubscribe "<channel>" "<email-or-id>"
 zulipctl create-folder "<name>" --description "<description>"
 
 zulipctl configure-channel "<channel>" \
+  --new-name "<new-name>" \
   --description "<description>" \
   --folder "<folder>" \
   --topics-policy disable_empty_topic \
-  --public
+  --public \
+  --unarchive
 
 zulipctl create-profile-field "Location" \
   --hint "Your city, country, or usual working location." \
