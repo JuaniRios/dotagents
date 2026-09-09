@@ -73,7 +73,12 @@ verification.
 ```bash
 zulipctl channels
 zulipctl channels --include-archived --all
+zulipctl folders --include-archived
+zulipctl subscriptions --full
+zulipctl members "<channel>"
 zulipctl users --active-only
+zulipctl bots
+zulipctl profile-fields
 zulipctl topics "<channel>"
 
 zulipctl messages --channel "<channel>" --limit 100
@@ -120,6 +125,8 @@ timeout, search for the message before retrying to prevent duplicates.
 ```bash
 zulipctl create-channel "<name>" \
   --description "<description>" \
+  --folder "<folder>" \
+  --topics-policy disable_empty_topic \
   --subscriber "<email-or-id>"
 
 zulipctl create-channel "<name>" \
@@ -134,7 +141,25 @@ zulipctl create-channel "<name>" \
 
 zulipctl subscribe "<channel>" "<email-or-id>"
 zulipctl unsubscribe "<channel>" "<email-or-id>"
+
+zulipctl create-folder "<name>" --description "<description>"
+
+zulipctl configure-channel "<channel>" \
+  --description "<description>" \
+  --folder "<folder>" \
+  --topics-policy disable_empty_topic \
+  --public
+
+zulipctl create-profile-field "Location" \
+  --hint "Your city, country, or usual working location." \
+  --display-in-profile-summary
 ```
+
+Inspect exact names first. Reuse a matching folder, channel, or custom
+profile field rather than treating an already-existing resource as an
+error. Use `configure-channel` to converge an existing channel on the
+requested description, folder, topic policy, visibility, and default
+status. Never create a case-variant duplicate.
 
 For channel creation, report separately:
 
