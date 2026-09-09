@@ -1,7 +1,7 @@
 ---
 name: daily-report
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Generate a team-facing daily summary of all work done across repos. For pasting in the group chat. Shows what was accomplished, what's next, open points, and stats.
+description: Generate a team-facing daily summary of all work done across repos. For pasting in the group chat. Inspects Telegram and Zulip work conversations. Shows what was accomplished, what's next, open points, and stats.
 argument-hint: "[compressed]"
 ---
 
@@ -9,7 +9,7 @@ argument-hint: "[compressed]"
 
 Generates a comprehensive daily report by aggregating conversation
 history from every harness (Claude, Codex, Grok, Agy), git history,
-GitHub activity, Linear, investigation traces, and Telegram
+GitHub activity, Linear, investigation traces, and Telegram and Zulip
 conversations across all repos in `~/Github/`.
 
 ## Compressed mode
@@ -102,6 +102,21 @@ else echo "tdl: ok"; fi
   `~/.config/daily-report-telegram-chats.txt` — one chat per line (numeric
   ID or @username), `#` for comments. Do this NOW, not mid-collection.
 
+### Zulip pre-flight
+
+Read `~/Github/dotagents/skills/zulip/SKILL.md` and check Juan-Bot:
+
+```bash
+zulipctl --config ~/.zuliprc-bot me
+zulipctl --config ~/.zuliprc-bot subscriptions --full
+```
+
+Select relevant work channels from the subscription names/descriptions and
+known repo/domain context; retain their exact names and IDs for the collector.
+If the CLI, credentials, or channel history are unavailable, record the gap
+and continue with the other sources. Do not switch identities, subscribe the
+bot, or change access as part of report collection.
+
 ### Load yesterday's report (continuity)
 
 Reports are saved to `~/Github/dotagents/data/daily-report/reports/`
@@ -152,7 +167,7 @@ Then:
 ## Step 3 — Collect via parallel children
 
 Launch all collectors as one parallel fan-out of isolated children:
-the four fixed collectors (git, Linear, GitHub, Telegram) plus one
+the five fixed collectors (git, Linear, GitHub, Telegram, Zulip) plus one
 session summarizer per project group from Step 2. Session groups
 already include Claude, Codex, Grok, and Agy. Schemas enforce the
 *facts* (PR numbers, timestamps, issue IDs, ship status) so Step 5 can
@@ -174,7 +189,7 @@ small values.
 ```js
 export const meta = {
   name: 'daily-report-collect',
-  description: 'Collect daily activity: sessions, git, Linear, GitHub, Telegram',
+  description: 'Collect daily activity: sessions, git, Linear, GitHub, Telegram, Zulip',
   phases: [{ title: 'Collect' }],
 }
 // Build these as inline const strings (Step 1 literals already substituted).
@@ -183,6 +198,7 @@ const gitPrompt = `...`      // from the Git collector section
 const linearPrompt = `...`   // from the Linear collector section
 const githubPrompt = `...`   // from the GitHub collector section
 const telegramPrompt = null  // or the Telegram collector prompt if tdl is ok
+const zulipPrompt = null     // or the Zulip collector prompt if pre-flight succeeded
 const sessionGroups = [/* { key, prompt } per project group from Step 2 */]
 const STR = { type: 'string' }
 const ARR = (items) => ({ type: 'array', items })
@@ -207,6 +223,12 @@ const TELEGRAM = { type: 'object', properties: { decisions: ARR(STR),
   asks: ARR({ type: 'object', required: ['ask'], properties: { ask: STR, from: STR, addressed_guess: STR } }),
   incidents: ARR(STR), commitments: ARR(STR), context: ARR(STR) } }
 
+const ZULIP = { type: 'object', required: ['findings', 'coverage'], properties: {
+  findings: ARR({ type: 'object', required: ['kind', 'summary', 'channel', 'topic', 'sender', 'timestamp', 'message_id'],
+    properties: { kind: { enum: ['decision', 'ask', 'incident', 'commitment', 'context'] },
+      summary: STR, channel: STR, topic: STR, sender: STR, timestamp: STR,
+      message_id: STR, url: STR, addressed_guess: STR } }), coverage: ARR(STR) } }
+
 const tasks = [
   () => agent(gitPrompt, { label: 'git', phase: 'Collect', schema: GIT }),
   () => agent(linearPrompt, { label: 'linear', phase: 'Collect', schema: LINEAR }),
@@ -214,6 +236,9 @@ const tasks = [
 ]
 if (telegramPrompt) {
   tasks.push(() => agent(telegramPrompt, { label: 'telegram', phase: 'Collect', schema: TELEGRAM }))
+}
+if (zulipPrompt) {
+  tasks.push(() => agent(zulipPrompt, { label: 'zulip', phase: 'Collect', schema: ZULIP }))
 }
 for (const s of sessionGroups) {
   tasks.push(() => agent(s.prompt, { label: `sessions:${s.key}`, phase: 'Collect', schema: SESSIONS }))
@@ -451,6 +476,37 @@ extract:
   important
 - **Context** that explains *why* work happened, which sessions alone miss
 
+### Collector — Zulip conversations
+
+Follow the `zulip` skill using `--config ~/.zuliprc-bot` on every command.
+Inspect the work channels selected during pre-flight, including teammates'
+messages and both resolved and unresolved topics. Start with:
+
+```bash
+zulipctl --config ~/.zuliprc-bot messages --channel "<exact channel>" --limit 100
+zulipctl --config ~/.zuliprc-bot messages --channel "<exact channel>" --topic "<exact topic>" --limit 100
+```
+
+Use the Step 1 literals to retain messages in `START_EPOCH_S <= timestamp <=
+NOW_EPOCH_S`. If the first page does not cover the start, page backward with
+`--anchor <oldest-message-id>`, deduplicate by message ID, and continue until
+reaching the start or exhausting accessible history. Inspect response coverage;
+a full page is not proof that the whole day was read. Stop and note partial
+coverage if pagination makes no progress. Older topic messages may explain an
+in-window reply, but are background rather than today's activity.
+
+Read full messages and relevant replies before extracting decisions, asks,
+incidents, commitments, and context, using the same criteria as Telegram.
+Preserve channel, topic, sender, timestamp, message ID, and a message link when
+available for every finding. Return inaccessible channels, missing history,
+and partial windows in `coverage`; never call them "no activity".
+
+Cross-reference findings with sessions, GitHub, Linear, and Telegram. Count
+cross-posted reports or repeated discussions of the same work only once;
+copies are not independent evidence. A resolved topic does not prove a fix
+was merged or deployed. Keep source attribution for verification, but apply
+the report's first-person, no-verbatim-chat rule during synthesis.
+
 ## Step 4 — User review before writing
 
 Once all collectors return, compile a short summary and present it for
@@ -475,7 +531,7 @@ PRs: 4 opened, 4 merged, 2 reviewed
 ⏮ From yesterday: 2 of 3 action items addressed (#642 merged ✅);
 "deploy hedge config" still open — carrying it forward.
 
-💬 Telegram asks: Josh asked for the redemption fix by EOW — matching
+💬 Telegram / Zulip asks: Josh asked for the redemption fix by EOW — matching
 work found (PR #641). Dan asked about the dashboard numbers — NO matching
 work today; flag as open?
 
@@ -550,7 +606,7 @@ Before writing, answer from the collected data (and Step 4 corrections):
    "Yesterday I said X was pending — did it ship?" is the single thing a
    manager most wants answered. Unaddressed items carry forward into
    today's Action Items marked as carried over.
-6. **Telegram asks**: For each ask directed at the user, state whether
+6. **Telegram and Zulip asks**: For each ask directed at the user, state whether
    today's work addressed it. Unaddressed asks become Action Items.
 7. **Next focus**: Capture what the user says they plan to focus on next,
    plus clear commitments from the collected context. Keep this distinct
@@ -796,14 +852,14 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
     Only use 🟡 when prod runs and the trigger is rare. Never report a
     manual patch as "fixed" — it's "stabilized, fix pending in PR #X".
 14. **Cross-reference all data sources**: connect Linear issues to PRs to
-    commits to Telegram asks. Completed issue with no PR → investigate.
+    commits to Telegram and Zulip asks. Completed issue with no PR → investigate.
     Merged PR with issue not marked done → note the discrepancy.
 15. **State incident duration** whenever the data allows (log timestamps,
     git history, session conversations).
 16. **Never send before approval**: show the full composed message and get
     an explicit "send it" on every run, including compressed mode. The
     send is irreversible.
-17. **Telegram is context, not content**: Telegram messages inform the
+17. **Chat is context, not content**: Telegram and Zulip messages inform the
     synthesis (decisions, asks, incidents, commitments) but are never
     quoted verbatim or attributed to teammates in the report.
 18. **Always save the report + sidecar** (Step 7) after a successful send
@@ -814,7 +870,7 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
 - **No sessions today on one harness**: skip that store silently
   (missing `~/.codex`, empty Agy, etc. is normal).
 - **No sessions today on any harness**: proceed with git / Linear /
-  GitHub / Telegram; say so in the Step 4 summary.
+  GitHub / Telegram / Zulip; say so in the Step 4 summary.
 - **`gh` not authenticated**: caught in pre-flight; if proceeding, note
   "GitHub activity skipped (gh not authenticated)".
 - **`linear` fails**: fall back to `RAI-\d+` extraction from commits and
@@ -826,6 +882,9 @@ Confirm: `Report saved: .../reports/<REPORT_DATE>.html (+ sidecar)`.
 - **Telegram chat config missing**: pre-flight runs `tdl chat ls`, asks
   the user which chats are work-related, writes
   `~/.config/daily-report-telegram-chats.txt`, then proceeds.
+- **Zulip unavailable or incomplete**: continue with the available sources and
+  name the missing channels or time ranges in the Step 4 review. Authentication
+  or history-access failures are not evidence of no work.
 - **parallel fan-out unavailable**: run the same collector prompts as
   isolated children, one at a time, and parse their text output.
 - **A collector returns null/dies**: treat that source as unavailable and
