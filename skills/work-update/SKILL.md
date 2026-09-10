@@ -369,7 +369,8 @@ the end. Chunking is authorized only when needed for the server limit.
 A successful API acknowledgement does not prove complete delivery: Zulip can
 silently truncate an oversized message. Fetch every returned message ID with
 `apply_markdown=false` and compare its raw content exactly with the intended
-text. Verify sender and recipient too. Never report complete delivery based
+text. Normalize outer whitespace before sending (Zulip strips it), and save
+the exact sent text. Verify sender and recipient too. Never report complete delivery based
 only on the CLI's `verified` field or send acknowledgement. If content differs,
 record the mismatch and correct it using the verified limit before claiming
 success. Do not blindly resend after an ambiguous timeout; inspect first.
