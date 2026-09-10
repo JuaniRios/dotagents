@@ -201,6 +201,16 @@ Include an incident only when evidence shows the user spent time investigating,
 recovering, coordinating, or reviewing its fix. State their contribution and
 the outcome. Merely seeing an alert, being in the chat, or working on the same
 service does not qualify. Omit unrelated team incidents and alert inventories.
+Separate the triggering change from the user's investigation and recovery.
+When supported by a specific PR, deployment record, or clear incident account,
+name who made the triggering change and explain what happened. Do not leave
+wording that implies the responder caused the incident. Authorship of an
+unrelated change, service ownership, reviewing, approving, or deploying a fix
+does not establish causation. If the introducing change or person is unknown,
+say so; do not invent blame or imply the user was uninvolved without evidence.
+Keep attribution factual and neutral, including the user's own role when they
+did introduce the problem.
+
 
 Treat the user's notes as primary evidence for emphasis and intended next
 steps. Distinguish completed work, unchecked TODOs, and ideas discussed in a
