@@ -43,8 +43,12 @@ work is the whole period. Date-only overrides mean local midnight. Resolve
 relative overrides against the single run cutoff, using timezone-aware dates
 that work on the current OS.
 
-For a revision of the same update, reuse its original period start. An
-unapproved draft never advances the next update's cutoff. A missed Wednesday
+For a revision of the same update, reuse its original period start. Start from
+the latest corrected draft and its delivery sidecar, not an older or longer
+version. Preserve accumulated corrections to emphasis, attribution, next steps,
+and PR coverage; change only what the new feedback requires. Record which
+artifact supersedes the previous draft. An unapproved draft never advances the
+next update's cutoff. A missed Wednesday
 or Friday expands the window from the last actual update rather than dropping
 the missed days.
 
@@ -383,7 +387,13 @@ in the reporting window, deduplicated by repository and number. Group review
 bullets by repository, with a link and short description per PR. Do not replace
 the full review list with a selection or an ambiguous sentence of numbers.
 Keep detailed evidence locally; do not cut off the end or omit required sections
-to fit. Send the complete validated Markdown through stdin in one call.
+to fit. Before delivery, check all six section headings and compare the set of
+repository/PR-number pairs under Reviewed against the deduplicated verified
+review inventory. Require exact coverage; a total count alone can hide a
+missing PR and a duplicate. Shorten wording without dropping names needed for
+attribution, recovery outcomes, next priorities, or requested concrete links.
+Do not replace clear prose with an ambiguous compressed list. Send the complete
+validated Markdown through stdin in one call for the initial delivery.
 
 A successful API acknowledgement does not prove complete delivery: Zulip can
 silently truncate an oversized message. Fetch the returned message ID with
@@ -394,7 +404,26 @@ only on the CLI's `verified` field or send acknowledgement. If content differs,
 record the mismatch and correct it using the verified limit before claiming
 success. Do not blindly resend after an ambiguous timeout; inspect first.
 
-Use the same rules for revisions. Private delivery is authorized; forwarding
+For revisions, prefer updating the existing report DM in place using Zulip's
+edit-message API. Resolve the latest message ID from the sidecar, fetch it,
+and verify the bot sender, Juan recipient, and report identity before editing.
+Apply the same size/content checks and readback verification as for a new send.
+Do not send a new copy for each wording correction. If editing is unavailable,
+explain the restriction before creating a replacement; never silently accumulate
+report copies or use another identity to bypass edit permissions.
+
+When the user explicitly requests deletion of earlier report messages, inspect
+the actual DM history and delete only the matching bot-authored reports within
+that request's scope. Verify removal. A report cleanup request in Zulip does
+not authorize deleting unrelated messages or local evidence. If the bot's
+deletion window has expired, the user's explicit cleanup request permits using
+Juan's personal admin profile for those verified deletions: announce the
+identity change and check it first. Never change permissions to enable cleanup,
+and continue sending the replacement as Juan-Bot. Preserve deletion IDs and
+the replacement ID in the sidecar. Do not infer standing deletion authorization
+from ordinary drafting or revision requests.
+
+Private delivery is authorized; forwarding
 or posting to a team channel still needs authorization. Record the message ID,
 identity, destination, actual limit, and content-comparison results in the
 sidecar. Mark complete delivery only after the complete message passes readback. Keep
