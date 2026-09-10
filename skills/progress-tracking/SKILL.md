@@ -167,7 +167,7 @@ else echo "tdl: ok"; fi
 
 The work chats live in `~/.config/daily-report-telegram-chats.txt` (one
 chat ID or @username per line, `#` for comments — the same file the
-daily-report skill maintains). If it's missing, run `tdl chat ls`, ask the
+work-update skill reuses). If it's missing, run `tdl chat ls`, ask the
 user which chat is the dev channel (ask the user), and write the file.
 
 Export each configured chat over the range and parse each export
@@ -181,7 +181,7 @@ the day.`, and `Weekly catch-up`. Never grep for one literal header.
 Detect reports with two complementary rules:
 
 1. **First-line pattern** (case-insensitive, after stripping `#`/`*`/emoji):
-   contains `daily report`, `daily update`, `update`, `eod`, `logging off`,
+   contains `daily report`, `daily update`, `work update`, `update`, `eod`, `logging off`,
    `catch-up`, or `weekly` — and the message is ≥ ~200 chars.
 2. **Long-message fallback**: any message ≥ ~1200 chars that the pattern
    missed is probably a multi-day catch-up, incident writeup, or detailed
@@ -209,7 +209,7 @@ lines = pathlib.Path('$HOME/.config/daily-report-telegram-chats.txt').read_text(
 for i, ln in enumerate(lines):
     if ln.strip().isdigit() and i > 0 and lines[i-1].startswith('#'):
         names[int(ln.strip())] = lines[i-1].lstrip('# ').strip()
-pat = re.compile(r'^[#*\s📋]*(daily\s*(report|update)|update\b|eod|logging off|catch[- ]?up|weekly)', re.I)
+pat = re.compile(r'^[#*\s📋]*(daily\s*(report|update)|work\s+update|update\b|eod|logging off|catch[- ]?up|weekly)', re.I)
 data = json.load(open(sys.argv[1]))
 for m in data.get('messages', []):
     txt = m.get('text') or ''
@@ -248,9 +248,8 @@ Notes:
   apply here too).
 - Don't quote messages verbatim, but DO use them for attribution: the
   sender on each report tells you who did what, which feeds the
-  who-did-what credit in the report (see Step 6). This is the opposite of
-  the daily-report skill's no-attribution rule — that report is a
-  first-person chat message, this one credits the team.
+  who-did-what credit in the report (see Step 6). Keep attribution clear
+  across both the user's work updates and teammates' reports.
 - Missing days are normal (no report was sent), not an error.
 - Especially mine the reports for: incidents and their durations, manual
   prod interventions, "merged but not deployed" gaps, and decisions that
@@ -258,6 +257,8 @@ Notes:
   a daily report saying "prod was patched manually, fix still in PR" is
   exactly the kind of truth the investor summary must not paper over.
 - The user's own reports are also saved locally at
+  `~/Github/dotagents/data/work-update/reports/` (finalized `.md` or `.html`
+  updates), with legacy daily reports in
   `~/Github/dotagents/data/daily-report/reports/` (`<date>.html`
   + `<date>.json` sidecar with compact status/themes) — handy as a quick
   pre-scan of which days were eventful before diving into the export.
@@ -776,7 +777,8 @@ correcting.
   independently verified"; note the endpoint was unavailable.
 - **`tdl` not installed / not logged in / export fails**: fall back to the
   locally saved daily reports
-  (`~/Github/dotagents/data/daily-report/reports/`); note that
+  (`~/Github/dotagents/data/work-update/reports/` and legacy
+  `~/Github/dotagents/data/daily-report/reports/`); note that
   team-wide dev-channel context was unavailable. If those are empty too,
   note "daily-report context unavailable for this period" so the user
   knows the narrative leans on git/Linear/PRs alone.

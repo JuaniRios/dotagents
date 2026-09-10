@@ -68,7 +68,7 @@ def prune-stale [dest_root: path, live: list<string>, src: path, dry: bool] {
     ($src | path dirname | path join "dotclaude" "skills")
     ($src | path dirname | path join "dotcodex" "skills")
   ]
-  ls $dest_root
+  ls -l $dest_root
   | where type == symlink
   | each {|row|
       let name = ($row.name | path basename)

@@ -3,6 +3,7 @@
 **/.DS_Store
 .tmp/
 data/daily-report/reports/
+data/work-update/
 data/progress-tracking/reports/
 data/teach-log/
 data/handoffs/

@@ -6,7 +6,9 @@ that needs to persist something points here
 `~/.grok`, or `~/.gemini`.
 
 - `progress-tracking.json` — last-run config for `progress-tracking`
-- `daily-report/reports/` — generated daily reports (gitignored)
+- `work-update/reports/` — finalized Wednesday/Friday updates and continuity sidecars (gitignored)
+- `work-update/drafts/` — unapproved update drafts (gitignored)
+- `daily-report/reports/` — legacy daily reports, retained for continuity (gitignored)
 - `progress-tracking/reports/` — generated progress reports (gitignored)
 - `teach-log/` — durable `/teach` learning logs (gitignored)
 - `handoffs/` — `/handoff` summaries for a fresh session (gitignored)

@@ -169,7 +169,7 @@ Match that ID against the engineer's identity record.
 
 Read:
 
-- Daily and weekly reports
+- Wednesday/Friday work updates, legacy daily reports, and weekly reports
 - Long incident write-ups
 - Short messages around eventful periods
 - Decisions
@@ -183,7 +183,7 @@ Read:
 
 Detect status posts using both rules:
 
-1. The first line contains `daily report`, `daily update`, `update`, `eod`,
+1. The first line contains `daily report`, `daily update`, `work update`, `update`, `eod`,
    `logging off`, `catch-up`, or `weekly`; the message is at least 200 characters.
 2. The message is at least 1,200 characters.
 

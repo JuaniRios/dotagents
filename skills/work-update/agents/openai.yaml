@@ -1,0 +1,6 @@
+interface:
+  display_name: "Work Update"
+  short_description: "Draft Wednesday and Friday team work updates"
+  default_prompt: "Use $work-update to draft my team update since the previous update, with direction, outcomes, discussions, next focus, blockers, and PRs grouped by status at the end."
+policy:
+  allow_implicit_invocation: true
