@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip, normally in one message; chunk only when the complete edited report exceeds the verified server limit. The user guides and edits the report before finalization.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization.
 argument-hint: "[since <date or timeframe>]"
 ---
 
@@ -242,8 +242,9 @@ Read `write-as-me` before drafting. Use the six sections below in order; this
 structure overrides the old daily-report status/stats/emoji template. Write
 in first person, as the user would describe their work in a standup. Use
 connected paragraphs or a few useful bullets, concrete language, and honest
-limits. Allow enough detail to explain a multi-day period. There is no
-one-screen limit or compressed daily-report mode. Use these report titles:
+limits. Explain the multi-day period within a hard 10,000-character budget
+for the entire message, including headings, whitespace, and Markdown links.
+Budget room for the complete PR list before drafting the narrative. Use these report titles:
 
 - Wednesday: "Mid-week progress update".
 - Friday: "End of week progress update".
@@ -308,7 +309,7 @@ narrative. Keep any unresolved classification uncertainty visible for review.
 
 ## 5. Send through Zulip, review, and save
 
-Deliver the full draft to Juan through Zulip, normally as one DM, using the standing delivery
+Deliver the full draft to Juan through Zulip as one DM of at most 10,000 characters, using the standing delivery
 instructions below, then ask the user to guide/edit it closely: does it sound
 like them, reflect what actually happened, and say what the team needs to
 know? Incorporate corrections and re-show the exact revised text. The initial
@@ -345,7 +346,7 @@ the team-facing prose.
 
 ### Standing delivery: Juan-Bot to Juan
 
-Always deliver the report through Zulip, **normally as one complete direct message**, from
+Always deliver the report through Zulip, **exactly one complete direct message of at most 10,000 characters**, from
 **Juan-Bot** (`juan-bot@raingroup.zulipchat.com`) to **Juan Rios**
 (`juan@rainlang.xyz`) at `https://raingroup.zulipchat.com`.
 This is the user's standing authorization for private report delivery and
@@ -361,29 +362,31 @@ Use the bot profile explicitly; never substitute the personal account.
 zulipctl --config ~/.zuliprc-bot dm juan@rainlang.xyz < <report-path>.md
 ```
 
+The complete report **must be 10,000 characters or fewer and sent as one
+message**. This is a hard user requirement, even if the server permits more.
+Never chunk, split into parts, or move required report content to a follow-up
+message or attachment to evade the limit.
+
 Before sending, discover the realm's actual `max_message_length` through
-Zulip's register API (`fetch_event_types: ["realm"]`). Count Unicode code
-points, including Markdown URLs and any part labels. Do not assume Telegram's
-limits apply. If the limit cannot be verified, surface that uncertainty and
-always check stored content after delivery.
+Zulip's register API (`fetch_event_types: ["realm"]`). Use the smaller of that
+limit and 10,000. If discovery is unavailable, retain the 10,000-character cap
+and verify stored content after delivery. Normalize outer whitespace, then
+count the exact final Markdown in Unicode code points (Python `len(text)`),
+including headings, spaces, newlines, and link destinations. Assert the count
+is within the cap before making any send call; never send an oversized draft.
 
-Edit for relevance and concise prose so the report normally fits in one
-message. Keep all six sections, the user's actual priorities, relevant
-incidents, and useful PR links. Include every verified PR the user reviewed in the reporting window,
-deduplicated by repository and number. Group review bullets by repository,
-with a link and short description per PR. Do not replace the full review list
-with a selection or an ambiguous sentence of numbers to fit one message.
-Preserve the complete evidence inventory locally. Do not cut off the end or remove whole
-sections merely to fit.
-
-When it fits, send the entire Markdown file through stdin in one call. If the
-complete edited report still exceeds the verified limit, split at section or
-paragraph boundaries into the fewest numbered messages needed. Account for
-labels in each part's length, preserve order and all content, and keep PRs at
-the end. Chunking is authorized only when needed for the server limit.
+Budget space for all six sections and the complete PR list first. Tighten
+repeated context, descriptions, and narrative until the entire report fits.
+Keep the user's priorities, their relevant incidents, verified attribution,
+and material status uncertainties. Include every verified PR the user reviewed
+in the reporting window, deduplicated by repository and number. Group review
+bullets by repository, with a link and short description per PR. Do not replace
+the full review list with a selection or an ambiguous sentence of numbers.
+Keep detailed evidence locally; do not cut off the end or omit required sections
+to fit. Send the complete validated Markdown through stdin in one call.
 
 A successful API acknowledgement does not prove complete delivery: Zulip can
-silently truncate an oversized message. Fetch every returned message ID with
+silently truncate an oversized message. Fetch the returned message ID with
 `apply_markdown=false` and compare its raw content exactly with the intended
 text. Normalize outer whitespace before sending (Zulip strips it), and save
 the exact sent text. Verify sender and recipient too. Never report complete delivery based
@@ -392,9 +395,9 @@ record the mismatch and correct it using the verified limit before claiming
 success. Do not blindly resend after an ambiguous timeout; inspect first.
 
 Use the same rules for revisions. Private delivery is authorized; forwarding
-or posting to a team channel still needs authorization. Record all message IDs,
+or posting to a team channel still needs authorization. Record the message ID,
 identity, destination, actual limit, and content-comparison results in the
-sidecar. Mark complete delivery only after every part passes readback. Keep
+sidecar. Mark complete delivery only after the complete message passes readback. Keep
 `finalized: false` until the user explicitly finalizes the report.
 
 ## Failure handling
