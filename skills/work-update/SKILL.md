@@ -369,8 +369,11 @@ always check stored content after delivery.
 
 Edit for relevance and concise prose so the report normally fits in one
 message. Keep all six sections, the user's actual priorities, relevant
-incidents, and useful PR links. A selected review list is fine; preserve the
-complete evidence inventory locally. Do not cut off the end or remove whole
+incidents, and useful PR links. Include every verified PR the user reviewed in the reporting window,
+deduplicated by repository and number. Group review bullets by repository,
+with a link and short description per PR. Do not replace the full review list
+with a selection or an ambiguous sentence of numbers to fit one message.
+Preserve the complete evidence inventory locally. Do not cut off the end or remove whole
 sections merely to fit.
 
 When it fits, send the entire Markdown file through stdin in one call. If the
