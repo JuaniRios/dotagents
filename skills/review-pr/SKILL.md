@@ -4,7 +4,8 @@ description: >
   Cross-review a pull request by number or URL without checking it out.
   Plain-language TL;DR, then the same multi-model panel as review-loop
   (opus 5, sol 5.6, grok 4.6, flash 3.7, fable 5.1 deep). Stays in the session so you can
-  decide which findings to post. Use when reviewing someone else's PR.
+  decide which findings to post; clean reviews are approved automatically.
+  Use when reviewing someone else's PR.
 argument-hint: "<pr-number | pr-url>"
 allowed-tools: Bash(*), Read, Write
 ---
@@ -59,9 +60,19 @@ agent attribution (keep that in `findings.json` only).
 
 ## 6. Stay in the session
 
-Print the compact summary, then a short "what actually changed". Offer
-to dig into a finding, draft a comment, or post a **pending** GitHub
-review.
+Print the compact summary, then a short "what actually changed".
+
+When the completed review has no actionable findings, submit an **APPROVE**
+review immediately, pinned to the reviewed head SHA, using the clean-review
+path in `publish-review`. This is the user's standing preference; do not ask
+for another confirmation or wait for a separate publish request. Never post
+"no actionable findings" as a COMMENT review, issue comment, or empty pending
+review. Report the approval and its URL.
+
+When actionable findings remain, offer to dig into a finding, draft a comment,
+or post a **pending** GitHub review. The pending-review rules below apply to
+reviews with findings only. An incomplete panel or findings lost during
+parsing do not count as a clean review.
 
 Posted comments: ASD-STE100, lowercase severity prefix
 (`critical:` / `should fix:` / `minor:` / `nit:`), no em dashes, no
@@ -74,6 +85,9 @@ diff hunk. Omit the `event` field so GitHub creates a PENDING review.
 1. Never check out the PR.
 2. Panel per panel-runtime. Quorum required.
 3. No attribution in anything posted to GitHub.
-4. Pending review: no per-comment approval here — the GitHub UI is the
-   approval. Immediate (non-draft) submit needs explicit approval of
-   the exact text.
+4. Completed clean reviews must be submitted as APPROVE, never COMMENT or
+   PENDING. Apply this per PR in a batch, including clean follow-up reviews
+   after all findings are verified fixed.
+5. Reviews with findings default to pending: no per-comment approval here.
+   Immediate submission of findings needs explicit user authorization;
+   honor authorization already given in the session.

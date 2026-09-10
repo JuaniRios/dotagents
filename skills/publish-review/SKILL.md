@@ -1,13 +1,14 @@
 ---
 name: publish-review
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(find:*), Bash(date:*), Bash(test:*), Bash(ls:*), Bash(jq:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(wc:*), Read, Grep, Glob
-description: Publish review findings as a pending GitHub PR review with inline comments. Run after /review-pr.
+description: Approve clean PR reviews automatically; publish reviews with findings as pending inline comments. Run after /review-pr.
 argument-hint: [review-dir-path]
 ---
 
-Publish findings from a review report as a **pending** GitHub PR review
-with inline comments. The user runs this after `/review-pr` to push findings
-onto the PR for inspection on the Graphite dashboard.
+Publish the review outcome for each PR: **APPROVE** when a completed review
+has no actionable findings, or a **pending** review with inline comments when
+findings remain. Clean reviews are approved automatically under the user's
+standing preference, including when called directly from `/review-pr`.
 
 ## 1. Locate the review
 
@@ -55,7 +56,42 @@ For each finding, extract:
 - `issue` -- the `**Issue:**` content
 - `fix` -- the `**Recommended fix:**` content
 
-## 4. Compose inline comments
+## 4. Select the review outcome
+
+Make this decision separately for every PR in a batch:
+
+- **No actionable findings in a completed review:** submit `event: "APPROVE"`
+  immediately. Never use COMMENT, an issue comment saying "no actionable
+  findings", or an empty pending review as a substitute. No further user
+  confirmation is needed. This also applies after verifying that all findings
+  have been fixed.
+- **Actionable findings remain:** compose the inline comments below and create
+  a pending review, unless the user already authorized submission.
+- **Incomplete review or parsing failure:** do not infer a clean review from
+  an empty comments array. Report the incomplete result. Findings without an
+  inline anchor still count as findings.
+
+For a clean review, verify the current head still matches the reviewed SHA.
+If it changed, review the new changes before approving. Check for an existing
+approval by this user on that SHA and reuse it instead of posting a duplicate.
+Create the approval with this payload:
+
+```json
+{
+  "commit_id": "<reviewedHeadRefOid>",
+  "event": "APPROVE",
+  "body": ""
+}
+```
+
+POST it to `repos/{owner}/{repo}/pulls/{number}/reviews`, then verify the
+returned state is `APPROVED` and report its URL. If a clean review was already
+created as pending, submit that review with `event: "APPROVE"` through
+`repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/events` instead.
+An API rejection is a failure to approve, not permission to substitute a
+COMMENT review. Report the error.
+
+## 5. Compose inline comments (findings only)
 
 For each finding, write a **concise, human-like** inline comment. Do NOT
 copy the markdown verbatim. Transform each finding into a short review
@@ -81,7 +117,7 @@ Example transformation:
 > rendering a row. Add a unique ID to the Trade DTO (e.g. aggregate ID
 > or tx_hash:log_index) and use that as the key.`
 
-## 5. Create a pending review
+## 6. Create a pending review (findings only)
 
 Build a JSON payload file with all comments:
 
@@ -110,13 +146,14 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 rm "$payload"
 ```
 
-**CRITICAL:** Do NOT include an `event` field in the payload. Omitting
-`event` creates the review in PENDING state. The user will inspect and
-submit from the Graphite dashboard.
+For reviews with findings, omit `event` to create a PENDING review unless
+submission is already authorized. This rule does not apply to clean reviews,
+which require `event: "APPROVE"`.
 
-## 6. Verify and report
+## 7. Verify and report
 
-After the API call succeeds, print:
+For an approval, report APPROVED and the review URL. For a pending review
+with findings, print:
 
 ```
 Review created on PR #<N> (PENDING -- not submitted)
@@ -132,15 +169,17 @@ Go to Graphite to inspect, edit, and submit the review.
 
 ## Hard rules
 
-1. The review MUST be created without an `event` field -- this keeps it
-   pending. Never submit it.
+1. A completed review with no actionable findings MUST be submitted as
+   APPROVE. Reviews with findings default to PENDING unless submission is
+   already authorized. Never replace a clean approval with a COMMENT review.
 2. Never copy markdown findings verbatim as comments. Rewrite them to be
    concise and human-readable.
 3. Skip dismissed findings (invalid and out-of-scope sections).
 4. Every comment must reference a specific file and line number. Skip
    findings that don't have a parseable `**File:** path:line`.
-5. If the PR's head SHA has changed since the review was generated, warn the
-   user and ask whether to proceed -- comments may land on wrong lines.
+5. Verify the current head against the reviewed SHA. For a clean approval,
+   review any new changes first. For findings, verify their current anchors
+   before posting; do not approve an unreviewed head.
 6. If the API call fails, show the error and the payload so the user can
    debug.
 
@@ -148,7 +187,8 @@ Go to Graphite to inspect, edit, and submit the review.
 
 - **No review.md found**: Tell the user to run `/review-pr` first.
 - **PR not found or closed**: Stop and report.
-- **Head SHA mismatch**: Warn and ask confirmation.
+- **Head SHA mismatch**: Review the new changes before approving; verify
+  current anchors before posting findings.
 - **API rate limit**: Report the error, suggest waiting.
 - **Finding without file/line**: Skip it, mention it was skipped in the
   summary.
