@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Always deliver the full report as one Zulip DM from Juan-Bot to Juan for review, without splitting it. The user guides and edits the report before finalization.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip, normally in one message; chunk only when the complete edited report exceeds the verified server limit. The user guides and edits the report before finalization.
 argument-hint: "[since <date or timeframe>]"
 ---
 
@@ -197,6 +197,18 @@ coverage gap, not evidence that no discussion occurred.
 
 ### Reconcile sources
 
+Include an incident only when evidence shows the user spent time investigating,
+recovering, coordinating, or reviewing its fix. State their contribution and
+the outcome. Merely seeing an alert, being in the chat, or working on the same
+service does not qualify. Omit unrelated team incidents and alert inventories.
+
+Treat the user's notes as primary evidence for emphasis and intended next
+steps. Distinguish completed work, unchecked TODOs, and ideas discussed in a
+call. Do not claim a proposal was agreed or a task completed without evidence.
+Supporting work delegated to the user's agent should stay secondary when the
+user says another engineer owns the initiative.
+
+
 Connect sessions, commits, issues, PRs, and conversations around actual work.
 Count cross-posted updates and repeated discussions once; copied claims are
 not independent evidence. Preserve attribution internally. In the update,
@@ -281,9 +293,9 @@ then ongoing implementation. Archived, abandoned, or closed-unmerged work is
 not forced into a false status; explain a material abandonment in the main
 narrative. Keep any unresolved classification uncertainty visible for review.
 
-## 5. Send one Zulip DM, review, and save
+## 5. Send through Zulip, review, and save
 
-Deliver the full draft to Juan as one Zulip DM using the standing delivery
+Deliver the full draft to Juan through Zulip, normally as one DM, using the standing delivery
 instructions below, then ask the user to guide/edit it closely: does it sound
 like them, reflect what actually happened, and say what the team needs to
 know? Incorporate corrections and re-show the exact revised text. The initial
@@ -320,7 +332,7 @@ the team-facing prose.
 
 ### Standing delivery: Juan-Bot to Juan
 
-Always send the report as **one complete Zulip direct message** from
+Always deliver the report through Zulip, **normally as one complete direct message**, from
 **Juan-Bot** (`juan-bot@raingroup.zulipchat.com`) to **Juan Rios**
 (`juan@rainlang.xyz`) at `https://raingroup.zulipchat.com`.
 This is the user's standing authorization for private report delivery and
@@ -336,19 +348,37 @@ Use the bot profile explicitly; never substitute the personal account.
 zulipctl --config ~/.zuliprc-bot dm juan@rainlang.xyz < <report-path>.md
 ```
 
-Send the entire Markdown file through stdin in one call. **Never split a
-report into parts**, add part counters, or import Telegram's message-length
-limits. Long reports still go in one message. Do not truncate the report to
-fit an assumed limit. If the server actually rejects the message, report the
-specific error and preserve the full artifact; do not silently split it or
-switch delivery services.
+Before sending, discover the realm's actual `max_message_length` through
+Zulip's register API (`fetch_event_types: ["realm"]`). Count Unicode code
+points, including Markdown URLs and any part labels. Do not assume Telegram's
+limits apply. If the limit cannot be verified, surface that uncertainty and
+always check stored content after delivery.
 
-Use the same single-message delivery for a requested revision. User review
-can happen after private delivery; forwarding or posting to a team channel
-still needs authorization. On success, record the returned message ID,
-sender, recipient, and verification result in the sidecar, and link the DM in
-the response. On failure, never mark the message sent. Check for delivery
-before retrying an ambiguous timeout to avoid duplicates.
+Edit for relevance and concise prose so the report normally fits in one
+message. Keep all six sections, the user's actual priorities, relevant
+incidents, and useful PR links. A selected review list is fine; preserve the
+complete evidence inventory locally. Do not cut off the end or remove whole
+sections merely to fit.
+
+When it fits, send the entire Markdown file through stdin in one call. If the
+complete edited report still exceeds the verified limit, split at section or
+paragraph boundaries into the fewest numbered messages needed. Account for
+labels in each part's length, preserve order and all content, and keep PRs at
+the end. Chunking is authorized only when needed for the server limit.
+
+A successful API acknowledgement does not prove complete delivery: Zulip can
+silently truncate an oversized message. Fetch every returned message ID with
+`apply_markdown=false` and compare its raw content exactly with the intended
+text. Verify sender and recipient too. Never report complete delivery based
+only on the CLI's `verified` field or send acknowledgement. If content differs,
+record the mismatch and correct it using the verified limit before claiming
+success. Do not blindly resend after an ambiguous timeout; inspect first.
+
+Use the same rules for revisions. Private delivery is authorized; forwarding
+or posting to a team channel still needs authorization. Record all message IDs,
+identity, destination, actual limit, and content-comparison results in the
+sidecar. Mark complete delivery only after every part passes readback. Keep
+`finalized: false` until the user explicitly finalizes the report.
 
 ## Failure handling
 

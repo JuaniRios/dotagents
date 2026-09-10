@@ -1,6 +1,6 @@
 interface:
   display_name: "Work Update"
   short_description: "Draft Wednesday and Friday team work updates"
-  default_prompt: "Use $work-update to draft my team update since the previous update, with direction, outcomes, discussions, next focus, blockers, and PRs grouped by status at the end. Send the full report as one Zulip DM from Juan-Bot to me, without splitting it."
+  default_prompt: "Use $work-update to draft my team update since the previous update, with direction, outcomes, discussions, next focus, blockers, and PRs grouped by status at the end. Send through Juan-Bot to me on Zulip, normally in one message. Include only incidents I spent time on. Check the server limit, chunk only if needed, and verify stored content."
 policy:
   allow_implicit_invocation: true
