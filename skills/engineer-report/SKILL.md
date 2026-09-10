@@ -183,7 +183,8 @@ Read:
 
 Detect status posts using both rules:
 
-1. The first line contains `daily report`, `daily update`, `work update`, `update`, `eod`,
+1. The first line contains `mid-week progress update`, `end of week progress update`,
+   `daily report`, `daily update`, `work update`, `update`, `eod`,
    `logging off`, `catch-up`, or `weekly`; the message is at least 200 characters.
 2. The message is at least 1,200 characters.
 

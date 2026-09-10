@@ -181,7 +181,8 @@ the day.`, and `Weekly catch-up`. Never grep for one literal header.
 Detect reports with two complementary rules:
 
 1. **First-line pattern** (case-insensitive, after stripping `#`/`*`/emoji):
-   contains `daily report`, `daily update`, `work update`, `update`, `eod`, `logging off`,
+   contains `mid-week progress update`, `end of week progress update`,
+   `daily report`, `daily update`, `work update`, `update`, `eod`, `logging off`,
    `catch-up`, or `weekly` — and the message is ≥ ~200 chars.
 2. **Long-message fallback**: any message ≥ ~1200 chars that the pattern
    missed is probably a multi-day catch-up, incident writeup, or detailed
@@ -209,7 +210,7 @@ lines = pathlib.Path('$HOME/.config/daily-report-telegram-chats.txt').read_text(
 for i, ln in enumerate(lines):
     if ln.strip().isdigit() and i > 0 and lines[i-1].startswith('#'):
         names[int(ln.strip())] = lines[i-1].lstrip('# ').strip()
-pat = re.compile(r'^[#*\s📋]*(daily\s*(report|update)|work\s+update|update\b|eod|logging off|catch[- ]?up|weekly)', re.I)
+pat = re.compile(r'^[#*\s📋]*(mid[- ]week\s+progress\s+update|end\s+of\s+week\s+progress\s+update|daily\s*(report|update)|work\s+update|update\b|eod|logging off|catch[- ]?up|weekly)', re.I)
 data = json.load(open(sys.argv[1]))
 for m in data.get('messages', []):
     txt = m.get('text') or ''

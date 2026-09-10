@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. The user guides and edits the draft before it is sent.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. The user guides and edits the draft before it is sent.
 argument-hint: "[since <date or timeframe>]"
 ---
 
@@ -218,8 +218,14 @@ structure overrides the old daily-report status/stats/emoji template. Write
 in first person, as the user would describe their work in a standup. Use
 connected paragraphs or a few useful bullets, concrete language, and honest
 limits. Allow enough detail to explain a multi-day period. There is no
-one-screen limit or compressed daily-report mode. Title it "Work update"
-with the report date and covered period so readers can place the update.
+one-screen limit or compressed daily-report mode. Use these report titles:
+
+- Wednesday: "Mid-week progress update".
+- Friday: "End of week progress update".
+
+Add the report date to the title and the covered period underneath. For a
+late or early run, use the intended Wednesday or Friday update's title;
+honor an explicit title from the user. The skill command stays `/work-update`.
 
 1. **General direction**: what the user focused on, why, and where the work is
    going. Start with the actual direction, not a count of commits or PRs.
