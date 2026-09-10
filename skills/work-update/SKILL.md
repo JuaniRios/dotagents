@@ -206,10 +206,13 @@ When supported by a specific PR, deployment record, or clear incident account,
 name who made the triggering change and explain what happened. Do not leave
 wording that implies the responder caused the incident. Authorship of an
 unrelated change, service ownership, reviewing, approving, or deploying a fix
-does not establish causation. If the introducing change or person is unknown,
-say so; do not invent blame or imply the user was uninvolved without evidence.
-Keep attribution factual and neutral, including the user's own role when they
-did introduce the problem.
+does not establish causation. Explain the known cause and the user's response;
+name who made the triggering change only when evidence supports it. Keep
+untraced authorship in internal evidence notes, not repeated report disclaimers
+such as "the introducing change hasn't been identified." Never invent blame
+or imply the user was uninvolved without evidence. Keep material uncertainty
+about impact, recovery, and deployment status visible. Keep attribution factual
+and neutral, including the user's own role when they did introduce the problem.
 
 
 Treat the user's notes as primary evidence for emphasis and intended next
