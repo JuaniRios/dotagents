@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. The user guides and edits the draft before it is sent.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Always deliver the full report as one Zulip DM from Juan-Bot to Juan for review, without splitting it. The user guides and edits the report before finalization.
 argument-hint: "[since <date or timeframe>]"
 ---
 
@@ -14,8 +14,8 @@ support the story and belong at the end. This is not a changelog.
 
 The cadence starts the week of September 9, 2026, as a trial for a couple
 of weeks. Adjust when the user gives feedback; do not automatically revert
-at the end of the trial. Running this skill does not schedule or send
-anything automatically. An explicit request on another day is valid.
+at the end of the trial. Running this skill does not schedule future runs. Each run delivers the
+report to Juan through the standing Zulip DM destination in Step 5. An explicit request on another day is valid.
 
 ## 1. Establish the reporting window and continuity
 
@@ -281,18 +281,20 @@ then ongoing implementation. Archived, abandoned, or closed-unmerged work is
 not forced into a false status; explain a material abandonment in the main
 narrative. Keep any unresolved classification uncertainty visible for review.
 
-## 5. Review, save, and optionally send
+## 5. Send one Zulip DM, review, and save
 
-Show the full draft and ask the user to guide/edit it closely: does it sound
+Deliver the full draft to Juan as one Zulip DM using the standing delivery
+instructions below, then ask the user to guide/edit it closely: does it sound
 like them, reflect what actually happened, and say what the team needs to
 know? Incorporate corrections and re-show the exact revised text. The initial
 evidence review does not approve an unseen final draft. Never claim that AI
 verification replaces the user's responsibility for the message.
 
 Save unapproved drafts under `~/Github/dotagents/data/work-update/drafts/`.
-After explicit finalization or successful authorized sending, save the exact
-approved text under `~/Github/dotagents/data/work-update/reports/` as
-`<REPORT_DATE>.md` (or `.html` for Telegram HTML), plus a JSON sidecar:
+Record draft delivery in its sidecar with `sent: true` and `finalized: false`;
+private delivery for review does not finalize the report or advance continuity.
+After the user explicitly finalizes the report, save the exact approved text under `~/Github/dotagents/data/work-update/reports/` as
+`<REPORT_DATE>.md` in Zulip-compatible Markdown, plus a JSON sidecar:
 
 ```json
 {
@@ -316,14 +318,37 @@ revisions; use a distinct suffix for separate updates on the same date. Keep
 source references and verification notes in the sidecar as needed, outside
 the team-facing prose.
 
-Sending is optional and requires explicit authorization for the destination
-and exact message. For Telegram formatting/delivery, follow the
-`telegram-message` skill, including HTML escaping and splitting at natural
-boundaries. Show the rendered content and destination before the final send
-approval unless both were already explicitly approved. Do not infer a chat
-from mentions in the format announcement. On send failure, report it and
-never mark the message sent; check for delivery before retrying an ambiguous
-timeout. Report the saved artifact path and actual delivery status.
+### Standing delivery: Juan-Bot to Juan
+
+Always send the report as **one complete Zulip direct message** from
+**Juan-Bot** (`juan-bot@raingroup.zulipchat.com`) to **Juan Rios**
+(`juan@rainlang.xyz`) at `https://raingroup.zulipchat.com`.
+This is the user's standing authorization for private report delivery and
+requested revisions. Do not ask again whether to send or which destination
+to use. Honor an explicit instruction to withhold delivery or use another
+channel for a particular run.
+
+Follow the `zulip` skill. Verify the bot identity with
+`zulipctl --config ~/.zuliprc-bot me` and resolve Juan's account before sending.
+Use the bot profile explicitly; never substitute the personal account.
+
+```bash
+zulipctl --config ~/.zuliprc-bot dm juan@rainlang.xyz < <report-path>.md
+```
+
+Send the entire Markdown file through stdin in one call. **Never split a
+report into parts**, add part counters, or import Telegram's message-length
+limits. Long reports still go in one message. Do not truncate the report to
+fit an assumed limit. If the server actually rejects the message, report the
+specific error and preserve the full artifact; do not silently split it or
+switch delivery services.
+
+Use the same single-message delivery for a requested revision. User review
+can happen after private delivery; forwarding or posting to a team channel
+still needs authorization. On success, record the returned message ID,
+sender, recipient, and verification result in the sidecar, and link the DM in
+the response. On failure, never mark the message sent. Check for delivery
+before retrying an ambiguous timeout to avoid duplicates.
 
 ## Failure handling
 
@@ -333,5 +358,6 @@ timeout. Report the saved artifact path and actual delivery status.
   daily reports for context, marking what could not be independently checked.
 - Soften or remove unverified claims; production state and user intent must
   not be guessed. Do not invent accomplishments when the window is quiet.
-- No repo, PR, issue, or chat mutation is authorized merely by gathering an
-  update. Any follow-up action needs its own user authorization.
+- Beyond the standing report DM in Step 5, no repo, PR, issue, or chat
+  mutation is authorized merely by gathering an update. Other follow-up
+  actions need their own user authorization.
