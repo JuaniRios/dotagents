@@ -91,29 +91,23 @@ needed. This is the only full local CI pass; never run it inside review rounds.
 On the trivial fast path, keep the existing direct checks and skip full local
 CI.
 
-## 9. CodeRabbit convergence
+## 9. Feedback and CodeRabbit convergence
 
 1. `gt ss` once so CodeRabbit can review the implementation.
-2. Run `drive-coderabbit current`. It owns a bounded initial review plus at
-   most two incremental follow-up rounds, batches fixes per round, and never
-   waits for intermediate GitHub CI.
+2. Run `finish-pr-review current`. It addresses existing feedback, ensures a
+   full CodeRabbit baseline, and drives incremental reviews until clean or
+   nits-only. It owns replies, thread resolution, and final verification.
+   Ask only for substantive disagreements, alternatives, or real blockers.
 3. Do not separately request CodeRabbit reviews or wait for CI runs started by
    intermediate pushes. Those runs may be cancelled by later pushes.
 
-## 10. Final submit and CI
+## 10. Final handoff gate
 
-1. Use `graphite` to sync/restack onto latest trunk once after review
-   convergence. Resolve conflicts before submission; conflict-only resolution
-   does not restart a manual CodeRabbit round.
-2. `gt ss` once and wait for the GitHub run whose `headSha` is this HEAD.
-3. Red → `ci-fix`, resubmit, and wait for the replacement run. If the CI fix
-   changes business logic rather than compatibility or formatting, run one
-   regular CodeRabbit follow-up before the replacement final gate.
-4. No run (6th+ in a Graphite stack) → local `nix run .#ci`.
-
-Cap final CI repair at a few rounds. A trunk advance during final CI requires
-one more restack when strict status checks make the PR stale; it does not
-justify re-running the full review pipeline.
+Reuse the exact-head review and CI evidence from `finish-pr-review`; do not
+push or launch a second review loop merely to repeat its final gate.
+If the head or relevant base changes afterward, return to that skill's
+coverage and verification checks. Never declare an unreviewed terminal fix
+converged. If Graphite skipped CI, use local `nix run .#ci` and disclose it.
 
 ## 11. Report
 
