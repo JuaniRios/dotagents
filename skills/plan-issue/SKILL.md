@@ -1,12 +1,11 @@
 ---
 name: plan-issue
 description: >
-  Research a complex Linear issue and publish a multi-model implementation
-  plan as a Linear document, critiqued by opus 5 + sol 5.6 + grok 4.6. Use
-  only when the issue needs substantial research, architectural decisions,
-  cross-component coordination, or non-trivial sequencing. Do not use for
-  simple, localized, or mechanically obvious changes such as removing one
-  config entry. Read-only on the repo.
+  Plan a Linear issue with light, standard, or deep review according to risk.
+  Use when asked to plan an issue, or when a complex implementation needs a
+  published design. Config-only work gets a short self-checked plan; simple
+  changes get one independent pass; complex changes get multi-model critique.
+  Read-only on the repo.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write
 ---
@@ -15,38 +14,26 @@ allowed-tools: Bash(*), Read, Write
 
 Turn a Linear issue into a reviewed implementation plan attached as a
 Linear document titled `<ID> Implementation Plan` (the detection
-contract for `implement-issue`). Read
-`~/Github/dotagents/skills/panel-runtime.md` for planner/critics.
+contract for `implement-issue`). First read
+`~/Github/dotagents/skills/issue-thoroughness.md` and select a level.
+Read panel-runtime only for deep planning.
 
 Never edit code or mutate git. The Linear document is the only side
 effect.
 
-## Complexity gate
+## Thoroughness gate
 
-Use this skill only when a multi-model plan would materially reduce execution
-risk. At least one of these must apply:
-
-- The issue spans multiple components or repositories with meaningful coupling.
-- The implementation requires an architectural or domain-model decision.
-- Several plausible approaches need research and comparison.
-- The work has dependent phases, migration risks, or difficult rollback needs.
-- The issue is ambiguous enough that implementation should wait for explicit
-  design sign-off.
-
-Do not use this skill for small, localized work with an obvious implementation,
-including config entry changes, asset additions or removals, straightforward
-dependency bumps, copy edits, narrow renames, or isolated one-file fixes. Handle
-those directly with a proportionate inline plan or the trivial fast path in
-`implement-issue`.
-
-If the user explicitly invokes `plan-issue` for a trivial issue, explain that a
-multi-model plan would add overhead without reducing risk and offer a concise
-inline plan instead. Proceed with this skill only if the user then explicitly
-insists on the full multi-model plan.
+Use the shared light / standard / deep policy, not a blanket multi-model gate.
+An explicit invocation for a small issue produces a small plan without asking
+the user to opt into a heavier workflow. Publish the requested Linear plan at
+any level; for an inline-only request, return it inline without publishing.
+Do not auto-invoke this skill for a routine implementation that needs only
+the local plan in implement-issue.
 
 ## 1. Read the issue
 
-`linear issue view <ID>`. If `<ID> Implementation Plan` already
+Use linear-cli and write-as-me. `linear issue view <ID>`.
+If `<ID> Implementation Plan` already
 exists, ask whether to rewrite or stop.
 
 ## 2. Situate
@@ -56,21 +43,32 @@ aims in the sign-off section.
 
 ## 3. Research
 
-Explore children for call chains and reuse. Every claim about what
-exists must come from the repo.
+Light and standard: investigate directly; do not spawn exploration children.
+Deep: use isolated exploration children for independent call chains when
+useful. Every claim about what exists must come from the repo.
 
 ## 4. Draft
 
-Scratch file. Part 1 (human sign-off): ASD-STE100, no code identifiers,
-numbered decisions. Part 2 (implementer): files, symbols, tests,
-workflow. No em dashes. Do not restate repo docs — point at them.
+Light: a few bullets covering the change, affected files, direct validation,
+and rollback where relevant. No architecture document or invented decisions.
+Standard: a short goal, approach, affected files, tests, and actual open
+questions. The host drafts both levels.
+
+Deep: use the planner from panel-runtime's Plan critics section, then draft
+Part 1 (human sign-off) in plain language without code identifiers, and
+Part 2 (implementer) with files, symbols, tests, sequencing, and rollback.
+Record the selected level and reason. Do not restate repository documents.
 
 ## 5. Critique
 
-Panel-runtime **Plan critics**: planner is fable 5.1 if the Claude
-harness is reachable, else the host model. Critics: opus 5, sol 5.6,
-grok 4.6 in parallel. Label `claude-host` vs `portable`. Append
-`### Critique` (adopted / rejected).
+Light: host self-check only. Standard: one independent pass per the shared
+policy, then verify corrections without a broad re-review loop.
+Deep: run critique-loop on the draft. It owns its panel and convergence;
+do not also launch the separate Plan critics panel.
+
+Record the actual review coverage and findings addressed. An unavailable
+reviewer or exhausted deep-review budget is incomplete, not approval.
+Bring decision-changing findings to the user before publishing them as agreed.
 
 ## 6. Publish
 
@@ -82,14 +80,14 @@ No `--icon`. Rewrite uses `linear document update`.
 
 ## 7. Report
 
-Verdict against current state, document URL, sign-off decisions,
-critique highlights.
+Level and reason, verdict against current state, document URL or inline
+plan, actual review coverage, and any sign-off decisions.
 
 ## Hard rules
 
 1. No code or git mutation.
 2. Title is exactly `<ID> Implementation Plan`.
-3. Part 1 has no code identifiers. No em dashes anywhere.
+3. Deep-plan Part 1 has no code identifiers. Use write-as-me for prose.
 4. Ground every claim in the repo.
-5. Never publish an uncritiqued plan.
-6. Critics per panel-runtime. Never impersonate a dropped model.
+5. Apply the selected level's review, not a mandatory panel at every level.
+6. Deep panels follow panel-runtime. Never impersonate a dropped model.

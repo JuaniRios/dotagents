@@ -244,6 +244,16 @@ If the user passed `--stack` (check the user's arguments):
 
 ## 8. Codex review pass
 
+When called by implement-issue, honor its recorded issue-thoroughness level:
+light uses host self-review with no spawned reviewer; standard reuses the
+single independent code-and-description pass if it covered this draft and
+diff. A standard-path skeleton uses host self-review until that final combined
+pass; do not spawn an interim reviewer. Verify wording corrections directly.
+Neither path launches
+an additional description reviewer. Deep and standalone invocations retain
+the review below. This exception also replaces the reviewer gate referenced
+in steps 1 and 9; all accuracy and publishing requirements still apply.
+
 Before pushing, get a second opinion from a Codex reviewer on whether the
 draft accurately and concisely describes the diff. This replaces the human
 confirmation step — the Codex reviewer is the quality gate.
