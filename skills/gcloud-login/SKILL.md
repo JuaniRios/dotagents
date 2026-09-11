@@ -5,7 +5,7 @@ description: >
   credentials, “Reauthentication failed”, or “cannot prompt during
   non-interactive execution”, and when the user asks to authenticate gcloud
   noninteractively.
-allowed-tools: Bash(gcloud:*), Bash(test:*), Bash(chmod:*), Bash(stat:*)
+allowed-tools: Bash(gcloud:*), Bash(test:*), Bash(set:*), Bash(source:*)
 ---
 
 # /gcloud-login
