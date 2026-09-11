@@ -4,8 +4,9 @@ description: >
   Take a Linear issue from link to finished implementation — skeleton
   Graphite PR, cross-link Linear↔PR, proportionate plan and critique,
   use light checks for low-risk config edits, one independent pass for simple
-  changes, or full review loops for complex changes, then submit with final
-  CI green. Use when the user wants an issue implemented end to end.
+  changes, or full review loops for complex changes. Always run CodeRabbit
+  with a level-appropriate round budget, then submit with final CI green.
+  Use when the user wants an issue implemented end to end.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write, Edit
 ---
@@ -94,14 +95,15 @@ review rounds use targeted checks; do not repeatedly wait for full remote CI.
 
 ## 9. Feedback and CodeRabbit convergence
 
-1. Submit through Graphite. Inspect existing human and bot feedback at every
-   level, and handle it under the shared policy. Light and standard do not
-   proactively launch CodeRabbit loops by default.
-2. For deep work, explicit CodeRabbit-convergence requests, or substantive
-   external feedback needing re-review, run `finish-pr-review` on the exact
-   in-scope PR URLs. It addresses existing feedback, ensures a
+1. Submit through Graphite. Every level must enter the CodeRabbit workflow,
+   including config-only and documentation changes.
+2. Run `finish-pr-review` on the exact in-scope PR URLs. Pass the level and
+   per-PR round budget from issue-thoroughness: light 2, standard 3, deep
+   uncapped unless the user specified another budget. It addresses existing
+   feedback, ensures a
    full CodeRabbit baseline, and drives incremental reviews until clean or
-   nits-only. It owns replies, thread resolution, and final verification.
+   nits-only or the cap is reached. It owns replies, thread resolution, and
+   final verification. A cap-hit result is incomplete, not convergence.
    Ask only for substantive disagreements, alternatives, or real blockers.
 3. Do not separately request CodeRabbit reviews or wait for CI runs started by
    intermediate pushes. Those runs may be cancelled by later pushes.
@@ -110,11 +112,13 @@ review rounds use targeted checks; do not repeatedly wait for full remote CI.
 
 At every level, verify current mergeability and required CI on the published
 head. Resolve conflicts, fix failed checks, and reassess review coverage for
-meaningful changes. If finish-pr-review ran, reuse its exact-head evidence;
+meaningful changes. Reuse finish-pr-review's exact-head evidence;
 do not launch another pipeline to duplicate its final gate.
 If Graphite skipped CI, use the repository's permitted local equivalent
-(such as `nix run .#ci`) and disclose it. Do not report skipped optional
-CodeRabbit or multi-model review as converged.
+(such as `nix run .#ci`) and disclose it. Do not report capped CodeRabbit or
+skipped optional multi-model review as converged. If the cap prevented a
+clean or nits-only covered result, report remaining work and ask whether to
+extend it; do not declare the issue complete.
 
 ## 11. Report
 

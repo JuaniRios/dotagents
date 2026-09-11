@@ -2,7 +2,8 @@
 name: finish-pr-review
 description: >-
   Address existing human and bot feedback, then drive CodeRabbit until the
-  latest PR changes have no substantive findings. Use when asked to address
+  latest PR changes have no substantive findings or an explicit review budget
+  is reached. Use when asked to address
   review feedback, drive CodeRabbit, or finish PR review, or when an active
   implementation workflow requires it. Do not trigger for status-only checks.
 ---
@@ -10,7 +11,9 @@ description: >-
 # Finish PR review
 
 Own the review work through verified, published fixes and a final audit.
-Do not stop after posting a review request or pushing the last fix.
+Do not stop after posting a review request or pushing the last fix unless
+an explicit round cap or real blocker prevents completion. Report that state
+as incomplete, not wrapped up.
 
 ## Scope and authority
 
@@ -118,11 +121,37 @@ base change altered its meaning. Otherwise request incremental review.
 ## 4. Drive to convergence
 
 After each completed review, ingest all new feedback through steps 1 and 2.
-After any new fix, obtain review coverage for that change and repeat.
+After any new fix, obtain review coverage for that change and repeat while
+the round budget permits.
 
-There is no fixed three-round limit. Continue while substantive fixes or
-verification are making progress. Never stop with an unreviewed final fix
-and call it convergence.
+### Round budget
+
+Record the caller's level and cap per PR before requesting reviews. The
+issue workflow supplies light = 2 completed rounds, standard/medium = 3,
+deep = no fixed cap. Standalone use is uncapped unless the user supplies a
+budget. An explicit instruction to continue until converged overrides a
+default cap; do not infer that override from an ordinary skill invocation.
+
+Count each distinct completed CodeRabbit code-review run consumed during
+this workflow once, whether automatic or manually requested. The initial
+full review counts if newly run; a historical baseline reused at entry does
+not consume a round. Acknowledgements, failed attempts, rate-limit replies,
+and thread-only replies are not completed rounds. Persist counters across
+restarts, restacks, and resumed turns; do not reset them to bypass a cap.
+
+At the cap, process the last review's accepted findings: fix, verify, publish,
+reply, and resolve addressed threads. Do not request another review. Consume
+any already-arrived automatic coverage without retriggering, but do not
+initiate another fix/re-review cycle past the budget. Unhandled new findings
+remain open and are reported. Do not disable automatic review settings.
+
+Run final checks on published fixes, then report `capped, not converged` if
+any substantive feedback or uncovered delta remains. Include the exact head,
+last covered head, remaining work, and ask whether to extend the budget.
+If the covered result is already clean or nits-only, report that outcome.
+Never call an unreviewed final fix converged merely because CI passed.
+
+Without a cap, continue while substantive fixes or verification make progress.
 
 Assess severity independently:
 
@@ -154,16 +183,19 @@ progress, report "blocked" with remaining work, never "wrapped up".
 
 ## 5. Final verification and handoff
 
-Do not wait for every intermediate remote CI run. Once review converges:
+Do not wait for every intermediate remote CI run. Once review converges or
+reaches its cap, perform the final audit:
 
 - Check current trunk/base compatibility and resolve actual conflicts.
 - Run required final verification and wait for CI on the exact published
-  head. Use ci-fix for failures and re-review substantive repair changes.
+  head. Use ci-fix for failures and re-review substantive repair changes
+  within the budget; uncovered repairs after the cap remain incomplete.
 - Treat Graphite's wait-for-parent check as a stack dependency, not a CI
   failure. If CI was skipped, use an explicitly permitted local equivalent
   and disclose it. Missing evidence is not green CI.
 - Refresh all feedback sources after final checks. New substantive feedback
-  or uncovered changes return to the loop.
+  or uncovered changes return to the loop if budget remains; otherwise
+  include them in the capped handoff without claiming completion.
 - Verify accepted findings have published fixes, replies, and resolved
   threads, and out-of-diff findings have recorded answers.
 - Report human approvals separately, including stale approvals. Do not
