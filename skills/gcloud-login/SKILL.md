@@ -62,10 +62,11 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
    flow; `--no-launch-browser` prevents GUI use on the target host.
 5. Tell the user only that a private Juan-Bot DM was sent and that the helper
    is waiting. Do not repeat the authorization URL in agent chat.
-6. Wait for the helper to finish. It performs the Zulip connectivity gate,
-   generates a unique request ID, accepts only a newer code-only private DM
-   from Juan, and never writes the authorization code to stdout/stderr. After
-   gcloud succeeds, it permanently deletes the exact request and reply by ID.
+6. Wait for the helper to finish. It polls Zulip every 5 seconds, performs the
+   connectivity gate, generates a unique request ID, accepts only a newer
+   code-only private DM from Juan, and never writes the authorization code to
+   stdout/stderr. After gcloud succeeds, it permanently deletes the exact
+   request and reply by ID.
 7. On success, independently verify without printing tokens:
 
    ```bash
@@ -109,6 +110,11 @@ unambiguous. Never use a public or private channel topic for this exchange.
 - Cleanup failure after successful Google authentication: report that login
   succeeded but the exact Zulip messages could not be permanently deleted; do
   not claim cleanup succeeded or retry deletion against broader targets.
+- If gcloud refreshes both requested credential stores but its macOS process
+  does not finish exiting within 30 seconds, verify both token commands,
+  terminate only that helper-owned process, and continue cleanup. Require both
+  credential mtimes to have changed so an older valid token cannot be mistaken
+  for this login succeeding.
 - Wrong sender, public/channel message, non-code content, or reply predating
   the bot request: ignore it.
 - IAM, permission, IAP, API enablement, network, or quota failure after login:

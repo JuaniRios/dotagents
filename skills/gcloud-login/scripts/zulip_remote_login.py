@@ -31,7 +31,8 @@ import urllib.request
 GOOGLE_URL_RE = re.compile(r"https://accounts\.google\.com/[^\s]+")
 ANY_URL_RE = re.compile(r"https://[^\s]+")
 DEFAULT_TIMEOUT_SECONDS = 15 * 60
-POLL_SECONDS = 3.0
+POLL_SECONDS = 5.0
+GCLOUD_EXIT_GRACE_SECONDS = 30.0
 
 
 class LoginError(RuntimeError):
@@ -209,6 +210,89 @@ def spawn_gcloud(command: Sequence[str]) -> tuple[subprocess.Popen[bytes], int]:
     return process, master_fd
 
 
+def read_pty(master_fd: int, output: str) -> str:
+    try:
+        chunk = os.read(master_fd, 65536)
+    except OSError:
+        chunk = b""
+    if not chunk:
+        return output
+    return (output + chunk.decode("utf-8", errors="replace"))[-200000:]
+
+
+def wait_for_gcloud(
+    process: subprocess.Popen[bytes], master_fd: int, timeout: float, output: str
+) -> tuple[Optional[int], str]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([master_fd], [], [], 0.5)
+        if ready:
+            output = read_pty(master_fd, output)
+        return_code = process.poll()
+        if return_code is not None:
+            return return_code, output
+    return None, output
+
+
+def credential_paths(gcloud: str, update_adc: bool) -> list[Path]:
+    try:
+        result = subprocess.run(
+            [gcloud, "info", "--format=value(config.paths.global_config_dir)"],
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise LoginError("Could not resolve the gcloud configuration directory") from error
+    root = Path(result.stdout.strip())
+    if result.returncode != 0 or not root.is_absolute():
+        raise LoginError("Could not resolve the gcloud configuration directory")
+    paths = [root / "credentials.db"]
+    if update_adc:
+        paths.append(root / "application_default_credentials.json")
+    return paths
+
+
+def mtimes(paths: Sequence[Path]) -> dict[Path, Optional[int]]:
+    result = {}  # type: dict[Path, Optional[int]]
+    for path in paths:
+        try:
+            result[path] = path.stat().st_mtime_ns
+        except FileNotFoundError:
+            result[path] = None
+    return result
+
+
+def verify_hung_gcloud_completion(
+    gcloud: str,
+    account: str,
+    update_adc: bool,
+    before: dict[Path, Optional[int]],
+) -> bool:
+    after = mtimes(list(before))
+    if not all(after[path] != before[path] for path in before):
+        return False
+    commands = [[gcloud, "auth", "print-access-token", f"--account={account}"]]
+    if update_adc:
+        commands.append([gcloud, "auth", "application-default", "print-access-token"])
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if result.returncode != 0:
+            return False
+    return True
+
+
 def terminate_child(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
@@ -266,6 +350,8 @@ def orchestrate(args: argparse.Namespace) -> int:
     bot = ZulipBot(zulipctl, config, args.recipient)
     bot.connectivity_gate()
     deleter = ZulipMessageDeleter(delete_config, args.recipient)
+    tracked_credentials = credential_paths(gcloud, args.update_adc)
+    credentials_before = mtimes(tracked_credentials)
 
     command = [
         gcloud,
@@ -295,12 +381,9 @@ def orchestrate(args: argparse.Namespace) -> int:
         while time.monotonic() < deadline:
             ready, _, _ = select.select([master_fd], [], [], 0.5)
             if ready:
-                try:
-                    chunk = os.read(master_fd, 65536)
-                except OSError:
-                    chunk = b""
-                if chunk:
-                    output = (output + chunk.decode("utf-8", errors="replace"))[-200000:]
+                updated_output = read_pty(master_fd, output)
+                if updated_output != output:
+                    output = updated_output
                     if url is None:
                         match = GOOGLE_URL_RE.search(output)
                         if match:
@@ -329,6 +412,11 @@ def orchestrate(args: argparse.Namespace) -> int:
                 if reply is not None:
                     code_message_id, code = reply
                     os.write(master_fd, code.encode("utf-8") + b"\n")
+                    print(
+                        "Received the private authorization reply and submitted it "
+                        "to gcloud.",
+                        flush=True,
+                    )
                     break
 
             return_code = process.poll()
@@ -342,10 +430,17 @@ def orchestrate(args: argparse.Namespace) -> int:
             raise LoginError("Timed out waiting for the private Zulip authorization reply")
 
         remaining = max(1.0, deadline - time.monotonic())
-        try:
-            return_code = process.wait(timeout=remaining)
-        except subprocess.TimeoutExpired as error:
-            raise LoginError("Timed out while Google completed authentication") from error
+        exit_grace = min(GCLOUD_EXIT_GRACE_SECONDS, remaining)
+        return_code, output = wait_for_gcloud(
+            process, master_fd, exit_grace, output
+        )
+        if return_code is None:
+            if not verify_hung_gcloud_completion(
+                gcloud, args.account, args.update_adc, credentials_before
+            ):
+                raise LoginError("Timed out while Google completed authentication")
+            terminate_child(process)
+            return_code = 0
         if return_code != 0:
             safe_tail = sanitize(output[-4000:], code)
             raise LoginError(f"Google rejected the authorization response: {safe_tail.strip()}")
