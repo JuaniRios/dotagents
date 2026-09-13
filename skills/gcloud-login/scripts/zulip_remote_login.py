@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import configparser
 import fcntl
 import html
 from html.parser import HTMLParser
@@ -22,6 +24,8 @@ import sys
 import termios
 import time
 from typing import Any, Optional, Sequence
+import urllib.error
+import urllib.request
 
 
 GOOGLE_URL_RE = re.compile(r"https://accounts\.google\.com/[^\s]+")
@@ -51,7 +55,7 @@ def message_text(content: str) -> str:
 
 def extract_authorization_code(
     result: dict[str, Any], recipient: str, after_message_id: int
-) -> Optional[str]:
+) -> Optional[tuple[int, str]]:
     pattern = re.compile(r"^\s*(\S{16,2048})\s*$")
     candidates = []  # type: list[tuple[int, str]]
     for message in result.get("messages", []):
@@ -73,7 +77,7 @@ def extract_authorization_code(
     if not candidates:
         return None
     candidates.sort()
-    return candidates[-1][1]
+    return candidates[-1]
 
 
 def sanitize(text: str, code: Optional[str] = None) -> str:
@@ -138,7 +142,7 @@ class ZulipBot:
             raise LoginError("Zulip did not return a message ID")
         return message_id
 
-    def poll_code(self, after_message_id: int) -> Optional[str]:
+    def poll_code(self, after_message_id: int) -> Optional[tuple[int, str]]:
         result = run_json(
             [
                 *self.base,
@@ -150,6 +154,39 @@ class ZulipBot:
             ]
         )
         return extract_authorization_code(result, self.recipient, after_message_id)
+
+
+class ZulipMessageDeleter:
+    def __init__(self, config: Path, expected_email: str) -> None:
+        parser = configparser.ConfigParser()
+        try:
+            loaded = parser.read(config)
+            api = parser["api"]
+            self.site = api["site"].rstrip("/")
+            email = api["email"]
+            key = api["key"]
+        except (OSError, KeyError, configparser.Error) as error:
+            raise LoginError("Zulip deletion credentials are invalid") from error
+        if not loaded or not self.site.startswith("https://"):
+            raise LoginError("Zulip deletion credentials are invalid")
+        if email.casefold() != expected_email.casefold():
+            raise LoginError("Zulip deletion identity does not match the recipient")
+        token = base64.b64encode(f"{email}:{key}".encode("utf-8")).decode("ascii")
+        self.authorization = f"Basic {token}"
+
+    def delete(self, message_id: int) -> None:
+        request = urllib.request.Request(
+            f"{self.site}/api/v1/messages/{message_id}",
+            method="DELETE",
+            headers={"Authorization": self.authorization},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                result = json.loads(response.read())
+        except (OSError, ValueError) as error:
+            raise LoginError("Zulip message deletion failed") from error
+        if result.get("result") != "success":
+            raise LoginError("Zulip message deletion did not succeed")
 
 
 def spawn_gcloud(command: Sequence[str]) -> tuple[subprocess.Popen[bytes], int]:
@@ -178,10 +215,10 @@ def terminate_child(process: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=5)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
+    except (PermissionError, ProcessLookupError, subprocess.TimeoutExpired):
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (PermissionError, ProcessLookupError):
             pass
 
 
@@ -201,8 +238,8 @@ def login_message(target: str, account: str, request_id: str, url: str) -> str:
         "After Google displays the authorization code, reply to this private "
         "bot DM with only the copied code—no label, quotes, or other text.\n\n"
         f"Request: `{request_id}`\n\n"
-        "This request expires in 15 minutes. The code is short-lived and "
-        "single-use, but your reply remains in Zulip history."
+        "This request expires in 15 minutes. After successful login, the bot "
+        "will permanently delete this request and your code reply."
     )
 
 
@@ -220,8 +257,15 @@ def orchestrate(args: argparse.Namespace) -> int:
     if config.stat().st_mode & 0o077:
         raise LoginError("Zulip bot credential permissions are too broad")
 
+    delete_config = Path(args.zulip_delete_config).expanduser()
+    if not delete_config.is_file():
+        raise LoginError("Zulip deletion credentials are missing")
+    if delete_config.stat().st_mode & 0o077:
+        raise LoginError("Zulip deletion credential permissions are too broad")
+
     bot = ZulipBot(zulipctl, config, args.recipient)
     bot.connectivity_gate()
+    deleter = ZulipMessageDeleter(delete_config, args.recipient)
 
     command = [
         gcloud,
@@ -240,10 +284,12 @@ def orchestrate(args: argparse.Namespace) -> int:
     output = ""
     url = None  # type: Optional[str]
     code = None  # type: Optional[str]
+    code_message_id = 0
     request_message_id = 0
     next_poll = float("inf")
     poll_failures = 0
     target = host_label()
+    authenticated = False
 
     try:
         while time.monotonic() < deadline:
@@ -271,16 +317,17 @@ def orchestrate(args: argparse.Namespace) -> int:
 
             if url is not None and time.monotonic() >= next_poll:
                 try:
-                    code = bot.poll_code(request_message_id)
+                    reply = bot.poll_code(request_message_id)
                 except LoginError:
-                    code = None
+                    reply = None
                     poll_failures += 1
                     if poll_failures >= 3:
                         raise LoginError("Repeated Zulip polling failure")
                 else:
                     poll_failures = 0
                 next_poll = time.monotonic() + POLL_SECONDS
-                if code is not None:
+                if reply is not None:
+                    code_message_id, code = reply
                     os.write(master_fd, code.encode("utf-8") + b"\n")
                     break
 
@@ -303,20 +350,38 @@ def orchestrate(args: argparse.Namespace) -> int:
             safe_tail = sanitize(output[-4000:], code)
             raise LoginError(f"Google rejected the authorization response: {safe_tail.strip()}")
 
+        authenticated = True
+        deleter.delete(code_message_id)
+        deleter.delete(request_message_id)
+        code = None
+
         bot.dm(
             f"Google Cloud authentication completed on {target} "
-            f"for `{args.account}` (request `{request_id}`)."
+            f"for `{args.account}` (request `{request_id}`). The authentication "
+            "request and code reply were permanently deleted."
         )
         print("Google Cloud authentication completed successfully.", flush=True)
         return 0
     except LoginError as error:
         try:
-            bot.dm(
-                f"Google Cloud authentication failed on {target} "
-                f"for `{args.account}` (request `{request_id}`): {sanitize(str(error), code)}"
-            )
+            if authenticated:
+                bot.dm(
+                    f"Google Cloud authentication completed on {target} for "
+                    f"`{args.account}`, but Zulip message cleanup failed "
+                    f"(request `{request_id}`)."
+                )
+            else:
+                bot.dm(
+                    f"Google Cloud authentication failed on {target} "
+                    f"for `{args.account}` (request `{request_id}`): "
+                    f"{sanitize(str(error), code)}"
+                )
         except LoginError:
             pass
+        if authenticated:
+            raise LoginError(
+                "Google Cloud authentication succeeded, but Zulip message cleanup failed"
+            ) from error
         raise
     finally:
         terminate_child(process)
@@ -325,7 +390,6 @@ def orchestrate(args: argparse.Namespace) -> int:
 
 
 def self_test() -> int:
-    request_id = "a1b2c3d4e5"
     result = {
         "messages": [
             {
@@ -336,8 +400,9 @@ def self_test() -> int:
             }
         ]
     }
-    code = extract_authorization_code(result, "juan@rainlang.xyz", after_message_id=11)
-    assert code == "4/test-code_123456789"
+    reply = extract_authorization_code(result, "juan@rainlang.xyz", after_message_id=11)
+    assert reply == (12, "4/test-code_123456789")
+    code = reply[1]
     result["messages"][0]["content"] = "<p>extra 4/test-code_123456789</p>"
     assert extract_authorization_code(
         result, "juan@rainlang.xyz", after_message_id=11
@@ -395,6 +460,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--account", default="juan@t0trade.com")
     parser.add_argument("--recipient", default="juan@rainlang.xyz")
     parser.add_argument("--zulip-config", default="~/.zuliprc-bot")
+    parser.add_argument("--zulip-delete-config", default="~/.zuliprc-personal")
     parser.add_argument(
         "--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help=argparse.SUPPRESS
     )

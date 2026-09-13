@@ -27,10 +27,12 @@ once. Never retry a mutation automatically.
 - Google account: `juan@t0trade.com`
 - Zulip actor: Juan-Bot via `~/.zuliprc-bot`
 - Zulip recipient: `juan@rainlang.xyz`
+- Zulip cleanup identity: Juan via `~/.zuliprc-personal`
 - Helper: `~/Github/dotagents/skills/gcloud-login/scripts/zulip_remote_login.py`
 - `gcloud`, `zulipctl`, and `python3` must be installed on the target host.
-- `~/.zuliprc-bot` must exist with mode `0600` and Juan-Bot must be able to DM
-  the recipient.
+- Both Zulip credential files must exist with mode `0600`; Juan-Bot must be
+  able to DM the recipient, and Juan must be allowed to delete his own and his
+  owned bot's direct messages.
 
 The shared nix-darwin/home-manager configuration installs `gcloud`,
 `zulipctl`, and Python on both `juanrios-m2` and `juan-dev-server`. Zulip bot
@@ -51,6 +53,7 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
      --account juan@t0trade.com \
      --recipient juan@rainlang.xyz \
      --zulip-config "$HOME/.zuliprc-bot" \
+     --zulip-delete-config "$HOME/.zuliprc-personal" \
      --update-adc
    ```
 
@@ -61,7 +64,8 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
    is waiting. Do not repeat the authorization URL in agent chat.
 6. Wait for the helper to finish. It performs the Zulip connectivity gate,
    generates a unique request ID, accepts only a newer code-only private DM
-   from Juan, and never writes the authorization code to stdout/stderr.
+   from Juan, and never writes the authorization code to stdout/stderr. After
+   gcloud succeeds, it permanently deletes the exact request and reply by ID.
 7. On success, independently verify without printing tokens:
 
    ```bash
@@ -85,15 +89,13 @@ AUTHORIZATION_CODE
 
 The reply must be a private DM from `juan@rainlang.xyz` to Juan-Bot and must
 contain only the copied Google authorization code. The helper only considers
-messages newer than its bot request, extracts the code inside its own process,
-disables PTY echo, submits it once, and discards it from memory. The agent must
-never fetch, quote, summarize, or display that Zulip message. Run at most one
-gcloud login request at a time across the two hosts so a code-only reply is
-unambiguous.
-
-Zulip retains the user's message, but the authorization code is short-lived,
-bound to the in-progress OAuth exchange, and single-use. Never use a public or
-private channel topic for this exchange.
+messages newer than its bot request, extracts the code and reply message ID
+inside its own process, disables PTY echo, and submits the code once. Only
+after gcloud succeeds, it permanently deletes the reply and bot request by
+their exact IDs, then discards the code from memory. The agent must never
+fetch, quote, summarize, or display that Zulip message. Run at most one gcloud
+login request at a time across the two hosts so a code-only reply is
+unambiguous. Never use a public or private channel topic for this exchange.
 
 ## Failure handling
 
@@ -104,6 +106,9 @@ private channel topic for this exchange.
   non-secret failure DM, report the sanitized error, and stop.
 - Timeout: terminate only the helper-owned gcloud child, send a timeout DM, and
   start a new request on the next invocation. Never reuse a request ID or code.
+- Cleanup failure after successful Google authentication: report that login
+  succeeded but the exact Zulip messages could not be permanently deleted; do
+  not claim cleanup succeeded or retry deletion against broader targets.
 - Wrong sender, public/channel message, non-code content, or reply predating
   the bot request: ignore it.
 - IAM, permission, IAP, API enablement, network, or quota failure after login:
@@ -120,7 +125,8 @@ private channel topic for this exchange.
 3. Never pass secrets directly on a command line or store them in a file,
    environment variable, Nix store path, Git repository, or shell history.
 4. Only the helper process may read the newer code-only authorization DM, and
-   it may only feed that value to the helper-owned gcloud PTY once.
+   it may only feed that value to the helper-owned gcloud PTY once. Only the
+   helper may delete the exact request and reply message IDs after success.
 5. Never use this skill to bypass 2FA, organization session controls, or other
    access policies. The user completes Google authentication themselves.
 6. Authentication recovery does not authorize a previously failed mutation to
