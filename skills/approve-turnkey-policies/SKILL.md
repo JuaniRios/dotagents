@@ -1,18 +1,19 @@
 ---
 name: approve-turnkey-policies
 description: >
-  Find, verify, and approve any Turnkey activity awaiting the user's vote in
-  the s01-issuer organization. Use when asked to check or review pending
-  Turnkey activities, approve Turnkey requests, approve policy changes, or
-  cast Turnkey quorum votes from the CLI.
+  Find, verify, approve, or explicitly reject Turnkey activities awaiting the
+  user's vote in the s01-issuer organization. Use when asked to check or review
+  pending Turnkey activities, approve or reject Turnkey requests, approve policy
+  changes, or cast Turnkey quorum votes from the CLI.
 allowed-tools: Bash(*), Read, Grep, Glob
 ---
 
 # /approve-turnkey-policies
 
-Review every pending Turnkey activity that this user can approve, regardless
+Review every pending Turnkey activity that this user can vote on, regardless
 of activity type. Automatically approve only activities proven to match an
-authoritative source. Report and skip anything suspicious or insufficiently
+authoritative source. Reject only an exact activity the user explicitly directs
+this skill to reject. Report and skip anything else suspicious or insufficiently
 verified.
 
 The command keeps its historical name, but its scope is all Turnkey
@@ -50,7 +51,7 @@ filter by activity type.
 
 Call `/public/v1/query/list_activities` through `turnkey request` with:
 
-- `filterByStatus`: `ACTIVITY_STATUS_CONSENSUS_NEEDED`
+- `filterByStatus`: `["ACTIVITY_STATUS_CONSENSUS_NEEDED"]`
 - `paginationOptions.limit`: `"100"`
 
 Paginate with `paginationOptions.before`, using the last activity ID from each
@@ -69,7 +70,8 @@ Keep only activities that:
 
 - Belong to the fixed organization.
 - Still need consensus.
-- Have `canApprove: true`.
+- Have `canApprove: true` or, for an explicitly requested rejection,
+  `canReject: true`.
 - Have a non-empty fingerprint.
 - Contain a non-empty, recognized intent.
 
@@ -203,7 +205,9 @@ Classify as suspicious when an activity:
   extra batch operation.
 - Does not exactly match authoritative intent.
 
-## 5. Approve every expected activity
+## 5. Cast authorized votes
+
+### Approvals
 
 The user's request to run this skill authorizes one approval vote for every
 activity classified `expected`. Do not ask again for each expected activity.
@@ -225,15 +229,46 @@ Submit `POST /public/v1/submit/approve_activity` with:
 
 Generate JSON with Python to avoid shell-quoting errors.
 
-Never approve a suspicious or insufficiently verified activity. Never reject
-an activity from this skill. Do not blindly retry a failed approval; re-fetch
-the activity first to determine whether the vote succeeded.
+Never approve a suspicious or insufficiently verified activity. Do not blindly
+retry a failed approval; re-fetch the activity first to determine whether the
+vote succeeded.
+
+### Rejections
+
+Reject an activity only when the user explicitly authorizes rejection of that
+exact activity in the current conversation. Resolve the user's description to
+one unambiguous activity and report its ID, type, complete intent, and
+fingerprint before voting. A broad request such as `reject suspicious`, `clean
+up pending`, or `reject all` is not authorization to reject multiple activities;
+ask the user to identify them exactly. Never infer rejection authorization from
+a failed verification, stale source, surprising proposer, another user's vote,
+or an activity being classified `suspicious` or `not enough evidence`.
+
+Immediately before voting, fetch the activity through the raw API again and
+confirm:
+
+- ID, type, intent, and fingerprint are unchanged.
+- Status still needs consensus.
+- `canReject` remains true.
+- The activity still unambiguously matches the user's rejection instruction.
+
+Submit `POST /public/v1/submit/reject_activity` with:
+
+- `type`: `ACTIVITY_TYPE_REJECT_ACTIVITY`
+- A fresh millisecond timestamp.
+- The fixed organization ID.
+- `parameters`: `{ "fingerprint": "<exact activity fingerprint>" }`.
+
+Generate JSON with Python to avoid shell-quoting errors. Do not blindly retry a
+failed rejection; re-fetch the activity first to determine whether the vote was
+recorded.
 
 ## 6. Verify and report
 
-Re-fetch every reviewed activity through the raw API. Confirm this user's
-approval vote by its public key and `VOTE_SELECTION_APPROVED`; a successful
-HTTP response alone is not proof that the vote was recorded. Report:
+Re-fetch every reviewed activity through the raw API. Confirm this user's vote
+by its public key and the expected `VOTE_SELECTION_APPROVED` or
+`VOTE_SELECTION_REJECTED`; a successful HTTP response alone is not proof that
+the vote was recorded. Report:
 
 - Activity ID and type.
 - Human-readable resource or operation name.
@@ -254,7 +289,10 @@ the reviewed snapshot.
 2. Never approve based only on a plausible name, proposer, or existing vote.
 3. Never approve a batch unless every member is verified.
 4. Never expose credential or private-key contents.
-5. Never create, edit, delete, reject, or submit an underlying resource or
-   operation; this skill may only query and cast approval votes.
+5. Never create, edit, delete, or submit an underlying resource or operation;
+   this skill may only query and cast approval or explicitly authorized
+   rejection votes.
 6. `Approve all` means all verified activities, not all pending activities
    regardless of evidence.
+7. Never treat a review verdict as rejection authorization. Rejection always
+   requires the user's explicit direction for the exact activity.
