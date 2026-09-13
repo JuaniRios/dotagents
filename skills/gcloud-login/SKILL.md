@@ -1,87 +1,124 @@
 ---
 name: gcloud-login
 description: >
-  Restore Google Cloud CLI authentication when gcloud reports expired
-  credentials, “Reauthentication failed”, or “cannot prompt during
-  non-interactive execution”, and when the user asks to authenticate gcloud
-  noninteractively.
-allowed-tools: Bash(gcloud:*), Bash(test:*), Bash(set:*), Bash(source:*)
+  Restore expired Google Cloud CLI and ADC user credentials through a
+  phone-assisted, no-browser login coordinated over a private Juan-Bot Zulip
+  DM. Use after gcloud reports expired credentials, reauthentication failure,
+  or inability to prompt, and when asked to authenticate gcloud remotely.
+allowed-tools: Bash(gcloud:*), Bash(zulipctl:*), Bash(python3:*), Bash(test:*), Bash(set:*)
 ---
 
 # /gcloud-login
 
-Restore `gcloud` authentication from the credential configuration referenced by
-`~/Github/dotagents/.env`.
+Restore `gcloud` authentication on either configured host without requiring a
+browser on that host. A helper starts Google's browser-only-device flow, sends
+the authorization link privately from Juan-Bot to Juan on Zulip, waits for the
+correlated one-time authorization code, feeds it directly to the waiting
+`gcloud` PTY, and verifies the result.
 
-This skill may run automatically after a `gcloud` command fails specifically
-because authentication expired. After successful authentication, retry the
-original read-only command once. Never retry mutations automatically.
+This is remote-assisted authentication, not unattended workload identity. The
+user must complete Google authentication on their phone and reply to the bot.
 
-## Required configuration
+After successful authentication, retry the original read-only command exactly
+once. Never retry a mutation automatically.
 
-`~/Github/dotagents/.env` must contain:
+## Fixed identities and prerequisites
 
-```bash
-GCLOUD_CREDENTIAL_FILE=/absolute/path/to/google-credential.json
-```
+- Google account: `juan@t0trade.com`
+- Zulip actor: Juan-Bot via `~/.zuliprc-bot`
+- Zulip recipient: `juan@rainlang.xyz`
+- Helper: `~/Github/dotagents/skills/gcloud-login/scripts/zulip_remote_login.py`
+- `gcloud`, `zulipctl`, and `python3` must be installed on the target host.
+- `~/.zuliprc-bot` must exist with mode `0600` and Juan-Bot must be able to DM
+  the recipient.
 
-It may also contain:
-
-```bash
-GCLOUD_ACCOUNT=user-or-service-account@example.com
-```
-
-`GCLOUD_CREDENTIAL_FILE` must reference a workload-identity, external-account,
-or service-account JSON file accepted by `gcloud auth login --cred-file`.
+The shared nix-darwin/home-manager configuration installs `gcloud`,
+`zulipctl`, and Python on both `juanrios-m2` and `juan-dev-server`. Zulip bot
+credentials remain host-local and must never enter Nix, Git, or tool output.
 
 ## Procedure
 
-1. Disable shell tracing with `set +x`.
-2. Confirm `~/Github/dotagents/.env` exists. Do not print its contents.
-3. Load it in an isolated shell. Treat it as trusted user-owned configuration.
-4. Require `GCLOUD_CREDENTIAL_FILE` to be set, absolute, and readable. Never
-   print its value or inspect the credential JSON.
-5. Run:
+1. Disable shell tracing with `set +x` and never re-enable it.
+2. If this follows another command, confirm its failure is authentication or
+   reauthentication—not IAM, IAP, API enablement, networking, or quota.
+3. Confirm the helper and `~/.zuliprc-bot` are readable. Do not print either
+   credential file or any environment values.
+4. Run the helper and allow it to wait for up to 15 minutes:
 
    ```bash
-   gcloud auth login --cred-file="$GCLOUD_CREDENTIAL_FILE" --quiet
+   set +x
+   python3 "$HOME/Github/dotagents/skills/gcloud-login/scripts/zulip_remote_login.py" \
+     --account juan@t0trade.com \
+     --recipient juan@rainlang.xyz \
+     --zulip-config "$HOME/.zuliprc-bot" \
+     --update-adc
    ```
 
-6. If `GCLOUD_ACCOUNT` is set, activate it:
+   The helper uses `--force --no-launch-browser` deliberately. `--force`
+   prevents an unattended local password prompt and guarantees the phone-link
+   flow; `--no-launch-browser` prevents GUI use on the target host.
+5. Tell the user only that a private Juan-Bot DM was sent and that the helper
+   is waiting. Do not repeat the authorization URL in agent chat.
+6. Wait for the helper to finish. It performs the Zulip connectivity gate,
+   generates a unique request ID, accepts only an exact correlated DM from
+   Juan, and never writes the authorization code to stdout/stderr.
+7. On success, independently verify without printing tokens:
 
    ```bash
-   gcloud config set account "$GCLOUD_ACCOUNT" --quiet
-   ```
-
-7. Verify authentication without printing a token:
-
-   ```bash
-   gcloud auth print-access-token >/dev/null
+   gcloud auth print-access-token --account=juan@t0trade.com >/dev/null
+   gcloud auth application-default print-access-token >/dev/null
    ```
 
 8. Report the active account from `gcloud auth list`; do not report tokens,
-   credential paths, JSON contents, or environment values.
-9. If invoked because another read-only operation failed, retry that operation
-   exactly once. If it still fails, report the exact non-secret error and stop.
+   authorization codes, OAuth URLs, credential paths, or credential contents.
+9. If invoked because a read-only operation failed, retry it exactly once. If
+   it still fails, report the exact non-secret error and stop.
+
+## Zulip exchange
+
+The bot DM contains the target hostname, Google account, unique request ID,
+authorization link, 15-minute deadline, and an exact reply template:
+
+```text
+gcloud-auth REQUEST_ID AUTHORIZATION_CODE
+```
+
+The reply must be a private DM from `juan@rainlang.xyz` to Juan-Bot and must
+contain the matching request ID. The helper extracts the code inside its own
+process, disables PTY echo, submits it once, and discards it from memory. The
+agent must never fetch, quote, summarize, or display that Zulip message.
+
+Zulip retains the user's message, but the authorization code is short-lived,
+bound to the in-progress OAuth exchange, and single-use. Never use a public or
+private channel topic for this exchange.
 
 ## Failure handling
 
-- Missing `.env`: ask the user to create it.
-- Missing or invalid `GCLOUD_CREDENTIAL_FILE`: explain the required variable
-  without displaying its current value.
-- Browser or authorization-code prompt: stop; the configured credential is not
-  actually noninteractive.
-- Permission or IAP failure after login: report it separately; authentication
-  succeeded but authorization did not.
-- Never fall back to automating Google email/password login.
-- Never create, copy, print, commit, or modify credential material.
+- Missing helper, `gcloud`, Python, `zulipctl`, or bot credentials: report the
+  missing prerequisite without inspecting credential material.
+- Zulip connectivity or recipient mismatch: stop before starting Google login.
+- No Google URL, gcloud exits early, or Google rejects the code: send a
+  non-secret failure DM, report the sanitized error, and stop.
+- Timeout: terminate only the helper-owned gcloud child, send a timeout DM, and
+  start a new request on the next invocation. Never reuse a request ID or code.
+- Wrong sender, public/channel message, wrong request ID, malformed reply, or
+  reply predating the bot request: ignore it.
+- IAM, permission, IAP, API enablement, network, or quota failure after login:
+  authentication succeeded; report the separate authorization/runtime error.
+- Never fall back to asking for a Google password or authorization code in
+  agent chat.
 
 ## Hard rules
 
 1. Never enable shell tracing.
-2. Never print or inspect `.env`, credential JSON, access tokens, refresh tokens,
-   passwords, or authorization codes.
-3. Never pass secrets directly on a command line.
-4. Never use this skill to bypass 2FA or organization access controls.
-5. Authentication recovery does not authorize a previously failed mutation to
+2. Never print or expose OAuth URLs, access tokens, refresh tokens, passwords,
+   authorization codes, Zulip API keys, or credential-file contents in agent
+   chat or tool output.
+3. Never pass secrets directly on a command line or store them in a file,
+   environment variable, Nix store path, Git repository, or shell history.
+4. Only the helper process may read the correlated authorization-code DM, and
+   it may only feed that value to the helper-owned gcloud PTY once.
+5. Never use this skill to bypass 2FA, organization session controls, or other
+   access policies. The user completes Google authentication themselves.
+6. Authentication recovery does not authorize a previously failed mutation to
    be retried.
