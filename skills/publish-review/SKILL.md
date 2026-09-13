@@ -1,13 +1,13 @@
 ---
 name: publish-review
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(find:*), Bash(date:*), Bash(test:*), Bash(ls:*), Bash(jq:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(wc:*), Read, Grep, Glob
-description: Approve clean PR reviews automatically; publish reviews with findings as pending inline comments. Run after /review-pr.
+description: Approve clean PR reviews automatically; submit reviews with findings as changes requested. Run after /review-pr.
 argument-hint: [review-dir-path]
 ---
 
 Publish the review outcome for each PR: **APPROVE** when a completed review
-has no actionable findings, or a **pending** review with inline comments when
-findings remain. Clean reviews are approved automatically under the user's
+has no actionable findings, or **REQUEST_CHANGES** with inline comments when
+findings remain. Both outcomes are submitted automatically under the user's
 standing preference, including when called directly from `/review-pr`.
 
 ## 1. Locate the review
@@ -65,8 +65,9 @@ Make this decision separately for every PR in a batch:
   findings", or an empty pending review as a substitute. No further user
   confirmation is needed. This also applies after verifying that all findings
   have been fixed.
-- **Actionable findings remain:** compose the inline comments below and create
-  a pending review, unless the user already authorized submission.
+- **Actionable findings remain:** compose the inline comments below and submit
+  `event: "REQUEST_CHANGES"` immediately. Never create a COMMENT or PENDING
+  review for actionable findings.
 - **Incomplete review or parsing failure:** do not infer a clean review from
   an empty comments array. Report the incomplete result. Findings without an
   inline anchor still count as findings.
@@ -117,14 +118,15 @@ Example transformation:
 > rendering a row. Add a unique ID to the Trade DTO (e.g. aggregate ID
 > or tx_hash:log_index) and use that as the key.`
 
-## 6. Create a pending review (findings only)
+## 6. Submit a changes-requested review (findings only)
 
 Build a JSON payload file with all comments:
 
 ```json
 {
   "commit_id": "<headRefOid>",
-  "body": "Cross-review findings -- <N> comments.",
+  "event": "REQUEST_CHANGES",
+  "body": "Review findings: <N> blocking comment(s).",
   "comments": [
     {
       "path": "relative/file/path.rs",
@@ -146,32 +148,31 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 rm "$payload"
 ```
 
-For reviews with findings, omit `event` to create a PENDING review unless
-submission is already authorized. This rule does not apply to clean reviews,
-which require `event: "APPROVE"`.
+For reviews with findings, `event: "REQUEST_CHANGES"` is mandatory. If GitHub
+rejects the event, report the failure and payload; never retry as COMMENT or
+leave the review PENDING. This rule does not apply to clean reviews, which
+require `event: "APPROVE"`.
 
 ## 7. Verify and report
 
-For an approval, report APPROVED and the review URL. For a pending review
-with findings, print:
+For an approval, report APPROVED and the review URL. For a review with
+findings, verify that GitHub returned `CHANGES_REQUESTED`, then print:
 
 ```
-Review created on PR #<N> (PENDING -- not submitted)
+Review submitted on PR #<N> (CHANGES_REQUESTED)
 
   <count> inline comments:
     [severity] <path>:<line> -- <short title>
     ...
 
   Dashboard: <pr-url>
-
-Go to Graphite to inspect, edit, and submit the review.
 ```
 
 ## Hard rules
 
 1. A completed review with no actionable findings MUST be submitted as
-   APPROVE. Reviews with findings default to PENDING unless submission is
-   already authorized. Never replace a clean approval with a COMMENT review.
+   APPROVE. Reviews with findings MUST be submitted as REQUEST_CHANGES. Never
+   use COMMENT or PENDING for either outcome.
 2. Never copy markdown findings verbatim as comments. Rewrite them to be
    concise and human-readable.
 3. Skip dismissed findings (invalid and out-of-scope sections).
@@ -182,6 +183,8 @@ Go to Graphite to inspect, edit, and submit the review.
    before posting; do not approve an unreviewed head.
 6. If the API call fails, show the error and the payload so the user can
    debug.
+7. Verify a findings review returned `CHANGES_REQUESTED`. A PENDING or
+   COMMENT response is a publishing failure, not a successful review.
 
 ## Failure modes
 

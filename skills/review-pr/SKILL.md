@@ -4,7 +4,8 @@ description: >
   Cross-review a pull request by number or URL without checking it out.
   Plain-language TL;DR, then the same multi-model panel as review-loop
   (opus 5, sol 5.6, grok 4.6, flash 3.7, fable 5.1 deep). Stays in the session so you can
-  decide which findings to post; clean reviews are approved automatically.
+  inspect the result; clean reviews are approved automatically, while reviews
+  with findings are submitted as changes requested.
   Use when reviewing someone else's PR.
 argument-hint: "<pr-number | pr-url>"
 allowed-tools: Bash(*), Read, Write
@@ -69,16 +70,18 @@ for another confirmation or wait for a separate publish request. Never post
 "no actionable findings" as a COMMENT review, issue comment, or empty pending
 review. Report the approval and its URL.
 
-When actionable findings remain, offer to dig into a finding, draft a comment,
-or post a **pending** GitHub review. The pending-review rules below apply to
-reviews with findings only. An incomplete panel or findings lost during
-parsing do not count as a clean review.
+When actionable findings remain, submit a **REQUEST_CHANGES** GitHub review
+immediately, pinned to the reviewed head SHA, using `publish-review`. Every
+inline finding must belong to that submitted changes-requested review, never a
+COMMENT or PENDING review. This is the user's standing preference and needs no
+additional confirmation. An incomplete panel or findings lost during parsing
+do not count as a clean review and must not be submitted as either outcome.
 
 Posted comments: ASD-STE100, lowercase severity prefix
 (`critical:` / `should fix:` / `minor:` / `nit:`), no em dashes, no
-AI/model mentions, no `#1` prefixes. Draft `body` stays empty; print
-the overall assessment as a copy-paste block. `line` must be in the
-diff hunk. Omit the `event` field so GitHub creates a PENDING review.
+AI/model mentions, no `#1` prefixes. `line` must be in the diff hunk. Include
+`event: "REQUEST_CHANGES"` so the review is submitted and blocks merging when
+the repository's branch protection honors requested-changes reviews.
 
 ## Hard rules
 
@@ -88,6 +91,6 @@ diff hunk. Omit the `event` field so GitHub creates a PENDING review.
 4. Completed clean reviews must be submitted as APPROVE, never COMMENT or
    PENDING. Apply this per PR in a batch, including clean follow-up reviews
    after all findings are verified fixed.
-5. Reviews with findings default to pending: no per-comment approval here.
-   Immediate submission of findings needs explicit user authorization;
-   honor authorization already given in the session.
+5. Reviews with findings must be submitted as REQUEST_CHANGES immediately.
+   Never leave inline findings as PENDING or submit them as COMMENT. If GitHub
+   rejects REQUEST_CHANGES, report the failure; do not downgrade the review.
