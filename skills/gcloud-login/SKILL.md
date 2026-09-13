@@ -60,8 +60,8 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
 5. Tell the user only that a private Juan-Bot DM was sent and that the helper
    is waiting. Do not repeat the authorization URL in agent chat.
 6. Wait for the helper to finish. It performs the Zulip connectivity gate,
-   generates a unique request ID, accepts only an exact correlated DM from
-   Juan, and never writes the authorization code to stdout/stderr.
+   generates a unique request ID, accepts only a newer code-only private DM
+   from Juan, and never writes the authorization code to stdout/stderr.
 7. On success, independently verify without printing tokens:
 
    ```bash
@@ -77,16 +77,19 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
 ## Zulip exchange
 
 The bot DM contains the target hostname, Google account, unique request ID,
-authorization link, 15-minute deadline, and an exact reply template:
+authorization link, 15-minute deadline, and the reply format:
 
 ```text
-gcloud-auth REQUEST_ID AUTHORIZATION_CODE
+AUTHORIZATION_CODE
 ```
 
 The reply must be a private DM from `juan@rainlang.xyz` to Juan-Bot and must
-contain the matching request ID. The helper extracts the code inside its own
-process, disables PTY echo, submits it once, and discards it from memory. The
-agent must never fetch, quote, summarize, or display that Zulip message.
+contain only the copied Google authorization code. The helper only considers
+messages newer than its bot request, extracts the code inside its own process,
+disables PTY echo, submits it once, and discards it from memory. The agent must
+never fetch, quote, summarize, or display that Zulip message. Run at most one
+gcloud login request at a time across the two hosts so a code-only reply is
+unambiguous.
 
 Zulip retains the user's message, but the authorization code is short-lived,
 bound to the in-progress OAuth exchange, and single-use. Never use a public or
@@ -101,8 +104,8 @@ private channel topic for this exchange.
   non-secret failure DM, report the sanitized error, and stop.
 - Timeout: terminate only the helper-owned gcloud child, send a timeout DM, and
   start a new request on the next invocation. Never reuse a request ID or code.
-- Wrong sender, public/channel message, wrong request ID, malformed reply, or
-  reply predating the bot request: ignore it.
+- Wrong sender, public/channel message, non-code content, or reply predating
+  the bot request: ignore it.
 - IAM, permission, IAP, API enablement, network, or quota failure after login:
   authentication succeeded; report the separate authorization/runtime error.
 - Never fall back to asking for a Google password or authorization code in
@@ -116,7 +119,7 @@ private channel topic for this exchange.
    chat or tool output.
 3. Never pass secrets directly on a command line or store them in a file,
    environment variable, Nix store path, Git repository, or shell history.
-4. Only the helper process may read the correlated authorization-code DM, and
+4. Only the helper process may read the newer code-only authorization DM, and
    it may only feed that value to the helper-owned gcloud PTY once.
 5. Never use this skill to bypass 2FA, organization session controls, or other
    access policies. The user completes Google authentication themselves.

@@ -16,7 +16,6 @@ import secrets
 import select
 import shutil
 import signal
-import socket
 import struct
 import subprocess
 import sys
@@ -51,14 +50,9 @@ def message_text(content: str) -> str:
 
 
 def extract_authorization_code(
-    result: dict[str, Any], request_id: str, recipient: str, after_message_id: int
+    result: dict[str, Any], recipient: str, after_message_id: int
 ) -> Optional[str]:
-    pattern = re.compile(
-        r"(?:^|\s)gcloud-auth\s+"
-        + re.escape(request_id)
-        + r"\s+(\S+)\s*$",
-        re.IGNORECASE,
-    )
+    pattern = re.compile(r"^\s*(\S{16,2048})\s*$")
     candidates = []  # type: list[tuple[int, str]]
     for message in result.get("messages", []):
         message_id = int(message.get("id", 0))
@@ -144,22 +138,18 @@ class ZulipBot:
             raise LoginError("Zulip did not return a message ID")
         return message_id
 
-    def poll_code(self, request_id: str, after_message_id: int) -> Optional[str]:
+    def poll_code(self, after_message_id: int) -> Optional[str]:
         result = run_json(
             [
                 *self.base,
                 "messages",
                 "--sender",
                 self.recipient,
-                "--search",
-                request_id,
                 "--limit",
                 "25",
             ]
         )
-        return extract_authorization_code(
-            result, request_id, self.recipient, after_message_id
-        )
+        return extract_authorization_code(result, self.recipient, after_message_id)
 
 
 def spawn_gcloud(command: Sequence[str]) -> tuple[subprocess.Popen[bytes], int]:
@@ -195,14 +185,22 @@ def terminate_child(process: subprocess.Popen[bytes]) -> None:
             pass
 
 
-def login_message(hostname: str, account: str, request_id: str, url: str) -> str:
+def host_label() -> str:
+    if sys.platform == "darwin":
+        return "the **MacBook** (`juanrios-m2`)"
+    if sys.platform.startswith("linux"):
+        return "the **Dev server** (`juan-dev-server`)"
+    return "an **unknown host**"
+
+
+def login_message(target: str, account: str, request_id: str, url: str) -> str:
     return (
-        f"Google Cloud authentication is required on **{hostname}** for "
+        f"Google Cloud authentication is required on {target} for "
         f"`{account}`.\n\n"
         f"[Open Google authentication]({url})\n\n"
         "After Google displays the authorization code, reply to this private "
-        "bot DM with exactly:\n\n"
-        f"`gcloud-auth {request_id} AUTHORIZATION_CODE`\n\n"
+        "bot DM with only the copied code—no label, quotes, or other text.\n\n"
+        f"Request: `{request_id}`\n\n"
         "This request expires in 15 minutes. The code is short-lived and "
         "single-use, but your reply remains in Zulip history."
     )
@@ -245,6 +243,7 @@ def orchestrate(args: argparse.Namespace) -> int:
     request_message_id = 0
     next_poll = float("inf")
     poll_failures = 0
+    target = host_label()
 
     try:
         while time.monotonic() < deadline:
@@ -261,9 +260,7 @@ def orchestrate(args: argparse.Namespace) -> int:
                         if match:
                             url = match.group(0).rstrip(".,)")
                             request_message_id = bot.dm(
-                                login_message(
-                                    socket.gethostname(), args.account, request_id, url
-                                )
+                                login_message(target, args.account, request_id, url)
                             )
                             next_poll = time.monotonic()
                             print(
@@ -274,7 +271,7 @@ def orchestrate(args: argparse.Namespace) -> int:
 
             if url is not None and time.monotonic() >= next_poll:
                 try:
-                    code = bot.poll_code(request_id, request_message_id)
+                    code = bot.poll_code(request_message_id)
                 except LoginError:
                     code = None
                     poll_failures += 1
@@ -307,7 +304,7 @@ def orchestrate(args: argparse.Namespace) -> int:
             raise LoginError(f"Google rejected the authorization response: {safe_tail.strip()}")
 
         bot.dm(
-            f"Google Cloud authentication completed on **{socket.gethostname()}** "
+            f"Google Cloud authentication completed on {target} "
             f"for `{args.account}` (request `{request_id}`)."
         )
         print("Google Cloud authentication completed successfully.", flush=True)
@@ -315,7 +312,7 @@ def orchestrate(args: argparse.Namespace) -> int:
     except LoginError as error:
         try:
             bot.dm(
-                f"Google Cloud authentication failed on **{socket.gethostname()}** "
+                f"Google Cloud authentication failed on {target} "
                 f"for `{args.account}` (request `{request_id}`): {sanitize(str(error), code)}"
             )
         except LoginError:
@@ -335,25 +332,25 @@ def self_test() -> int:
                 "id": 12,
                 "type": "private",
                 "sender_email": "juan@rainlang.xyz",
-                "content": f"<p>gcloud-auth {request_id} 4/test-code_123456789</p>",
+                "content": "<p>4/test-code_123456789</p>",
             }
         ]
     }
-    code = extract_authorization_code(
-        result, request_id, "juan@rainlang.xyz", after_message_id=11
-    )
+    code = extract_authorization_code(result, "juan@rainlang.xyz", after_message_id=11)
     assert code == "4/test-code_123456789"
+    result["messages"][0]["content"] = "<p>extra 4/test-code_123456789</p>"
     assert extract_authorization_code(
-        result, "wrong-request", "juan@rainlang.xyz", after_message_id=11
+        result, "juan@rainlang.xyz", after_message_id=11
     ) is None
+    result["messages"][0]["content"] = "<p>4/test-code_123456789</p>"
     result["messages"][0]["sender_email"] = "someone@example.com"
     assert extract_authorization_code(
-        result, request_id, "juan@rainlang.xyz", after_message_id=11
+        result, "juan@rainlang.xyz", after_message_id=11
     ) is None
     result["messages"][0]["sender_email"] = "juan@rainlang.xyz"
     result["messages"][0]["type"] = "stream"
     assert extract_authorization_code(
-        result, request_id, "juan@rainlang.xyz", after_message_id=11
+        result, "juan@rainlang.xyz", after_message_id=11
     ) is None
     redacted = sanitize("open https://accounts.google.com/o/oauth2/auth?secret=yes", code)
     assert "accounts.google.com" not in redacted
