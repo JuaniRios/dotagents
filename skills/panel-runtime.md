@@ -117,12 +117,16 @@ Otherwise the pass is `incomplete`. Do not converge.
 
 No `review-fable`.
 
-### Composite specialists (one process per model)
+### Specialist lanes
+
+Composite lanes combine related inspectors into one process per model.
+`flash-config` stays separate because its rollout matrix is independently gated.
 
 | Lane | Model | Covers | Gate |
 |---|---|---|---|
 | `fable-deep` | fable 5.1 xhigh | goal-eval **and** simplicity, one prompt | Skip on `<50` non-sensitive. Re-run if the PR description **or** behavior hunks changed. |
 | `flash-hygiene` | flash 3.7 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
+| `flash-config` | flash 3.7 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | grok 4.6 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
 | `sol-special` | sol 5.6 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 
@@ -136,8 +140,8 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `grok-special` only for the rust half if `*.rs`. No opus 5, no fable 5.1. |
-| `50–500` and not sensitive | Four generals + `fable-deep` + `flash-hygiene` + gated `grok-special` / `sol-special` (no edge-cases). |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. No opus 5, no fable 5.1. |
+| `50–500` and not sensitive | Four generals + `fable-deep` + `flash-hygiene` + gated `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
@@ -149,6 +153,8 @@ Conditionally:
 
 - `review-opus` only if the host harness is Claude (native opus 5).
 - `fable-deep` if the PR description or behavior hunks changed.
+- `flash-config` if deployed config, config schema/validation, or release/deploy
+  check paths changed.
 - composites if their gate's files changed (`cmp` the filtered
   path-list, not a semantic "slice").
 
@@ -198,7 +204,7 @@ Specialist composites get that base plus their focus paragraphs in
 
 Inspector skill bodies still live at
 `~/Github/dotagents/skills/<name>/SKILL.md` and are inlined into the
-composite.
+composite or focused specialist lane.
 
 ## Hard rules
 
