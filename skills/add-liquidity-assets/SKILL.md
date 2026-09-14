@@ -1,12 +1,11 @@
 ---
 name: add-liquidity-assets
 description: >
-  Add or enable tokenized assets in the live liquidity bot config (staging
-  or production) via t0.devops config-as-data, merge/PAM apply, and the VM
-  roll timer. Use when asked to add a symbol, turn trading on, or change
-  st0x-hedge.toml on the GCP bots.
+  Add, enable, disable, or change tokenized assets in the live liquidity bot
+  config, then roll staging or production and verify health. Use when asked to
+  change an asset flag or st0x-hedge.toml on the GCP liquidity bots.
 argument-hint: <prod|staging> <SYMBOL...>
-allowed-tools: Bash(gcloud:*), Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(curl:*), Bash(jq:*), Read, Grep
+allowed-tools: Bash(gcloud:*), Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(curl:*), Read, Grep
 ---
 
 # /add-liquidity-assets
@@ -14,61 +13,73 @@ allowed-tools: Bash(gcloud:*), Bash(gh:*), Bash(git:*), Bash(gt:*), Bash(curl:*)
 **Required**: `prod` or `staging`, plus one or more symbols. Anything else:
 say `Usage: /add-liquidity-assets <prod|staging> <SYMBOL...>` and stop.
 
-This command **mutates** live hedge config. Present the exact toml patch
-and wait for explicit authorization before opening the PR. After apply,
-verify with the `check-liquidity-bot` skill (access, `remote`/`api` helpers,
-and the health report live there — do not copy them).
+This command mutates live hedge config. Show the exact TOML patch and release
+path before opening a PR. Wait for explicit authorization. After the rollout,
+use `check-liquidity-bot` for live verification.
 
 Issuance registration is a separate prerequisite (`add-issuance-assets`).
-Do not treat this skill as a substitute.
 
-## What actually runs
+## Deployment ownership
 
-The GCP bots do **not** read `st0x.liquidity` `config/{prod,staging,prod-gcp,staging-gcp}/st0x-hedge.toml`. Those copies are dead on GCP.
+Runtime config lives in `ST0x-Technology/st0x.liquidity`:
 
-Live config is `T0Trade/t0.devops`:
-
-| env | file | apply |
+| env | file | rollout |
 |---|---|---|
-| staging | `terraform/staging-liquidity/st0x-hedge.toml` | merge to `main` auto-applies |
-| prod | `terraform/production-liquidity/st0x-hedge.toml` | merge only plans; human dispatches `production-liquidity.yml`; 2-of-N PAM |
+| staging | `config/staging/st0x-hedge.toml` | `build-oci.yml` rolls image and config together after merge |
+| prod | `config/prod/st0x-hedge.toml` | manually dispatch `production-release.yml` |
 
-`modules/runtime-config` publishes the file as Secret Manager secret
-`liquidity-runtime-config`. Terraform writes that version into the VM's
-`images.env` as `CONFIG_VERSION` (currently a number, never `latest`).
-The 2-minute `t0-liquidity[-staging]-roll.timer` sees the new `images.env`,
-fetches that pin to `/etc/t0-liquidity/secrets/st0x-hedge.toml`, and
-`systemctl restart t0-liquidity-stack`.
+The old copies under `T0Trade/t0.devops/terraform/*-liquidity/` are not the
+deployment source of truth. `t0.devops` still owns the VM, Secret Manager,
+bucket, IAM, and Privileged Access Manager (PAM) infrastructure.
 
-The stack unit is:
+For a production config-only release, dispatch `production-release.yml` from
+`master` with `version` empty. The reusable workflow:
 
-- `ExecStartPre` = fetch secrets at the pinned versions
-- `ExecStart` = `docker compose up -d --remove-orphans --scale bot|dashboard|datasette=${GATED_SERVICE_REPLICAS}`
-- `ExecStop` = `docker compose down`
+1. Keeps the image digests currently live in production.
+2. Validates the candidate config inside that exact bot image.
+3. Publishes a numbered `liquidity-runtime-config` Secret Manager version.
+4. Writes the image and config pins to `images.env` after PAM authorization.
+5. Waits for the VM to publish the adopted pins in `deployed.env`.
 
-A config release therefore **stops the bot briefly** and **starts every
-gated service whose replica count is 1**, including Datasette even if
-someone had `docker stop`ped it. Confirm that side effect before apply.
-Do not hand-restart the stack to "pick up" a Secret Manager version you
-added out of band: a bare restart re-fetches the **old** `CONFIG_VERSION`.
+The VM roll timer fetches the pinned config, restarts the stack, and runs its
+migration and health gates. A config release briefly stops the bot and starts
+all gated services, including Datasette.
 
-Do **not** bump `images.yaml` for a toml-only change. Do **not** replace
-the GCE instance (that is only for cloud-init/compose-file changes).
-Do **not** edit `CONFIG_VERSION` by hand.
+Do not bump image pins for a TOML-only change. Do not replace the VM. Do not
+edit `CONFIG_VERSION` by hand or restart the stack to pick up an unpublished
+version.
 
-There is no liquidity equivalent of `oracle-config.yml`: a bad toml
-crash-loops the bot after the roll (`compose up` still succeeds). Watch
-the bot.
+Staging uses live Base and Alpaca accounts with a different wallet and
+inventory. It is not a paper-trading sandbox.
 
-Staging is live Base + Alpaca with a **different** EOA/inventory, not a
-paper book. Do not treat a staging apply as a dry run of prod.
+## Active production PAM grants
 
-## Toml shape
+An approved `app-deploy` grant is an active deployment window for its requester.
+It does not need to be revoked between directly related rollout attempts.
 
-Every equity needs **both** tables. Missing either fails startup.
+The shared `app-release.yml` currently rejects an active grant when its PAM
+justification differs from the new run. If a production config correction must
+reuse that window:
 
-Copy the flags from a sibling already in **that same file**, not from
-`st0x.liquidity` `config/prod`. Typical enabled sibling (TQQQ):
+1. Show the active grant ID, requester, remaining duration, old justification,
+   candidate diff, and new run URL.
+2. Get explicit confirmation from the user that DevOps approved reuse for this
+   corrective rollout. Do not infer approval from the earlier grant.
+3. Use a temporary, auditable workflow ref that skips only the duplicate PAM
+   request. Keep digest resolution, exact-image config validation, config
+   publication, generation-matched `images.env` write, adoption wait, and health
+   verification unchanged.
+4. Never impersonate the releaser or write production GCS objects manually from
+   a local user session.
+5. Remove the temporary ref after the rollout and report both the grant ID and
+   deployment run URL.
+
+Without that explicit approval, deny or revoke the stale grant, or wait for its
+active duration to end before rerunning.
+
+## TOML shape
+
+Every equity needs both tables. Missing either fails startup:
 
 ```toml
 [assets.equities.SYM]
@@ -83,82 +94,71 @@ tokenized_equity = "<unwrapped>"
 tokenized_equity_derivative = "<wrapped>"
 ```
 
-Addresses come from `ST0x-Technology/st0x.registry` `token-lists/base.json`:
+Resolve addresses from `ST0x-Technology/st0x.registry`
+`token-lists/base.json`:
 
-- `tokenized_equity` = `extensions.unwrappedAddress`
-- `tokenized_equity_derivative` = `address` (the `wt*` token)
+- `tokenized_equity` is `extensions.unwrappedAddress`.
+- `tokenized_equity_derivative` is `address` (the `wt*` token).
 
-Checksum to match siblings. `vault_id = "0xfab"` is the auto-discover
-sentinel used by every current entry; do not invent a vault.
+Verify the wrapped token's `vault.symbol()` onchain when a public RPC is
+available. Copy `vault_id` and flag conventions from a sibling in the same
+environment. Do not invent values.
 
-Default for a brand-new listing: copy the enabled sibling flags above
-(`trading`, `rebalancing`, `wrapped_equity_recovery`,
-`extended_hours_counter_trading` all `"enabled"`). One release, not a
-disabled-then-enable pair. If the user named flags, use those.
-
-`extended_hours_counter_trading` is independent of `trading`. Off-hours
-hedges only happen when it is `"enabled"`.
-
-A `cli buy` on Alpaca does **not** create a Position aggregate and does
-**not** require the symbol in this file. Enabling `rebalancing` on a
-symbol that already has unmanaged broker shares can make the inventory
-poller adopt that balance and then try to tokenize it on-chain. Say so
+`extended_hours_counter_trading` is independent of `trading`. A manual Alpaca
+buy does not create a Position aggregate. Enabling rebalancing can adopt an
+existing unmanaged broker balance and try to tokenize it, so state that risk
 before applying.
+
+Enabling rebalancing also adds the asset's underlying-to-wrapper and
+wrapped-to-orderbook allowances to startup. Before production rollout, verify
+that existing allowances are sufficient or that the live Turnkey signer policy
+permits every required approval transaction. A zero allowance plus no matching
+policy will fail startup.
 
 ## Workflow
 
-1. Bind env as in `check-liquidity-bot`. Confirm `/health` is 200.
-2. Read the live file:
-   `gh api -H 'Accept: application/vnd.github.raw' repos/T0Trade/t0.devops/contents/${CONFIG_PATH}`
-   Stop if the symbol is already present with the requested flags.
-3. Resolve addresses from the registry. Verify `vault.symbol()` on-chain
-   matches `tSYM` when a public RPC is available. Do not copy addresses
-   from `st0x.liquidity` config files.
-4. `gh pr list --repo T0Trade/t0.devops --state open --search st0x-hedge.toml`
-   Name any open PR that already edits the same file (rebase or wait).
-5. Show the exact hunks and the apply path (staging merge vs prod
-   dispatch + PAM). Wait for authorization.
-6. Clone or update `~/Github/t0.devops`. Version control: follow the
-   `graphite` skill (`gt sync`, `gt create`, `gt submit`). Touch only
-   the one env's `st0x-hedge.toml` unless the user asked for both.
-7. Staging: merge. The apply is automatic. Prod: merge, then
-   Actions → `production-liquidity` → Run workflow. The apply job
-   requests PAM entitlement `tf-apply-owner` on project `t0-liquidity`
-   and waits up to 60 minutes. Approvers follow the `review-pam-grants`
-   skill (2 of 4). Missed window: `gh run rerun <id> --failed`.
-8. Wait for the roll (timer ticks every 2 minutes). Confirm on the VM:
-   - `CONFIG_VERSION` in `/etc/t0-liquidity/images.env` advanced
-   - `/etc/t0-liquidity/secrets/st0x-hedge.toml` contains the new tables
-   - `docker ps` shows the bot Up, not Restarting
-   - `api /health` is 200 with a fresh `uptimeSeconds`
-9. Run `check-liquidity-bot` on that env. For a `trading = "enabled"`
-   add, say explicitly that no hedge is expected until the first onchain
-   fill.
-10. Report: PR URL, apply run, new `CONFIG_VERSION`, bot uptime, whether
-    Datasette came back, residual risks (unmanaged broker qty, issuance
-    not registered, overlapping PRs).
+1. Use `check-liquidity-bot` to confirm the target is healthy before editing.
+2. Read the environment file from the remote default branch. Stop if it already
+   has the requested state.
+3. Resolve and verify registry addresses for new assets.
+4. List open PRs that touch the same config and linearize overlapping changes.
+5. Show the exact patch and rollout side effects. Get authorization.
+6. Follow the `graphite` skill for branch, commit, and PR operations.
+7. Before submission, run the config compatibility review lane and relevant
+   config checks.
+8. Merge the authorized PR.
+9. Staging: monitor `build-oci.yml`. Production: dispatch
+   `production-release.yml` from `master` with `version` empty, then complete
+   the PAM flow. Apply the active-grant rule above when relevant.
+10. Wait for adoption. Confirm the config version advanced, the requested flags
+    are loaded, the bot is `Up`, `/health` is 200 with fresh uptime, and
+    Datasette is available.
+11. Run `check-liquidity-bot` and report the PR, workflow run, config version,
+    live commit, uptime, and residual risks.
 
 ## Hard rules
 
-1. Never edit `st0x.liquidity` `config/**` to change a GCP bot.
-2. Never apply without an authorized PR.
-3. Never `systemctl restart t0-liquidity-stack` to activate a new secret
-   version that Terraform has not pinned in `images.env`.
-4. Never set `bot_enabled: false` or change image digests as part of an
-   asset add.
-5. Never print Secret Manager payloads or the secrets toml.
-6. Never invent a token address, vault id, or flag default.
-7. Never skip the "both tables" requirement.
+1. Never edit the old t0.devops TOML copies to change a live bot.
+2. Never deploy an unmerged or unauthorized config, except the narrow temporary
+   workflow-ref mechanism above after explicit DevOps-approved grant reuse.
+3. Never skip exact-image validation, adoption, or post-roll health checks.
+4. Never change image digests as part of a config-only rollout.
+5. Never print Secret Manager payloads or secret TOML.
+6. Never invent token addresses, vault IDs, or flag defaults.
+7. Never skip either per-equity table.
 8. Never treat staging as a sandbox for mainnet funds.
 
 ## Failure modes
 
-- **Bot Restarting after roll**: toml rejected by this image. Revert the
-  file and merge/dispatch again; there is no automatic revert.
-- **CONFIG_VERSION unchanged**: apply did not run (prod: forgot dispatch
-  or PAM denied) or the roll has not ticked yet.
-- **Bare restart, no apply**: old pin comes back; the edit looks "missing".
-- **PAM timeout**: rerun the failed apply job; reuse the open grant.
-- **Overlapping toml PR**: merge conflict or lost edit. Linearize.
-- **`/health` down during roll**: expected for seconds while compose
-  downs. If it lasts minutes, the new config is crashing the process.
+- **Active grant, different justification**: follow the active-grant rule. Do
+  not claim a rerun will work while the stock workflow still rejects it.
+- **Bot unhealthy after roll**: the VM should restore the previous image/config
+  pair. Confirm the rollback in the roll-timer journal and `deployed.env`.
+- **Workflow green but bot unhealthy**: treat as critical. The adoption marker
+  raced the health gate or the rollback contract failed.
+- **CONFIG_VERSION unchanged**: the release did not publish, PAM did not grant
+  access, or the roll timer has not adopted the new pin.
+- **PAM approval timeout**: rerun the failed job. The same run can reuse its
+  matching open grant.
+- **Overlapping config PR**: rebase or wait. Do not allow one PR to erase the
+  other change.
