@@ -54,28 +54,14 @@ inventory. It is not a paper-trading sandbox.
 
 ## Active production PAM grants
 
-An approved `app-deploy` grant is an active deployment window for its requester.
-It does not need to be revoked between directly related rollout attempts.
+The shared workflow reuses an open grant only when its justification matches the
+same deployment run. When `master` finds a different `ACTIVE` grant, it revokes
+that superseded grant and requests a fresh grant with the new deployment details.
+It never replaces a grant that still awaits approval.
 
-The shared `app-release.yml` currently rejects an active grant when its PAM
-justification differs from the new run. If a production config correction must
-reuse that window:
-
-1. Show the active grant ID, requester, remaining duration, old justification,
-   candidate diff, and new run URL.
-2. Get explicit confirmation from the user that DevOps approved reuse for this
-   corrective rollout. Do not infer approval from the earlier grant.
-3. Use a temporary, auditable workflow ref that skips only the duplicate PAM
-   request. Keep digest resolution, exact-image config validation, config
-   publication, generation-matched `images.env` write, adoption wait, and health
-   verification unchanged.
-4. Never impersonate the releaser or write production GCS objects manually from
-   a local user session.
-5. Remove the temporary ref after the rollout and report both the grant ID and
-   deployment run URL.
-
-Without that explicit approval, deny or revoke the stale grant, or wait for its
-active duration to end before rerunning.
+Do not bypass this behavior from another branch. Production Workload Identity
+Federation permits the releaser only from `master`. Never impersonate the
+releaser or write production GCS objects manually from a local user session.
 
 ## TOML shape
 
@@ -129,7 +115,7 @@ policy will fail startup.
 8. Merge the authorized PR.
 9. Staging: monitor `build-oci.yml`. Production: dispatch
    `production-release.yml` from `master` with `version` empty, then complete
-   the PAM flow. Apply the active-grant rule above when relevant.
+   the PAM flow. The workflow will replace a superseded active grant when needed.
 10. Wait for adoption. Confirm the config version advanced, the requested flags
     are loaded, the bot is `Up`, `/health` is 200 with fresh uptime, and
     Datasette is available.
@@ -139,8 +125,7 @@ policy will fail startup.
 ## Hard rules
 
 1. Never edit the old t0.devops TOML copies to change a live bot.
-2. Never deploy an unmerged or unauthorized config, except the narrow temporary
-   workflow-ref mechanism above after explicit DevOps-approved grant reuse.
+2. Never deploy an unmerged or unauthorized config.
 3. Never skip exact-image validation, adoption, or post-roll health checks.
 4. Never change image digests as part of a config-only rollout.
 5. Never print Secret Manager payloads or secret TOML.
@@ -150,8 +135,8 @@ policy will fail startup.
 
 ## Failure modes
 
-- **Active grant, different justification**: follow the active-grant rule. Do
-  not claim a rerun will work while the stock workflow still rejects it.
+- **Active grant, different justification**: the workflow revokes it before it
+  requests a fresh grant. If revocation fails, the release fails closed.
 - **Bot unhealthy after roll**: the VM should restore the previous image/config
   pair. Confirm the rollback in the roll-timer journal and `deployed.env`.
 - **Workflow green but bot unhealthy**: treat as critical. The adoption marker
