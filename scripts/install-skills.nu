@@ -1,12 +1,14 @@
-# Mirror ~/Github/dotagents/skills into every harness's skill directory,
-# and register the shared goal-loop Stop hook on Grok, Codex, and Agy.
+# Mirror personal skills plus repository-owned t0.devops skills into every
+# harness's skill directory, and register the shared goal-loop Stop hook on
+# Grok, Codex, and Agy.
 #
 # Usage:
 #   nu ~/Github/dotagents/scripts/install-skills.nu
 #   nu ~/Github/dotagents/scripts/install-skills.nu --dry-run
 #
-# Each harness gets a per-entry symlink to skills/<name>. Stale links that
-# point at this repo (or leftover pre-unify skill trees) are removed.
+# Each harness gets a per-entry symlink to the owning skills/<name>. Stale
+# links that point at either source (or leftover pre-unify skill trees) are
+# removed. Duplicate names are an error: ownership must stay unambiguous.
 # Codex's .system link to ~/.codex/system-skills is preserved.
 # Claude's Stop hook stays in ~/.claude/settings.json (already pointed
 # at hooks/goal-loop/check-goal.sh).
@@ -61,13 +63,13 @@ def link-one [src_skill: path, dest: path, dry: bool] {
   "link"
 }
 
-def prune-stale [dest_root: path, live: list<string>, src: path, dry: bool] {
+def prune-stale [dest_root: path, live: list<string>, sources: list<path>, dry: bool] {
   if not ($dest_root | path exists) { return }
-  let stale_prefixes = [
-    $src
-    ($src | path dirname | path join "dotclaude" "skills")
-    ($src | path dirname | path join "dotcodex" "skills")
-  ]
+  let personal_src = ($env.HOME | path join "Github" "dotagents" "skills")
+  let stale_prefixes = ($sources | append [
+    ($personal_src | path dirname | path join "dotclaude" "skills")
+    ($personal_src | path dirname | path join "dotcodex" "skills")
+  ])
   ls -l $dest_root
   | where type == symlink
   | each {|row|
@@ -179,11 +181,24 @@ def install-hooks [dry: bool] {
 }
 
 def main [--dry-run] {
-  let src = ($env.HOME | path join "Github" "dotagents" "skills")
-  if not ($src | path exists) {
-    error make {msg: $"missing ($src)"}
+  let personal_src = ($env.HOME | path join "Github" "dotagents" "skills")
+  let devops_src = ($env.HOME | path join "Github" "t0.devops" "skills")
+  if not ($personal_src | path exists) {
+    error make {msg: $"missing ($personal_src)"}
   }
-  let names = (skill-names $src)
+  let personal_names = (skill-names $personal_src)
+  let devops_names = if ($devops_src | path exists) {
+    skill-names $devops_src
+  } else {
+    print $"note: missing optional repository skill source ($devops_src)"
+    []
+  }
+  let conflicts = ($personal_names | where {|name| $name in $devops_names})
+  if not ($conflicts | is-empty) {
+    error make {msg: $"duplicate skill names in dotagents and t0.devops: ($conflicts | str join ', ')"}
+  }
+  let names = ($personal_names | append $devops_names | sort)
+  let sources = [$personal_src $devops_src]
   let dests = [
     ($env.HOME | path join ".claude" "skills")
     ($env.HOME | path join ".codex" "skills")
@@ -195,12 +210,17 @@ def main [--dry-run] {
 
   for dest in $dests {
     ensure-real-dir $dest
-    for name in $names {
-      let src_skill = ($src | path join $name)
+    for name in $personal_names {
+      let src_skill = ($personal_src | path join $name)
       let dest_skill = ($dest | path join $name)
       link-one $src_skill $dest_skill $dry_run
     }
-    prune-stale $dest $names $src $dry_run
+    for name in $devops_names {
+      let src_skill = ($devops_src | path join $name)
+      let dest_skill = ($dest | path join $name)
+      link-one $src_skill $dest_skill $dry_run
+    }
+    prune-stale $dest $names $sources $dry_run
   }
 
   # Codex ships system skills next to user skills. The second account
@@ -228,5 +248,5 @@ def main [--dry-run] {
 
   install-hooks $dry_run
 
-  print $"($names | length) skills -> ($dests | length) harness dirs"
+  print $"($names | length) skills: ($personal_names | length) personal + ($devops_names | length) t0.devops -> ($dests | length) harness dirs"
 }
