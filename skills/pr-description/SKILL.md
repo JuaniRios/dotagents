@@ -85,8 +85,9 @@ If a PR exists:
   this command (e.g., exactly follows the template), you may regenerate it
   from scratch.
 
-If no PR exists yet, note it — the final step will need to call
-`gt submit` rather than `gh pr edit`.
+If no PR exists yet, note it. The final step normally calls `gt submit`. In the
+exact `T0Trade/t0.devops` repository, it uses the graphite skill's GitHub-native
+remote-stack workflow instead.
 
 **Persist screenshots before regenerating.** Screenshots vanish when the
 body is rewritten, so capture them before drafting:
@@ -347,7 +348,7 @@ Then push immediately using the mechanics below.
 
 - **If no PR exists yet:**
 
-  Use `gt submit` (not `gh pr create`) so graphite stays consistent:
+  Normally use `gt submit` (not `gh pr create`) so graphite stays consistent:
 
   ```bash
   body_file=$(mktemp -t pr-body.XXXXXX.md)
@@ -365,11 +366,17 @@ Then push immediately using the mechanics below.
   If `gt submit` fails (uncommitted changes, auth, etc.), stop and report
   the exact error — do not try to work around it.
 
+  For the exact `T0Trade/t0.devops` repository, use the graphite skill's
+  GitHub-native remote-stack exception instead. Push the branch, then run `gh
+  pr create` with `main` or the immediate parent branch as `--base`, and use the
+  final body file. Do not attempt `gt submit` first.
+
 - **In stack mode:**
 
   Update each PR in dependency order (trunk-ward first). Use `gh pr edit` per
   PR. Do not re-run `gt submit` once per branch — one `gt submit --stack`
-  handles everything.
+  handles everything. In the exact `T0Trade/t0.devops` repository, push and
+  create or update each branch in dependency order instead.
 
 ## 10. Confirm
 
@@ -396,7 +403,9 @@ And a one-line confirmation per PR updated.
 4. Always diff against `gt parent`, never against trunk on a stacked branch.
 5. Preserve user-authored content from the existing PR body.
 6. Never fabricate tests, screenshots, or deploy notes that aren't real.
-7. Use `gt submit` to open new PRs, never `gh pr create`.
+7. Use `gt submit` to open new PRs. The only exception is the exact
+   `T0Trade/t0.devops` GitHub-native remote-stack workflow defined by the
+   graphite skill.
 8. Never leave a bare Linear ID (`RAI-374`, `LINEAR-456`, etc.) in a PR
    body — always render it as a markdown hyperlink to the Linear issue.
 9. Never hard-wrap PR body text — write each paragraph/bullet as one long

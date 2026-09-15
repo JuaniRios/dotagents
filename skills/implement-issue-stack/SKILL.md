@@ -2,7 +2,7 @@
 name: implement-issue-stack
 description: >
   Implement an ordered list of Linear issues, or expand a parent into
-  its children and stack one Graphite PR per child. Each child runs
+  its children and stack one PR per child. Each child runs
   implement-issue autonomously (plan → implement → review-loop → CI).
   Use when the user wants a whole issue group shipped as a stack.
 argument-hint: "<parent-issue> | <issue-1> <issue-2> ..."
@@ -34,7 +34,9 @@ Log skipped checkpoints to `.tmp/issue-stack/<ID>.md`.
 
 ## 0. Pre-flight (only interactive moment)
 
-1. Confirm cwd and a clean tree. `gt sync` once now, never mid-stack.
+1. Confirm cwd and a clean tree. Normally, `gt sync` once now, never
+   mid-stack. For the exact `T0Trade/t0.devops` repository, use the graphite
+   skill's GitHub-native pre-flight instead.
 2. `linear issue view` each id. Record any `<ID> Implementation Plan`
    document — those skip machine planning.
 3. **Parent expansion.** An argument with children is never implemented
@@ -62,9 +64,11 @@ Log skipped checkpoints to `.tmp/issue-stack/<ID>.md`.
 3. **Review + describe** — `review-loop` in this session (its panel
    must not be wrapped). Decide findings; log deferrals; do not create
    Linear issues. Then `gt modify -a`, then `pr-description`.
-4. **Submit + CI** — `gt ss`, wait for this HEAD (or local `nix run
-   .#ci` when Graphite skips 6th+). Red → `ci-fix` child, cap 3, then
-   **stop the stack**.
+4. **Submit + CI** — normally `gt ss`. For the exact
+   `T0Trade/t0.devops` repository, push the branch and create or update its PR
+   through GitHub, with the immediate parent branch as its base. Wait for this
+   HEAD (or local `nix run .#ci` when remote CI skips it). Red → `ci-fix`
+   child, cap 3, then **stop the stack**.
 5. **Advance** — next `gt create` stacks on this branch. Never start
    N+1 unless N verified and CI green.
 
@@ -73,7 +77,9 @@ Log skipped checkpoints to `.tmp/issue-stack/<ID>.md`.
 1. You babysit; children implement. review-loop runs here only so the
    panel is not nested.
 2. Sequential issues. They share the worktree.
-3. Version control via `gt`. `gt sync` only in pre-flight.
+3. Version control via `gt`. `gt sync` only in pre-flight. The exact
+   `T0Trade/t0.devops` repository uses the scoped remote-stack exception in the
+   graphite skill.
 4. Planner/critics per panel-runtime. `claude -p` is allowed for
    fable 5.1 or opus 5 when the host harness is not Claude (Max plan,
    `env -u ANTHROPIC_API_KEY`). Never impersonate a dropped model.

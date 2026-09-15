@@ -1,6 +1,6 @@
 ---
 name: graphite
-description: Use for git, branch, commit, rebase, merge, push, pull, stack, PR, or version-control operations, except dotagents skill maintenance governed by edit-skill or new-skill. Graphite (`gt`) is the authoritative tool for mutating version-control state in the user's other repos. Use when the user says commit, push, branch, rebase, amend, stack, submit PR, sync, restack, check out branch, create PR, update PR, or similar.
+description: Use for git, branch, commit, rebase, merge, push, pull, stack, PR, or version-control operations, except dotagents skill maintenance governed by edit-skill or new-skill and GitHub-native remote stacking in T0Trade/t0.devops. Graphite (`gt`) is otherwise the authoritative tool for mutating version-control state. Use when the user says commit, push, branch, rebase, amend, stack, submit PR, sync, restack, check out branch, create PR, update PR, or similar.
 allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*)
 ---
 
@@ -11,12 +11,14 @@ PRs. `gt` wraps git, preserves stack metadata, and keeps parent/child branches
 consistent through rebases. Using raw `git` for mutations silently breaks the
 stack. The explicit exception is skill maintenance in `~/Github/dotagents`,
 which follows the direct-Git-on-`main` workflow in `edit-skill` or `new-skill`.
-Do not initialize or invoke Graphite there.
+Do not initialize or invoke Graphite there. The other exception is the exact
+GitHub repository `T0Trade/t0.devops`, where Graphite still owns local stack
+mutations but GitHub owns remote branch publication and stacked PR bases.
 
 ## The Core Rule
 
-> **Outside the dotagents skill-maintenance exception, never use `git` to
-> mutate state. Always use `gt`.**
+> **Outside the two documented exceptions, never use `git` to mutate state.
+> Always use `gt`.**
 
 | Task                                  | Correct                   | Wrong                  |
 | ------------------------------------- | ------------------------- | ---------------------- |
@@ -54,6 +56,33 @@ not run `gt`.
 Outside that exception, **never** run: `git commit`, `git commit --amend`, `git
 checkout -b`, `git rebase`, `git reset --hard`, `git push`, `git pull`, `git
 merge`, `git cherry-pick`, `git branch -D`. Use the `gt` equivalent.
+
+### GitHub-native remote stacks in `T0Trade/t0.devops`
+
+Apply this exception only after `gh repo view --json nameWithOwner --jq
+.nameWithOwner` returns exactly `T0Trade/t0.devops`. A directory name or remote
+URL alone is not enough.
+
+- Keep `gt` authoritative for local branch creation, commits, amendments,
+  restacks, navigation, and conflict handling.
+- Refresh remote state with `git fetch origin`. In a clean checkout, update
+  trunk with `gt checkout main` and `git merge --ff-only origin/main`. Do not
+  use `git pull`.
+- Publish a new branch with `git push --set-upstream origin <branch>`. Publish
+  an amended branch with `git push --force-with-lease origin <branch>`.
+- Verify that each commit is signed before its first push.
+- Create PRs with `gh pr create --repo T0Trade/t0.devops --base <parent>
+  --head <branch> --title <title> --body-file <file>`. The first PR targets
+  `main`; each later PR targets its immediate parent branch.
+- Update titles and bodies with `gh pr edit --body-file`. Report GitHub PR URLs.
+- After amending a lower branch, run `gt restack`, then push every affected
+  branch in dependency order with `--force-with-lease`.
+- Do not run `gt submit` in this repository. Its GitHub App does not have
+  repository access, and GitHub PR base branches provide the stack topology.
+
+This exception permits only the explicit trunk fast-forward and remote pushes
+above. It does not permit raw Git commits, rebases, branch creation, deletion,
+or conflict continuation.
 
 ## Command reference (grouped by workflow)
 
@@ -194,7 +223,8 @@ Example: `gt submit --stack --no-interactive --no-edit-description`
 
 1. Never run `git commit`, `git push`, `git rebase`, or `git checkout -b` in a
    graphite-managed repo, except for the direct-Git dotagents skill-maintenance
-   workflow defined by `edit-skill` and `new-skill`.
+   workflow and the exact, limited `T0Trade/t0.devops` remote-stack workflow
+   defined above.
 2. Always diff a stacked branch against `gt parent`, never against `main`.
 3. When a `gt` operation conflicts, use `gt continue`/`gt abort`, never the git
    equivalents.
