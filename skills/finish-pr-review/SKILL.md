@@ -143,6 +143,15 @@ not consume a round. Acknowledgements, failed attempts, rate-limit replies,
 and thread-only replies are not completed rounds. Persist counters across
 restarts, restacks, and resumed turns; do not reset them to bypass a cap.
 
+CodeRabbit usage-based reviews are enabled for this environment. A
+`Review rate limited` reply is a failed trigger, not a reason to wait for the
+hourly included-review allowance or to stop. Verify that no review is queued or
+running, honor an explicit retry-after time when present, otherwise wait 10-30
+seconds to avoid duplicating the failed request, then post a fresh
+`@coderabbitai review`. Repeat until a review is accepted or a different
+concrete blocker appears. Do not change billing or subscription settings.
+Rate-limited attempts still do not count toward the round budget.
+
 At the cap, process the last review's accepted findings: fix, verify, publish,
 reply, and resolve addressed threads. Do not request another review. Consume
 any already-arrived automatic coverage without retriggering, but do not
@@ -174,6 +183,13 @@ Poll using the host's wait mechanism, in intervals no longer than 60 seconds,
 and keep the user updated. Honor rate-limit retry times, avoid duplicate
 commands, and continue useful work on other PRs while waiting.
 Do not change billing settings or bypass access restrictions.
+
+After exact-head coverage is clean and every CodeRabbit thread is resolved,
+GitHub can still show an older CodeRabbit `CHANGES_REQUESTED` review. In that
+case post `@coderabbitai resolve`, then verify that CodeRabbit approved the
+current head and that the PR review decision is no longer blocked. This command
+only clears resolved review state; it never substitutes for current-head review
+coverage.
 
 A quiet or rate-limited service is not convergence. Diagnose a stalled run
 after 20 minutes. Retry only when evidence says the previous attempt failed
