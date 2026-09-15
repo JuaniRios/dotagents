@@ -68,6 +68,12 @@ URL alone is not enough.
 - Refresh remote state with `git fetch origin`. In a clean checkout, update
   trunk with `gt checkout main` and `git merge --ff-only origin/main`. Do not
   use `git pull`.
+- To attach work to an existing GitHub stack, resolve the parent with `gh pr
+  view` and verify its exact head branch and SHA. Try `gt get` first. If the
+  known repository-access 404 prevents import, create only that verified local
+  tracking branch with `git branch --track <branch> origin/<branch>`, then run
+  `gt track <branch> --parent <parent>`. This is not general permission for raw
+  branch creation.
 - Publish a new branch with `git push --set-upstream origin <branch>`. Publish
   an amended branch with `git push --force-with-lease origin <branch>`.
 - Verify that each commit is signed before its first push.
@@ -80,9 +86,9 @@ URL alone is not enough.
 - Do not run `gt submit` in this repository. Its GitHub App does not have
   repository access, and GitHub PR base branches provide the stack topology.
 
-This exception permits only the explicit trunk fast-forward and remote pushes
-above. It does not permit raw Git commits, rebases, branch creation, deletion,
-or conflict continuation.
+This exception permits only the explicit trunk fast-forward, verified remote
+parent import, and remote pushes above. It does not permit raw Git commits,
+rebases, other branch creation, deletion, or conflict continuation.
 
 ## Command reference (grouped by workflow)
 
