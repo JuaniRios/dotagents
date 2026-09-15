@@ -369,14 +369,16 @@ Then push immediately using the mechanics below.
   For the exact `T0Trade/t0.devops` repository, use the graphite skill's
   GitHub-native remote-stack exception instead. Push the branch, then run `gh
   pr create` with `main` or the immediate parent branch as `--base`, and use the
-  final body file. Do not attempt `gt submit` first.
+  final body file. Link the PR with `gh stack link` as required by that
+  workflow. Do not attempt `gt submit` first.
 
 - **In stack mode:**
 
   Update each PR in dependency order (trunk-ward first). Use `gh pr edit` per
   PR. Do not re-run `gt submit` once per branch — one `gt submit --stack`
   handles everything. In the exact `T0Trade/t0.devops` repository, push and
-  create or update each branch in dependency order instead.
+  create or update each branch in dependency order, then link and verify the
+  full native stack with `gh stack link` instead.
 
 ## 10. Confirm
 

@@ -36,7 +36,8 @@ description steps, so helper skills receive the correct level from the start.
 For the exact `T0Trade/t0.devops` repository, use the graphite skill's
 GitHub-native remote-stack exception: local work still uses `gt`, while the
 branch push and PR creation use `git push` and `gh pr create` with the intended
-parent branch as the PR base.
+parent branch as the PR base. Then use `gh stack link` and verify native stack
+membership as required by the graphite skill.
 
 ## 3. Skeleton description
 

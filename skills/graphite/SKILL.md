@@ -13,7 +13,8 @@ stack. The explicit exception is skill maintenance in `~/Github/dotagents`,
 which follows the direct-Git-on-`main` workflow in `edit-skill` or `new-skill`.
 Do not initialize or invoke Graphite there. The other exception is the exact
 GitHub repository `T0Trade/t0.devops`, where Graphite still owns local stack
-mutations but GitHub owns remote branch publication and stacked PR bases.
+mutations but GitHub owns remote branch publication and native stack
+membership.
 
 ## The Core Rule
 
@@ -80,11 +81,23 @@ URL alone is not enough.
 - Create PRs with `gh pr create --repo T0Trade/t0.devops --base <parent>
   --head <branch> --title <title> --body-file <file>`. The first PR targets
   `main`; each later PR targets its immediate parent branch.
+- A matching PR base chain is not yet a GitHub-native stack. Ensure the official
+  extension exists with `gh stack --help`; if it is absent, install it with
+  `gh extension install github/gh-stack`.
+- Link the complete ordered PR chain with `gh stack link --open <bottom-pr-url>
+  ... <top-pr-url>`. To extend a known native stack, `gh stack link
+  <stack-number> <new-pr-url>...` is also valid. `gh stack link` is the intended
+  bridge because local branch tracking remains in Graphite.
 - Update titles and bodies with `gh pr edit --body-file`. Report GitHub PR URLs.
 - After amending a lower branch, run `gt restack`, then push every affected
   branch in dependency order with `--force-with-lease`.
 - Do not run `gt submit` in this repository. Its GitHub App does not have
-  repository access, and GitHub PR base branches provide the stack topology.
+  repository access.
+- After every link or restack, verify the remote native stack through each PR's
+  REST resource. `.stack.number` must match across all entries, `.stack.size`
+  must equal the complete chain length, and each `.base.ref` must name the
+  immediate parent branch. Do not report a GitHub-native stack from base refs
+  alone.
 
 This exception permits only the explicit trunk fast-forward, verified remote
 parent import, and remote pushes above. It does not permit raw Git commits,

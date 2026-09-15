@@ -66,9 +66,10 @@ Log skipped checkpoints to `.tmp/issue-stack/<ID>.md`.
    Linear issues. Then `gt modify -a`, then `pr-description`.
 4. **Submit + CI** — normally `gt ss`. For the exact
    `T0Trade/t0.devops` repository, push the branch and create or update its PR
-   through GitHub, with the immediate parent branch as its base. Wait for this
-   HEAD (or local `nix run .#ci` when remote CI skips it). Red → `ci-fix`
-   child, cap 3, then **stop the stack**.
+   through GitHub, with the immediate parent branch as its base, then add it to
+   the native stack with `gh stack link` as specified by the graphite skill.
+   Wait for this HEAD (or local `nix run .#ci` when remote CI skips it). Red →
+   `ci-fix` child, cap 3, then **stop the stack**.
 5. **Advance** — next `gt create` stacks on this branch. Never start
    N+1 unless N verified and CI green.
 
