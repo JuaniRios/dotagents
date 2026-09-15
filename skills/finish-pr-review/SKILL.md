@@ -77,8 +77,12 @@ Parallel read-only analysis is fine; shared-worktree mutations are serial.
 2. Make focused fixes and add meaningful regression coverage where needed.
 3. Run affected tests and required local gates. Follow ci before Rust or
    Nix pushes; reuse unchanged gate results where that skill permits.
-4. Amend, restack, and submit through Graphite. Resolve mechanical conflicts
-   using fix-conflicts; ask only when resolution requires a product decision.
+4. Amend, restack, and submit through Graphite. For the exact
+   `T0Trade/t0.devops` repository, use the graphite skill's GitHub-native
+   remote-stack workflow instead: keep local mutations in `gt`, then push the
+   affected branches in dependency order with `--force-with-lease`. Resolve
+   mechanical conflicts using fix-conflicts; ask only when resolution requires
+   a product decision.
 5. After verifying the remote head, reply with the published commit SHA,
    what changed, and what verification actually passed.
 6. Resolve every addressed human and CodeRabbit thread after replying.
