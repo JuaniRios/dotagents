@@ -2,7 +2,8 @@
 name: council-eval
 description: >
   One unbiased review from each available model (opus 5, sol 5.6,
-  grok 4.6, flash 3.7) of a plan, document, diff, or question. Use when
+  Cursor Grok 4.6, composer 2.5, flash 3.7) of a plan, document, diff, or
+  question. Use when
   the user says council-eval, council, multi-model review, or wants
   each model to look at the same artifact once. Not the full review-loop.
 argument-hint: "<path-or-prompt>"
@@ -12,13 +13,14 @@ allowed-tools: Bash(*), Read, Write
 # council-eval
 
 One generalist lane per **model**. No specialists. No fix loop. The
-host harness assembles; it does not add a fifth opinion.
+host harness assembles; it does not add a sixth opinion.
 
 **Lanes:** `review-opus` (opus 5), `review-sol` (sol 5.6),
-`review-grok` (grok 4.6), `review-flash` (flash 3.7). fable 5.1 is not
-a council lane.
+`review-grok` (Cursor Grok 4.6), `review-composer` (composer 2.5),
+`review-flash` (flash 3.7). fable 5.1 is not a council lane.
 
-CLI recipes and native-vs-foreign rules: `panel-runtime.md`.
+Lane catalogue, CLI recipes, Max preflight, and native-vs-foreign rules:
+`panel-runtime.md`. Do not restate or fork that catalogue here.
 
 ## 1. Resolve the target
 
@@ -45,12 +47,14 @@ adding it. Do not silently edit `.gitignore`.
 ```bash
 command -v claude
 command -v codex
-command -v grok
+command -v cursor-agent
 command -v agy
 ```
 
 Drop any lane whose **model** CLI is missing, unless that model is
 native on this harness. Say which models dropped.
+
+Run the Max preflight from panel-runtime before launching the council.
 
 ## 3. Shared prompt
 
@@ -82,24 +86,9 @@ recommended_fix, confidence 0-100). If nothing is worth raising, return
 {"findings": [], "clean_reason": "<one sentence>"}.
 ```
 
-If a CLI cannot take a JSON schema, append the markdown fallback:
-
-```
-For each finding emit:
-
-### <title>
-- **Severity:** critical | high | medium | low | nit
-- **Category:** consistency | goal | completeness | feasibility | scope | cost
-- **Finding:** <one paragraph>
-- **Why it matters:** <consequence>
-- **Recommended fix:** <concrete change>
-- **Confidence:** <0-100>
-
-If clean, emit exactly:
-
-### No findings
-<one sentence>
-```
+Do not add a markdown fallback. Panel-runtime injects the schema into the
+prompt for Cursor Agent, whose CLI has no schema flag, and validates the
+returned JSON after extracting its envelope.
 
 ## 4. Run one wrapper per model
 
@@ -107,76 +96,25 @@ Fan out in one parallel batch with this host harness's parallel
 primitive. Each wrapper is a host child. It either *is* the pinned
 model or it pipes to that model's CLI (see panel-runtime).
 
-Host harness: claude, codex, grok, or agy.
-
-| Lane | Model | Native on harness | Else CLI |
-|---|---|---|---|
-| `review-opus` | opus 5 | claude | `claude -p --model opus` |
-| `review-sol` | sol 5.6 high | codex | `codex exec -m gpt-5.6-sol` |
-| `review-grok` | grok 4.6 high | grok | `grok -p --model grok-4.6 --effort high` |
-| `review-flash` | flash 3.7 high | agy | `agy -p --model gemini-3.7-flash-high` |
-
-**Native:** read `$out_dir/prompt.txt` and `{TARGET_PATH}`, return schema JSON
-to `$out_dir/raw-<lane>.json`.
-
-**CLI recipes** (write stdout to `$out_dir/raw-<lane>.txt` or `.json`):
-
-```bash
-SCHEMA_INLINE=$(cat "$schema")
-
-# opus 5 — Max plan only. Never if ANTHROPIC_API_KEY would stick.
-# Do not use this when the host is already Claude.
-env -u ANTHROPIC_API_KEY claude -p --model opus \
-  --output-format text \
-  "$(cat "$out_dir/prompt.txt")" \
-  > "$out_dir/raw-review-opus.txt"
-
-# sol
-codex exec --sandbox read-only -m gpt-5.6-sol \
-  -c service_tier="fast" \
-  -C "$repo_root" \
-  "$(cat "$out_dir/prompt.txt")" \
-  > "$out_dir/raw-review-sol.txt"
-
-# grok 4.6 — not when the host harness is already grok
-grok -p "$(cat "$out_dir/prompt.txt")" \
-  --model grok-4.6 --effort high \
-  --json-schema "$SCHEMA_INLINE" \
-  --disallowed-tools Agent \
-  > "$out_dir/raw-review-grok.json"
-
-# flash 3.7 — -p last; detach stdin; skip-permissions (headless
-# sandbox denies read_file). Do not pass --effort (conflicts with
-# gemini-3.7-flash-high).
-agy --sandbox --disable-slash-commands \
-  --model gemini-3.7-flash-high \
-  --output-format json --json-schema "$schema" \
-  --print-timeout 10m \
-  --dangerously-skip-permissions \
-  -p "$(cat "$out_dir/prompt.txt")" \
-  < /dev/null \
-  > "$out_dir/raw-review-flash.json"
-```
-
-If `codex` rejects `service_tier=fast`, retry without that flag. If a CLI
-429s, retry once, then drop that lane and record the error. Never fall
-back to the host model and still label the result as the missing model.
-
-Timeout: 10 minutes per lane.
+Run the **Council lanes** from panel-runtime with
+`promptPath=$out_dir/prompt.txt`, `targetPath`, `repoRoot=$repo_root`, and
+`schemaPath=$schema`. Cursor Grok and composer always run as separate
+Cursor-Agent processes. Preserve panel-runtime's retry, timeout, envelope
+extraction, schema validation, and no-impersonation behavior.
 
 ## 5. Normalize, dedup, report
 
-Parse each lane into the schema. Markdown `###` sections become findings.
-A dead or empty lane is `reviewer_error`, not a clean pass.
+Parse each lane into the schema. A dead, empty, or invalid lane is
+`reviewer_error`, not a clean pass.
 
-Dedup by overlapping title/claim. Keep `found_by` as the list of lanes.
+Dedup by overlapping title/claim. Keep `found_by` as model ids.
 
 Write `$out_dir/findings.json` and assemble `$out_dir/council.md`
 deterministically (no synthesis agent):
 
 ```
 # Council — <target one-liner>
-Lanes: opus 5, sol 5.6, grok 4.6, flash 3.7  (dropped: …)
+Lanes: opus 5, sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7  (dropped: …)
 
 ## Findings
 ### [SEVERITY] <title>
@@ -196,12 +134,10 @@ Do not auto-fix. Do not start review-loop.
 
 ## Hard rules
 
-1. Four generalists only (opus 5, sol 5.6, grok 4.6, flash 3.7). No
-   fable 5.1. No inspectors. No re-review loop.
-2. Never `claude -p` when the host harness is Claude. Never `grok -p`
-   when it is Grok. Never `codex exec` when it is Codex. Never `agy -p`
-   when it is Agy. Home-harness lanes are native children pinned to
-   the model.
+1. Five generalists only (opus 5, sol 5.6, Cursor Grok 4.6, composer 2.5,
+   flash 3.7). No fable 5.1. No inspectors. No re-review loop.
+2. Use panel-runtime's native/foreign routing. Cursor Grok and composer are
+   always distinct Cursor-Agent processes.
 3. `claude -p` is Max-plan usage. Unset `ANTHROPIC_API_KEY`. If Max is
    already thin, drop `review-opus` and say so.
 4. A missing or failed CLI drops that lane. Do not impersonate it.
@@ -210,7 +146,7 @@ Do not auto-fix. Do not start review-loop.
 
 ## Failure modes
 
-- All four lanes error: stop. Do not invent a review.
+- All five lanes error: stop. Do not invent a review.
 - Artifact path does not exist: stop and tell the user.
 - `agy -p` hangs: stdin was not detached, or `-p` was not last. Kill and retry.
 - Opus output lands on Console billing: `ANTHROPIC_API_KEY` was set. Unset and rerun only if the user asks.

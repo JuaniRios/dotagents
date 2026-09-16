@@ -26,10 +26,6 @@ and Max preflight. This file owns the branch loop around that panel.
 The loop is **guest-shaped**: it runs in any harness (claude, codex,
 grok, agy). Fan out with that host's parallel primitive. Native lanes
 are isolated children pinned to the **model**, not the babysitter.
-For this skill, `review-grok` and `grok-special` deliberately run through
-Cursor Agent as `cursor-grok-4.6-high` so they consume the Cursor subscription; `review-composer`
-uses that same CLI with a distinct model. Calling `grok` directly would use
-the separate Grok/xAI login instead.
 
 **Argument:** nothing = current branch only, no version-control
 mutation. `stack` = walk the upstack and `gt modify -a` per branch

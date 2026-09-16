@@ -2,7 +2,8 @@
 name: critique-loop
 description: >
   Cross-critique a plan, spec, ADR, or design doc with a multi-model
-  panel, auto-fix verified findings, and re-critique until clean. Use only
+  panel including Cursor Grok and composer, auto-fix verified findings, and
+  re-critique until clean. Use only
   when the user explicitly asks for critique-loop or multi-model critique, or
   when an applicable complex planning workflow explicitly requires it. Do not
   auto-trigger for routine documentation edits or simple plans. The document
