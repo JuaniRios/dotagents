@@ -1,7 +1,7 @@
 ---
 name: reclaim-disk
 allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), Bash(bun:*), Bash(nix:*), Bash(nix-store:*), Bash(pgrep:*)
-description: Reclaim SSD space by finding and (with per-category approval) deleting settled T3 Code worktrees, build artifacts inside database-backed T3 worktrees, Rust target/ dirs, Foundry/cast/Anvil temporary data, Nix store garbage, compiler and Nix user caches, gitignored temp bloat, and other dev build artifacts. Uses T3's recorded worktree paths instead of assuming Codex, Claude, or Grok layouts. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
+description: Reclaim SSD space by finding and (with per-category approval) deleting all validated Rust target/ dirs, settled T3 Code worktrees, Foundry/cast/Anvil temporary data, Nix store garbage, compiler and Nix user caches, gitignored temp bloat, and other dev build artifacts. T3 thread state gates whole-worktree removal, never target/ cleanup. Uses T3's recorded worktree paths instead of assuming Codex, Claude, or Grok layouts. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
 argument-hint: [--dry-run] [--min-ignored <MB>] [extra-root ...]
 disable-model-invocation: true
 ---
@@ -11,10 +11,11 @@ disable-model-invocation: true
 Find disk bloat across your dev directories and delete it **only after you
 approve each category** in a selector prompt. Built for the "weeks of worktrees"
 problem: settled T3 Code worktrees (regardless of whether Codex, Claude, Grok,
-or another provider ran them), build artifacts inside active or orphaned T3
-worktrees, dozens of Rust `target/` dirs, Foundry RPC and Anvil state caches,
-dead Nix store paths, `sccache`, Nix user caches, `node_modules`, and stray
-gitignored temp folders (`.tmp`, `.cache`, logs, Claude/editor leftovers).
+or another provider ran them), every validated Rust `target/` inside active,
+settled, or orphaned T3 worktrees and ordinary repos, Foundry RPC and Anvil
+state caches, dead Nix store paths, `sccache`, Nix user caches, `node_modules`,
+and stray gitignored temp folders (`.tmp`, `.cache`, logs, Claude/editor
+leftovers).
 
 ## Non-negotiable: stay scoped, never trigger macOS file-access prompts
 
@@ -130,11 +131,11 @@ a validated T3 worktree root only when all of these hold:
 - `.git` is a file pointing to linked-worktree metadata, never a directory.
 
 For each validated path, record every linked thread's title, deletion status,
-and settlement status. Set `has_active_unsettled=1` if any non-deleted linked
-thread is not explicitly settled. Append the exact path to
-`T3_WORKTREE_ROOTS` and `ALLOW_ROOTS`; never append its parent or all of
-`~/.t3`. This early validation is reusable by Steps 1 and 6a. It does **not**
-make a whole worktree deletable; Step 6a has stricter rules for that.
+and settlement status. Append the exact path to `T3_WORKTREE_ROOTS` and
+`ALLOW_ROOTS`; never append its parent or all of `~/.t3`. This early validation
+is reusable by Steps 1 and 6a. It makes validated build-artifact descendants
+eligible regardless of thread state, but it does **not** make the whole
+worktree deletable; Step 6a requires every linked thread to be settled.
 
 ## Step 1 — Scan: Rust `target/` directories, including T3 worktrees
 
@@ -155,25 +156,19 @@ done
 ```
 
 This covers main repos, ordinary worktrees, and exact database-backed T3
-worktrees. Record each path and its `dsize`.
+worktrees. Record each path and its `dsize`. Put **every** validated target in
+one **"Rust target/ dirs"** approval category. T3 thread state does not filter,
+split, suppress, or protect a `target/`: active, unsettled, settled, and deleted
+threads all follow the same target cleanup rule. Removal preserves source and
+Git state but forces the next build to recompile.
 
-Keep ordinary repo targets in **"Rust target/ dirs"**. Split targets beneath a
-validated T3 root into two separate approval categories:
-
-- **"T3 worktree build artifacts (settled/deleted)"** when the worktree has no
-  active non-settled linked thread. Deleted thread rows are intentionally
-  included here: their leftover worktrees can otherwise retain very large
-  targets indefinitely.
-- **"T3 worktree build artifacts (active/unsettled)"** when
-  `has_active_unsettled=1`. Warn that removal preserves all source and Git state
-  but forces a rebuild and may disrupt work if a compiler is currently using
-  the directory.
-
-List every T3 target with thread title(s), thread state, worktree path, target
-path, and size. Before deleting an approved T3 target, repeat Step 0a's database
-and Git validation, confirm the candidate remains strictly beneath the exact
-worktree root, and repeat the `CACHEDIR.TAG`/sibling-`Cargo.toml` check. Refuse
-it if any validation changed. The deletion itself goes through `safe_rm`.
+List every target path and size. For T3 targets, also show the linked thread
+title(s) and state for context, not as an eligibility condition. Before
+deleting an approved T3 target, repeat Step 0a's database and Git validation,
+confirm the candidate remains strictly beneath the exact worktree root, and
+repeat the `CACHEDIR.TAG`/sibling-`Cargo.toml` check. Refuse it if any path
+validation changed. Do not refuse it merely because a thread is active,
+unsettled, or deleted. The deletion itself goes through `safe_rm`.
 
 ## Step 2 — Scan: Foundry / cast / solc
 
@@ -280,12 +275,13 @@ T3 records the exact worktree path on the thread, so never guess locations from
 Codex, Claude, Grok, or other provider session directories. Read each validated
 `$T3_BASE/userdata/state.sqlite` with Bun's SQLite client in read-only mode.
 Never mutate the database and never infer "settled" from provider process state,
-archival, age, or an idle session. A settled candidate must satisfy all of:
+archival, deletion, age, or an idle session. A whole-worktree candidate must
+satisfy all of:
 
-- `projection_threads.settled_override = 'settled'` and `settled_at IS NOT NULL`;
-- `deleted_at IS NULL` and `worktree_path IS NOT NULL`;
-- every other non-deleted thread linked to the same `worktree_path` is also
-  explicitly settled (one active/unsettled thread protects the shared worktree);
+- `worktree_path IS NOT NULL`;
+- every thread linked to the same `worktree_path`, including deleted threads,
+  has `settled_override = 'settled'` and `settled_at IS NOT NULL` (one
+  unsettled thread protects the shared worktree);
 - `worktree_path` and its project's `workspace_root` are existing, distinct
   absolute paths under `$HOME_REAL` and contain no `..`;
 - the worktree path is not the current directory or an ancestor of it;
@@ -300,15 +296,18 @@ First verify that the database contains `projection_threads` with
 `projection_projects.workspace_root`. If the database or expected schema is
 missing, print `T3 settled worktrees: skipped (unsupported/missing state DB)` and
 continue with the other scans. A read-only query can return JSON lines with
-`thread_id`, `title`, `worktree_path`, `workspace_root`, `settled_at`, and the
-count of non-deleted non-settled links; deduplicate by `worktree_path` before
-filesystem checks.
+`thread_id`, `title`, `deleted_at`, `worktree_path`, `workspace_root`,
+`settled_at`, and the count of all non-settled links; deduplicate by
+`worktree_path` before filesystem checks. A deleted thread is eligible only
+when it is explicitly settled; deletion alone never counts as settlement.
 
 For each validated candidate, record its total `dsize` (the whole worktree,
 which already includes any nested Rust `target/`, `node_modules`, or other build
-folders). Remove any previously collected descendant build artifacts from
-their individual categories, then add all descendants to `seen`, so the report
-does not double count the whole worktree. Inspect its state with:
+folders). Keep every descendant `target/` in the Rust-target category so the
+user can clean build output while retaining the settled worktree. Mark the
+overlap in the report and compute `Total reclaimable` from the union of paths,
+not by naively summing overlapping category sizes. Add other descendants to
+`seen` so later categories do not double count them. Inspect its state with:
 
 ```bash
 git -C "$worktree_path" status --porcelain --untracked-files=normal
@@ -329,7 +328,8 @@ git -C "$workspace_root" worktree prune
 
 Before running it, repeat every validation above against the saved
 `(state_db, thread_id(s), workspace_root, worktree_path)` tuple and re-query the
-database to prove every non-deleted linked thread is still explicitly settled.
+database to prove every linked thread, including deleted threads, is still
+explicitly settled.
 If anything changed, refuse that candidate. `--force` is intentional only after
 the clean or dirty category was explicitly approved; it removes the entire
 worktree including its `target/` folder. Do not delete its Git branch, T3 thread,
@@ -387,8 +387,6 @@ Print a report:
 Reclaim-disk scan (scoped to <N> roots) — nothing deleted yet
 ──────────────────────────────────────────────────────────────
   9.2 GB   Rust target/ dirs            (14 dirs)
-  8.7 GB   T3 build artifacts (settled/deleted) (2 dirs)
-  4.1 GB   T3 build artifacts (active/unsettled) (1 dir; rebuild warning)
   3.4 GB   node_modules                 (5 repos)
   3.1 GB   Foundry RPC/block cache      (~/.foundry/cache)
   2.8 GB   Anvil temporary states       (3 snapshots)
@@ -408,7 +406,9 @@ Reclaim-disk scan (scoped to <N> roots) — nothing deleted yet
 For categories with many items (e.g. 14 target dirs, or the ignored/temp
 bucket), also print the individual paths + sizes below the table so the user can
 see exactly what's in each bucket. Always print every settled T3 worktree with
-its thread title and settled time, even when there is only one.
+its thread title and settled time, even when there is only one. If a listed
+whole worktree contains a listed target, annotate the overlap and count those
+bytes only once in `Total reclaimable`.
 
 If `--dry-run` was passed, **stop here.**
 
@@ -433,10 +433,13 @@ must tick each category they want gone.
 
 For every ordinary path in each approved category, call `safe_rm "$path"`. For
 settled T3 worktrees only, use the revalidated Git removal procedure in Step
-6a. For dead Nix store paths only, use the refreshed canonical GC procedure in
-Step 3a. Tally the KB freed (sum of the pre-deletion sizes of paths actually
-removed); report Nix GC's own freed-byte total rather than the NAR estimate when
-the command provides it.
+6a. If both a whole worktree and one of its target descendants were approved,
+remove the whole worktree first, treat the disappeared target as subsumed, and
+tally its bytes only once. If the whole worktree was kept but targets were
+approved, delete every validated target beneath it. For dead Nix store paths
+only, use the refreshed canonical GC procedure in Step 3a. Tally the KB freed
+(sum of the pre-deletion sizes of paths actually removed); report Nix GC's own
+freed-byte total rather than the NAR estimate when the command provides it.
 Print:
 
 ```
@@ -464,18 +467,21 @@ If `safe_rm` refused any path, list it and why.
    `mdfind`. This is what keeps macOS from prompting for file access.
 4. **Never delete source or records:** repo roots, `.git`, `Cargo.toml`,
    `~/.cargo/bin`, `~/.cargo/registry/index`, Foundry `broadcast/`.
-5. A `target` dir is deletable only if it has `CACHEDIR.TAG` or a sibling
-   `Cargo.toml`.
+5. **All validated targets are state-independent.** A `target` dir is offered
+   regardless of T3 thread state, but only if it has `CACHEDIR.TAG` or a sibling
+   `Cargo.toml`. Settlement gates whole-worktree removal, never target cleanup.
 6. **Never offer or delete sensitive ignored files** regardless of size:
    `.env`, `.env.*`, `*.key`, `*.pem`, `id_rsa*`, `*.keystore`, `*secret*`,
    `.netrc`, `credentials*`. Git-ignored ≠ disposable.
 7. `--dry-run` must never delete anything.
 8. **Settled T3 worktrees are database-backed, not guessed.** Never scan
-   provider session directories for them, never treat archived/idle/old as
-   settled, never remove a worktree shared with a non-settled thread, and never
-   delete the associated branch or T3 history.
+   provider session directories for them, never treat deleted/archived/idle/old
+   as settled, never remove a worktree unless every linked thread is explicitly
+   settled, and never delete the associated branch or T3 history. Never delete
+   a normal repository root; only an exact Git-linked T3 worktree qualifies.
 9. **T3 build artifacts are database-backed too.** Scan them only beneath an
-   exact worktree path validated through both T3 state and Git. Deleting a
+   exact worktree path validated through both T3 state and Git. Delete every
+   approved validated target regardless of thread state. Deleting a
    build-artifact descendant never authorizes deletion of the worktree root,
    source files, branch, thread, or provider history.
 10. **Nix store cleanup uses Nix.** Never `find`, `du`, or `rm` `/nix`; never
@@ -491,8 +497,9 @@ If `safe_rm` refused any path, list it and why.
   switch to a whole-`$HOME` scan to "speed it up."
 - **A candidate disappears between scan and delete** (concurrent build):
   `safe_rm` prints `skip (already gone)` and continues.
-- **A settled T3 thread changes state between scan and approval:** the mandatory
-  re-query refuses removal. Re-scan before offering it again.
+- **Any thread linked to a whole-worktree candidate becomes unsettled between
+  scan and approval:** the mandatory re-query refuses whole-worktree removal.
+  This state change does not protect validated `target/` descendants.
 - **A T3 worktree build-artifact path fails revalidation:** refuse that path and
   leave it intact. Never fall back to scanning or deleting its parent.
 - **Git refuses a settled T3 worktree removal:** report the exact path and Git
