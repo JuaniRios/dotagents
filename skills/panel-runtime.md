@@ -19,6 +19,7 @@ model.
 | opus 5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: opus` | `env -u ANTHROPIC_API_KEY claude -p --model opus` |
 | fable 5.1 | xhigh | claude | isolated Claude child, `model: claude-fable-5-1` | `env -u ANTHROPIC_API_KEY claude -p --model claude-fable-5-1` |
 | flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
+| composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
 
 A model is **native** only on its home harness, and only as an
 **isolated child pinned to that model**, not the babysitter. On any
@@ -29,9 +30,19 @@ Grok. Same for `codex exec` / `agy -p` on their home harnesses.
 Do not pick opus 5 or fable 5.1 through the Agy CLI (Agy lists Claude
 model ids; those are not this panel's Claude path).
 
+`composer 2.5` is a Cursor-CLI-only lane for `review-loop`; Cursor is not a
+supported host harness in this contract. In `review-loop` only, also route
+`grok 4.6` through Cursor Agent as `cursor-grok-4.6-high` so both
+models consume the Cursor subscription. Keep the lanes separate: they share a
+harness and billing pool, but they are different models. Other panel consumers
+keep the normal Grok route in the table above.
+
 If a model's CLI is missing or fails after one retry, **drop every
 lane that needs that model** and say so. Do not run the work on the
-host model and still label it as the missing model.
+host model and still label it as the missing model. In `review-loop`, a
+missing Cursor CLI drops `review-composer`, `review-grok`, and
+`grok-special`; do not silently fall back to the direct `grok` command and
+charge a different subscription.
 
 ## Wrapper
 
@@ -65,6 +76,23 @@ grok -p "$(cat "$promptPath")" \
   --json-schema "$SCHEMA_INLINE" \
   --disallowed-tools Agent
 
+# review-loop only: grok 4.6 and composer 2.5 through Cursor subscription.
+# Cursor JSON is an envelope and has no schema flag.
+CURSOR_PROMPT="$(cat "$promptPath")
+
+Return only one JSON object matching this schema; no markdown fences or commentary:
+$SCHEMA_INLINE"
+
+cursor-agent -p --output-format json --mode ask --trust \
+  --sandbox enabled --workspace "$repoRoot" \
+  --model cursor-grok-4.6-high \
+  "$CURSOR_PROMPT"
+
+cursor-agent -p --output-format json --mode ask --trust \
+  --sandbox enabled --workspace "$repoRoot" \
+  --model composer-2.5 \
+  "$CURSOR_PROMPT"
+
 # flash 3.7 — -p last; detach stdin; headless sandbox denies read_file
 agy --sandbox --disable-slash-commands \
   --model gemini-3.7-flash-high \
@@ -74,6 +102,12 @@ agy --sandbox --disable-slash-commands \
   -p "$(cat "$promptPath")" \
   < /dev/null
 ```
+
+For both Cursor lanes, save stdout as `raw-<lane>-envelope.json`, extract
+`.result` with `jq -er` into `raw-<lane>.json`, then validate against the
+schema. These exact model IDs were verified with `cursor-agent models`; do not
+replace them with the direct-Grok `grok-4.6` id. A parse or validation failure
+gets the same one retry as any other lane, then becomes `reviewer_error`.
 
 Inline the artifact when the CLI cannot read files. Timeout 10 minutes
 per lane. 2–3 concurrent `claude -p` jobs are fine.
@@ -114,8 +148,10 @@ Otherwise the pass is `incomplete`. Do not converge.
 | `review-grok` | grok 4.6 high |
 | `review-flash` | flash 3.7 high |
 | `review-opus` | opus 5 |
+| `review-composer` | composer 2.5 standard |
 
 No `review-fable`.
+`review-composer` runs only in `review-loop`, not `review-pr`.
 
 ### Specialist lanes
 
@@ -140,14 +176,15 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. No opus 5, no fable 5.1. |
-| `50–500` and not sensitive | Four generals + `fable-deep` + `flash-hygiene` + gated `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
-| `>500` **or** sensitive | Full set, including edge-cases. |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-flash`, plus `review-composer` in review-loop. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. No opus 5, no fable 5.1. |
+| `50–500` and not sensitive | Four existing generals, plus `review-composer` in review-loop, + `fable-deep` + `flash-hygiene` + gated `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
+| `>500` **or** sensitive | Full set, including `review-composer` in review-loop and edge-cases. |
 
 ### Lean re-review (after a fix)
 
 Always: host **fix-verifiers** (one per applied fix; host model only,
-never a foreign CLI) and `review-sol`, `review-grok`, `review-flash`.
+never a foreign CLI) and `review-sol`, `review-grok`, `review-flash`, plus
+`review-composer` in review-loop.
 
 Conditionally:
 
@@ -217,5 +254,5 @@ composite or focused specialist lane.
    `ANTHROPIC_API_KEY` is set. Always `env -u ANTHROPIC_API_KEY`.
 5. Do not impersonate a dropped **model**.
 6. Never name a harness as if it were a model. Lanes are owned by
-   grok 4.6, sol 5.6, opus 5, fable 5.1, or flash 3.7 — not by
+   grok 4.6, composer 2.5, sol 5.6, opus 5, fable 5.1, or flash 3.7 — not by
    "Grok" / "Codex" / "Claude" / "Agy".

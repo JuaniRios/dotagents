@@ -2,10 +2,10 @@
 name: review-loop
 description: >
   Cross-review the current branch with a multi-model panel (opus 5,
-  sol 5.6, grok 4.6, flash 3.7, fable 5.1 deep), auto-fix findings, and
-  re-review until clean. Use only when the user explicitly asks for
-  review-loop, a multi-model review, or an applicable complex implementation
-  workflow explicitly requires it. Do not auto-trigger for ordinary review,
+  sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7, fable 5.1
+  deep), auto-fix findings, and re-review until clean. Use only when the user
+  explicitly asks for review-loop, a multi-model review, or an applicable
+  complex implementation workflow explicitly requires it. Do not auto-trigger for ordinary review,
   self-review, submission, or trivial/localized changes. Pass `stack` to walk
   the whole upstack.
   If the PR grows too big, offer to split it. Group verified out-of-scope
@@ -26,6 +26,10 @@ and Max preflight. This file owns the branch loop around that panel.
 The loop is **guest-shaped**: it runs in any harness (claude, codex,
 grok, agy). Fan out with that host's parallel primitive. Native lanes
 are isolated children pinned to the **model**, not the babysitter.
+For this skill, `review-grok` and `grok-special` deliberately run through
+Cursor Agent as `cursor-grok-4.6-high` so they consume the Cursor subscription; `review-composer`
+uses that same CLI with a distinct model. Calling `grok` directly would use
+the separate Grok/xAI login instead.
 
 **Argument:** nothing = current branch only, no version-control
 mutation. `stack` = walk the upstack and `gt modify -a` per branch
@@ -83,7 +87,7 @@ wins over size** for panel sizing — see panel-runtime.
 ```bash
 git rev-parse --show-toplevel
 gt log short
-command -v gt claude codex grok agy
+command -v gt claude codex cursor-agent agy
 git status --porcelain
 ```
 
