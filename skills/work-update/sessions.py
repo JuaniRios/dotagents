@@ -12,16 +12,21 @@ Harnesses (not models):
 Usage:
   sessions.py index <START_EPOCH_S>
       prints: sid|harness|project|n_prompts|path
+  sessions.py index-all <START_EPOCH_S>
+      on Darwin, indexes local stores and NixOS stores over SSH
   sessions.py extract <harness> <path>
-      prints: [user|assistant] <text>
+      prints: [user|assistant] <text>, including ssh:// NixOS paths
 """
 
 from __future__ import annotations
 
 import json
 import os
+import platform
 import re
+import shlex
 import sqlite3
+import subprocess
 import sys
 import urllib.parse
 from datetime import datetime, timezone
@@ -39,6 +44,8 @@ AGY_HIST = AGY_ROOT / "history.jsonl"
 AGY_SUMMARIES = AGY_ROOT / "conversation_summaries.db"
 AGY_META = AGY_ROOT / "cache" / "conversation_metadata.json"
 AGY_LAST = AGY_ROOT / "cache" / "last_conversations.json"
+NIXOS_HOST = "juan-dev-server"
+REMOTE_PREFIX = f"ssh://{NIXOS_HOST}"
 
 
 def parse_ts(value) -> float:
@@ -510,20 +517,77 @@ def index_agy(start: float, out: dict) -> None:
                 rec["path"] = str(db)
 
 
-def cmd_index(start: float) -> None:
+def index_rows(start: float) -> list[str]:
     out: dict[tuple[str, str], dict] = {}
     index_claude(start, out)
     index_codex(start, out)
     index_grok(start, out)
     index_agy(start, out)
     rows = sorted(out.values(), key=lambda r: (r["project"], r["harness"], r["sid"]))
+    result = []
     for rec in rows:
         if rec["prompts"] <= 0 and not rec["path"]:
             continue
-        print(
+        result.append(
             f"{rec['sid']}|{rec['harness']}|{rec['project']}|"
             f"{rec['prompts']}|{rec['path']}"
         )
+    return result
+
+
+def cmd_index(start: float) -> None:
+    print("\n".join(index_rows(start)))
+
+
+def run_on_nixos(args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run this exact helper against the remote host's HOME over SSH."""
+    source = Path(__file__).read_text()
+    command = shlex.join(["python3", "-", *args])
+    return subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            NIXOS_HOST,
+            command,
+        ],
+        input=source,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def cmd_index_all(start: float) -> None:
+    if platform.system() != "Darwin":
+        sys.stderr.write(
+            "index-all must run from the nix-darwin machine; "
+            f"current OS is {platform.system()}\n"
+        )
+        raise SystemExit(2)
+
+    local_rows = index_rows(start)
+    if local_rows:
+        print("\n".join(local_rows))
+
+    remote = run_on_nixos(["index", str(start)])
+    if remote.returncode != 0:
+        detail = remote.stderr.strip() or f"ssh exited {remote.returncode}"
+        sys.stderr.write(
+            f"warning: NixOS session coverage unavailable from {NIXOS_HOST}: "
+            f"{detail}\n"
+        )
+        return
+
+    for line in remote.stdout.splitlines():
+        fields = line.split("|", 4)
+        if len(fields) != 5:
+            continue
+        if fields[4]:
+            fields[4] = REMOTE_PREFIX + fields[4]
+        print("|".join(fields))
 
 
 # --- extract ---------------------------------------------------------------
@@ -637,6 +701,18 @@ def extract_agy_sqlite(path: Path) -> list[tuple[str, str]]:
 
 
 def cmd_extract(harness: str, path_str: str) -> None:
+    if path_str.startswith(REMOTE_PREFIX + "/"):
+        remote_path = path_str[len(REMOTE_PREFIX) :]
+        remote = run_on_nixos(["extract", harness, remote_path])
+        if remote.returncode != 0:
+            detail = remote.stderr.strip() or f"ssh exited {remote.returncode}"
+            sys.stderr.write(
+                f"NixOS session extraction failed on {NIXOS_HOST}: {detail}\n"
+            )
+            raise SystemExit(remote.returncode)
+        print(remote.stdout, end="")
+        return
+
     path = Path(os.path.expanduser(path_str))
     if not path.exists():
         return
@@ -658,14 +734,17 @@ def cmd_extract(harness: str, path_str: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[1] not in ("index", "extract"):
+    if len(argv) < 2 or argv[1] not in ("index", "index-all", "extract"):
         sys.stderr.write(__doc__ or "")
         return 2
-    if argv[1] == "index":
+    if argv[1] in ("index", "index-all"):
         if len(argv) < 3:
-            sys.stderr.write("index needs START_EPOCH_S\n")
+            sys.stderr.write(f"{argv[1]} needs START_EPOCH_S\n")
             return 2
-        cmd_index(float(argv[2]))
+        if argv[1] == "index-all":
+            cmd_index_all(float(argv[2]))
+        else:
+            cmd_index(float(argv[2]))
         return 0
     if len(argv) < 4:
         sys.stderr.write("extract needs <harness> <path>\n")

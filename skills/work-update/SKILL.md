@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Use for mid-week progress updates, end of week progress updates, work updates, twice-weekly reports, or the former daily-report request. Collect sessions, git, GitHub, Linear, Telegram, and Zulip; explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization.
 argument-hint: "[since <date or timeframe>]"
 ---
 
@@ -85,16 +85,41 @@ TLS, organization mismatch, or permission errors. Report missing coverage and
 continue with the available sources. Do not change identities, subscriptions,
 or access permissions to generate an update.
 
-Index conversation history across Claude, Codex, Grok, and Agy:
+This skill must run from the `juanrios-m2` nix-darwin machine so it can collect
+that machine's conversations and SSH to the NixOS dev server for the second
+local session store. Gate the run before collecting anything:
 
 ```bash
-python3 ~/Github/dotagents/skills/work-update/sessions.py index <START_EPOCH_S>
+test "$(uname -s)" = Darwin || {
+  echo "work-update must run from the nix-darwin machine" >&2
+  exit 1
+}
 ```
 
-The helper returns `sid|harness|project|n_prompts|path`. Group by project,
-combining harnesses and folding worktrees into their parent repo. Retain the
-actual harness and path; never invent a session path. A missing harness store
-is normal; if all stores are absent, report that coverage gap.
+Do not continue from NixOS or another non-Darwin host. Ask the user to rerun
+the skill from nix-darwin instead.
+
+Index conversation history across Claude, Codex, Grok, and Agy on both
+nix-darwin and the NixOS dev server:
+
+```bash
+python3 ~/Github/dotagents/skills/work-update/sessions.py index-all <START_EPOCH_S>
+```
+
+The helper indexes local stores first, then uses non-interactive SSH to
+`juan-dev-server`. It sends its current collector code over stdin, so the
+server does not need an up-to-date checkout. Remote paths are returned as
+`ssh://juan-dev-server/<absolute-path>` and `extract` transparently reads them
+over SSH. It otherwise returns `sid|harness|project|n_prompts|path`. Group by
+project, combining harnesses and folding worktrees into their parent repo.
+Retain the actual harness and path; never invent a session path. Deduplicate a
+session present on both machines by harness and session ID. Prefer the local
+nix-darwin copy when the contents are equivalent.
+
+A missing harness store is normal. If the NixOS SSH attempt fails, record the
+exact remote coverage gap and continue with the nix-darwin sessions and other
+sources. Never silently treat an unreachable machine as having no activity. If
+all stores are absent, report that coverage gap.
 
 ## 3. Collect evidence
 
