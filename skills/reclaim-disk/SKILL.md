@@ -1,7 +1,7 @@
 ---
 name: reclaim-disk
-allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), Bash(bun:*)
-description: Reclaim SSD space by finding and (with per-category approval) deleting settled T3 Code worktrees, Rust target/ dirs, Foundry/cast caches, gitignored temp bloat, and other dev build artifacts. Uses T3's recorded worktree paths instead of assuming Codex, Claude, or Grok layouts. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
+allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), Bash(bun:*), Bash(nix:*), Bash(nix-store:*), Bash(pgrep:*)
+description: Reclaim SSD space by finding and (with per-category approval) deleting settled T3 Code worktrees, build artifacts inside database-backed T3 worktrees, Rust target/ dirs, Foundry/cast/Anvil temporary data, Nix store garbage, compiler and Nix user caches, gitignored temp bloat, and other dev build artifacts. Uses T3's recorded worktree paths instead of assuming Codex, Claude, or Grok layouts. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
 argument-hint: [--dry-run] [--min-ignored <MB>] [extra-root ...]
 disable-model-invocation: true
 ---
@@ -11,9 +11,10 @@ disable-model-invocation: true
 Find disk bloat across your dev directories and delete it **only after you
 approve each category** in a selector prompt. Built for the "weeks of worktrees"
 problem: settled T3 Code worktrees (regardless of whether Codex, Claude, Grok,
-or another provider ran them), dozens of Rust `target/` dirs, Foundry RPC
-caches, `node_modules`, and stray gitignored temp folders (`.tmp`, `.cache`,
-logs, Claude/editor leftovers).
+or another provider ran them), build artifacts inside active or orphaned T3
+worktrees, dozens of Rust `target/` dirs, Foundry RPC and Anvil state caches,
+dead Nix store paths, `sccache`, Nix user caches, `node_modules`, and stray
+gitignored temp folders (`.tmp`, `.cache`, logs, Claude/editor leftovers).
 
 ## Non-negotiable: stay scoped, never trigger macOS file-access prompts
 
@@ -98,13 +99,44 @@ safe_rm() {
 
 Do not add all of `~/.t3`, `~/.claude`, `~/.codex`, or `~/.grok` to
 `ALLOW_ROOTS`. T3 is the authority for provider-independent thread/worktree
-ownership: only exact paths returned by its database may receive the separate
-T3 worktree deletion treatment in Step 6a.
+ownership. Only exact worktree paths returned by its database and validated in
+Step 0a may be appended to `ALLOW_ROOTS`. This permits `safe_rm` to remove a
+validated worktree's build-artifact descendants while its existing root guard
+still refuses the worktree path itself. Whole T3 worktrees receive the separate
+Git removal treatment in Step 6a.
 
 Keep a running `seen` set of absolute paths already collected, so later scans
 (especially Step 6b) never list the same path twice.
 
-## Step 1 — Scan: Rust `target/` directories
+## Step 0a — Discover and validate all T3 worktree roots
+
+Do this before scanning build artifacts. Read each validated
+`$T3_BASE/userdata/state.sqlite` with Bun's SQLite client in read-only mode.
+Verify that the database contains `projection_threads` with `thread_id`,
+`title`, `worktree_path`, `deleted_at`, `settled_override`, and `settled_at`,
+plus `projection_projects.workspace_root`. If the database or schema is
+missing, print `T3 worktree scans: skipped (unsupported/missing state DB)` and
+continue with non-T3 categories.
+
+Query every thread with a non-null `worktree_path`, including deleted threads,
+and join its project `workspace_root`. Deduplicate by `worktree_path`. A path is
+a validated T3 worktree root only when all of these hold:
+
+- `worktree_path` and `workspace_root` are existing, distinct absolute paths
+  under `$HOME_REAL` and contain no `..`;
+- `git -C "$workspace_root" worktree list --porcelain` lists the exact path;
+- `git -C "$worktree_path" rev-parse --show-toplevel` resolves to the exact
+  path; and
+- `.git` is a file pointing to linked-worktree metadata, never a directory.
+
+For each validated path, record every linked thread's title, deletion status,
+and settlement status. Set `has_active_unsettled=1` if any non-deleted linked
+thread is not explicitly settled. Append the exact path to
+`T3_WORKTREE_ROOTS` and `ALLOW_ROOTS`; never append its parent or all of
+`~/.t3`. This early validation is reusable by Steps 1 and 6a. It does **not**
+make a whole worktree deletable; Step 6a has stricter rules for that.
+
+## Step 1 — Scan: Rust `target/` directories, including T3 worktrees
 
 Find every `target/` build dir under the scan roots, pruning so the search does
 not descend into `target/`, `node_modules/`, or `.git/`. Confirm each is a real
@@ -112,7 +144,7 @@ Cargo target (has `CACHEDIR.TAG`, or a sibling `Cargo.toml`) so we never touch a
 source folder that happens to be named `target`.
 
 ```bash
-for root in "$HOME_REAL/Github" <extra-roots>; do
+for root in "$HOME_REAL/Github" <extra-roots> <validated-T3-worktree-roots>; do
   find "$root" -type d \( -name node_modules -o -name .git \) -prune -o \
        -type d -name target -prune -print 2>/dev/null
 done | while read -r d; do
@@ -122,19 +154,47 @@ done | while read -r d; do
 done
 ```
 
-This covers main repos and every `*-worktrees/<name>/target`. Record each path
-and its `dsize`.
+This covers main repos, ordinary worktrees, and exact database-backed T3
+worktrees. Record each path and its `dsize`.
+
+Keep ordinary repo targets in **"Rust target/ dirs"**. Split targets beneath a
+validated T3 root into two separate approval categories:
+
+- **"T3 worktree build artifacts (settled/deleted)"** when the worktree has no
+  active non-settled linked thread. Deleted thread rows are intentionally
+  included here: their leftover worktrees can otherwise retain very large
+  targets indefinitely.
+- **"T3 worktree build artifacts (active/unsettled)"** when
+  `has_active_unsettled=1`. Warn that removal preserves all source and Git state
+  but forces a rebuild and may disrupt work if a compiler is currently using
+  the directory.
+
+List every T3 target with thread title(s), thread state, worktree path, target
+path, and size. Before deleting an approved T3 target, repeat Step 0a's database
+and Git validation, confirm the candidate remains strictly beneath the exact
+worktree root, and repeat the `CACHEDIR.TAG`/sibling-`Cargo.toml` check. Refuse
+it if any validation changed. The deletion itself goes through `safe_rm`.
 
 ## Step 2 — Scan: Foundry / cast / solc
 
 - `~/.foundry/cache` — RPC + block cache (`cast`/`forge` fork cache). Usually the
   single biggest offender. Include the whole dir.
+- Direct child directories named `anvil-state-*` beneath
+  `~/.foundry/anvil/tmp` — temporary Anvil state snapshots. List each child and
+  its modification time and size; never offer unknown siblings. Group these as
+  **"Anvil temporary states"** and warn that deletion removes the ability to
+  reload those local-chain snapshots. If `pgrep -x anvil` reports a running
+  Anvil process, skip this category and print
+  `Anvil temporary states: skipped (Anvil is running)`.
 - `~/.svm` — installed solc compiler binaries (re-downloaded on demand).
 - Per-project Foundry artifacts: a dir with a sibling `foundry.toml` →
   its `out/` and `cache/`. **Never** touch `broadcast/` (deployment records).
 
 ```bash
 test -d "$HOME_REAL/.foundry/cache" && echo "$HOME_REAL/.foundry/cache"
+test -d "$HOME_REAL/.foundry/anvil/tmp" && \
+  find "$HOME_REAL/.foundry/anvil/tmp" -mindepth 1 -maxdepth 1 \
+       -type d -name 'anvil-state-*' -print 2>/dev/null
 test -d "$HOME_REAL/.svm" && echo "$HOME_REAL/.svm"
 for root in "$HOME_REAL/Github" <extra-roots>; do
   find "$root" -type d -name node_modules -prune -o \
@@ -146,7 +206,7 @@ done | while read -r cfg; do
 done
 ```
 
-## Step 3 — Scan: global cargo caches
+## Step 3 — Scan: global developer caches
 
 Regenerated automatically on next build/fetch:
 - `~/.cargo/registry/cache`
@@ -155,6 +215,40 @@ Regenerated automatically on next build/fetch:
 - `~/.cargo/git/db`
 
 Leave `~/.cargo/registry/index` and `~/.cargo/bin` alone.
+
+Also collect these as separate approval categories:
+
+- `~/.cache/sccache` → **"Compiler cache (sccache)"**;
+- `~/.cache/nix` → **"Nix user cache"**.
+
+Both are regenerated on demand. Do not broaden either category to all of
+`~/.cache`.
+
+## Step 3a — Scan: dead Nix store paths
+
+If both `nix-store` and `nix path-info` are available, list unreferenced store
+paths read-only with:
+
+```bash
+nix-store --gc --print-dead 2>/dev/null
+```
+
+Pipe that exact list to `nix path-info --stdin --size` and sum the NAR sizes.
+Record the count and label the size explicitly as a NAR-size estimate because
+actual filesystem bytes freed can differ. Present one category named
+**"Dead Nix store paths"**. Never scan `/nix` with `find` or `du`, never offer
+live store paths, and never delete store paths with `rm` or `safe_rm`.
+
+Approval of this category authorizes one canonical garbage collection:
+
+```bash
+nix-store --gc
+```
+
+Immediately before running it, re-list dead paths and report the refreshed
+count and NAR-size estimate. If the command needs privileges or fails, report
+the diagnostic; never retry with `sudo`. This category is the second exception
+to `safe_rm`, after Git-managed whole T3 worktree removal.
 
 ## Step 4 — Scan: JS / web build bloat
 
@@ -212,8 +306,9 @@ filesystem checks.
 
 For each validated candidate, record its total `dsize` (the whole worktree,
 which already includes any nested Rust `target/`, `node_modules`, or other build
-folders) and add all descendants to `seen` so later categories do not double
-count them. Inspect its state with:
+folders). Remove any previously collected descendant build artifacts from
+their individual categories, then add all descendants to `seen`, so the report
+does not double count the whole worktree. Inspect its state with:
 
 ```bash
 git -C "$worktree_path" status --porcelain --untracked-files=normal
@@ -292,12 +387,18 @@ Print a report:
 Reclaim-disk scan (scoped to <N> roots) — nothing deleted yet
 ──────────────────────────────────────────────────────────────
   9.2 GB   Rust target/ dirs            (14 dirs)
+  8.7 GB   T3 build artifacts (settled/deleted) (2 dirs)
+  4.1 GB   T3 build artifacts (active/unsettled) (1 dir; rebuild warning)
   3.4 GB   node_modules                 (5 repos)
   3.1 GB   Foundry RPC/block cache      (~/.foundry/cache)
+  2.8 GB   Anvil temporary states       (3 snapshots)
   2.6 GB   Settled T3 worktrees (clean) (6 worktrees)
   1.4 GB   Settled T3 worktrees (dirty) (2 worktrees; review carefully)
   2.0 GB   solc binaries                (~/.svm)
   1.1 GB   cargo registry/git caches    (4 dirs)
+  0.9 GB   Dead Nix store paths         (210 paths; NAR-size estimate)
+  0.7 GB   Compiler cache (sccache)      (~/.cache/sccache)
+  0.5 GB   Nix user cache                (~/.cache/nix)
   0.8 GB   Other ignored / temp bloat   (.tmp, .cache in 3 repos)
   0.6 GB   Hardhat artifacts/cache      (2 repos)
 ──────────────────────────────────────────────────────────────
@@ -331,8 +432,11 @@ must tick each category they want gone.
 ## Step 9 — Delete approved categories and report
 
 For every ordinary path in each approved category, call `safe_rm "$path"`. For
-settled T3 worktrees only, use the revalidated Git removal procedure in Step 6a.
-Tally the KB freed (sum of the pre-deletion sizes of paths actually removed).
+settled T3 worktrees only, use the revalidated Git removal procedure in Step
+6a. For dead Nix store paths only, use the refreshed canonical GC procedure in
+Step 3a. Tally the KB freed (sum of the pre-deletion sizes of paths actually
+removed); report Nix GC's own freed-byte total rather than the NAR estimate when
+the command provides it.
 Print:
 
 ```
@@ -350,9 +454,11 @@ If `safe_rm` refused any path, list it and why.
    is always read-only. Deletion happens only in Step 9, only for categories the
    user ticked in Step 8.
 2. **Every ordinary deletion goes through `safe_rm`** — absolute path, no `..`,
-   under the allowlist, not a root, not a git repo root. The sole exception is a
-   T3 database-backed linked worktree, removed through `git worktree remove`
-   only after Step 6a's scan-time and deletion-time validations both pass.
+   under the allowlist, not a root, not a git repo root. The only exceptions are
+   a T3 database-backed linked worktree removed through `git worktree remove`
+   after Step 6a's validations, and dead Nix store paths removed through
+   `nix-store --gc` after Step 3a's refreshed scan. Never use raw `rm` for
+   either exception.
 3. **Stay inside the allowlist.** Never scan or delete under `~/Desktop`,
    `~/Documents`, `~/Downloads`, iCloud, bare `~`, or `/`. No `sudo`, no
    `mdfind`. This is what keeps macOS from prompting for file access.
@@ -368,6 +474,13 @@ If `safe_rm` refused any path, list it and why.
    provider session directories for them, never treat archived/idle/old as
    settled, never remove a worktree shared with a non-settled thread, and never
    delete the associated branch or T3 history.
+9. **T3 build artifacts are database-backed too.** Scan them only beneath an
+   exact worktree path validated through both T3 state and Git. Deleting a
+   build-artifact descendant never authorizes deletion of the worktree root,
+   source files, branch, thread, or provider history.
+10. **Nix store cleanup uses Nix.** Never `find`, `du`, or `rm` `/nix`; never
+    delete live store paths; never use `sudo`. Only run `nix-store --gc` after
+    the user selects the dead-store category.
 
 ## Failure modes
 
@@ -380,9 +493,15 @@ If `safe_rm` refused any path, list it and why.
   `safe_rm` prints `skip (already gone)` and continues.
 - **A settled T3 thread changes state between scan and approval:** the mandatory
   re-query refuses removal. Re-scan before offering it again.
+- **A T3 worktree build-artifact path fails revalidation:** refuse that path and
+  leave it intact. Never fall back to scanning or deleting its parent.
 - **Git refuses a settled T3 worktree removal:** report the exact path and Git
   diagnostic; do not fall back to `rm -rf`. The worktree and metadata stay for
   manual inspection.
+- **Anvil starts after the scan:** repeat `pgrep -x anvil` immediately before
+  deletion. If it is now running, refuse all Anvil-state candidates.
+- **Nix GC permissions or daemon policy refuse collection:** report the exact
+  diagnostic and keep the category. Never retry with `sudo` or raw deletion.
 - **`git ls-files --ignored` run outside a repo:** returns nothing on stderr →
   that work tree is skipped. Worktrees are handled because their `.git` is a
   file and `dirname` still resolves the work-tree root.
