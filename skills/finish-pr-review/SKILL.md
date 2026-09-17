@@ -85,8 +85,16 @@ Parallel read-only analysis is fine; shared-worktree mutations are serial.
    a product decision.
 5. After verifying the remote head, reply with the published commit SHA,
    what changed, and what verification actually passed.
-6. Resolve every addressed human and CodeRabbit thread after replying.
-   Verify resolution; do not rely on automatic bot resolution.
+6. Verify the reply is publicly visible in the target conversation and is not
+   trapped in a pending review. A drafted or pending reply does not count as
+   posted. Prefer the host API operation that publishes a single reply
+   immediately; after sending, read the thread back and verify the reply's
+   author and body. On GitHub, also verify the acting user's pending-review
+   count is zero before resolving any thread.
+7. Only after that publication check succeeds, resolve every addressed human
+   and CodeRabbit thread. Verify resolution; do not rely on automatic bot
+   resolution. If publishing or read-back verification fails, leave the thread
+   unresolved and report the failure. Never resolve first and publish later.
 
 For out-of-diff findings, post a concise top-level reply linking the finding.
 There is no thread to resolve; record the disposition in the checkpoint.
@@ -217,7 +225,9 @@ reaches its cap, perform the final audit:
   or uncovered changes return to the loop if budget remains; otherwise
   include them in the capped handoff without claiming completion.
 - Verify accepted findings have published fixes, replies, and resolved
-  threads, and out-of-diff findings have recorded answers.
+  threads, and out-of-diff findings have recorded answers. For each resolved
+  thread, read back evidence that its reply was publicly published before the
+  resolution; a pending review or local reply draft fails this audit.
 - Report human approvals separately, including stale approvals. Do not
   manufacture approval or wait indefinitely for another person's review.
 
