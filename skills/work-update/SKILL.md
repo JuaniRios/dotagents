@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization.
 argument-hint: "[since <date or timeframe>]"
 ---
 
@@ -206,23 +206,50 @@ must be checked against the work or later discussion.
 
 ### Zulip conversations
 
-Follow the `zulip` skill, always selecting `--config ~/.zuliprc-bot`:
+Follow the `zulip` skill, always selecting `--config ~/.zuliprc-bot`. Reconstruct
+each workstream from the full in-window transcript. Do not sample the first and
+last N lines, filter to the user's messages, grep for outcome verbs, or infer
+status from topic titles and last-message snippets.
+
+Dump every topic in the work channels, then read:
 
 ```bash
-zulipctl --config ~/.zuliprc-bot messages --channel "<exact channel>" --limit 100
-zulipctl --config ~/.zuliprc-bot messages --channel "<exact channel>" --topic "<exact topic>" --limit 100
+python3 ~/Github/dotagents/skills/work-update/zulip_topics.py inventory
+python3 ~/Github/dotagents/skills/work-update/zulip_topics.py dump \
+  <START_EPOCH_S> <END_EPOCH_S> --outdir "<unique-temp-dir>"
 ```
 
-Inspect both resolved and unresolved topics and include teammates' messages.
-Page backward with `--anchor <oldest-message-id>` until reaching the period
-start or exhausting accessible history. Deduplicate by message ID, check
-response coverage, and flag partial coverage if pagination makes no progress.
-Filter to the exact period; older replies may provide background only.
+Default channels are `engineering`, `ops`, `trading-ops`, `engineering-alerts`,
+and `dev`. Pass `--channel` to restrict. The helper pages each topic to
+completion, filters `START < ts <= END`, and writes one cleaned transcript per
+topic plus `_combined/<channel>.txt`. Stdout and `_manifest.tsv` record
+`channel|topic|n|first_ts|last_ts|coverage|path`. Treat `stalled`,
+`truncated`, `history-limited`, or `error:` as coverage gaps, not empty
+discussions. Inaccessible history is a coverage gap, not evidence that no
+discussion occurred.
 
-Read full relevant messages and thread context. Preserve channel, topic,
-sender, timestamp, message ID, and a link when available for each decision,
-ask, incident, commitment, or contextual finding. Inaccessible history is a
-coverage gap, not evidence that no discussion occurred.
+Then reconstruct in this order:
+
+1. Inventory every topic in those channels, resolved and unresolved.
+2. Cluster topics into workstreams by the entity they are about (asset,
+   incident, deploy, person, decision), including untitled topics and
+   `#channel > topic` cross-links. Do not treat a topic title as its own
+   workstream.
+3. For each workstream, load **every** in-window message from every topic in
+   that cluster: every sender, timestamp, topic, message ID, and body, sorted
+   by time. Include teammates. Do not read a preview, a head/tail sample, or a
+   Juan-only subset. Older out-of-window replies are background only.
+4. Write the state machine from that transcript: what triggered the thread,
+   what the user did, what a teammate later confirmed or reversed, and what is
+   still open. A confirmation, reversal, or "done" lives in whoever said it,
+   often not the user and often not the last line.
+5. If the combined dump is too large for one context, split by workstream.
+   Give each isolated child the **entire** transcript for its cluster, not a
+   sample, and merge the state machines. Never split by taking the first and
+   last slices of a transcript.
+
+Preserve channel, topic, sender, timestamp, message ID, and a link when
+available for each decision, ask, incident, commitment, or contextual finding.
 
 ### Reconcile sources
 
