@@ -1,8 +1,8 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization.
-argument-hint: "[since <date or timeframe>]"
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under data/work-update/days/ for richer multi-day reports.
+argument-hint: "[save-today | since <date or timeframe>]"
 ---
 
 # Work update
@@ -16,6 +16,109 @@ The cadence starts the week of September 9, 2026, as a trial for a couple
 of weeks. Adjust when the user gives feedback; do not automatically revert
 at the end of the trial. Running this skill does not schedule future runs. Each run delivers the
 report to Juan through the standing Zulip DM destination in Step 5. An explicit request on another day is valid.
+
+## Mode routing
+
+- **`save-today`**: capture today's work into a daily journal file. No Zulip delivery. See
+  [save-today mode](#save-today--daily-work-journal) below.
+- **Default** (optionally `since <date>`): draft the Wednesday/Friday team update. Follow
+  steps 1–5 below.
+
+## save-today — daily work journal
+
+Run `/work-update save-today` at end of day (or anytime) to record what actually happened
+that day before memory fades. The user is a team lead: much of their work is coordinating,
+reviewing, planning, and investigating — not only authored PRs. Daily files make the
+multi-day report faithful to that work.
+
+Daily artifacts live under `~/Github/dotagents/data/work-update/days/`:
+
+- `YYYY-MM-DD.evidence.json` — structured facts collected for that local day
+- `YYYY-MM-DD.json` — sidecar (period, paths, coverage gaps, optional narrative snapshot)
+- `YYYY-MM-DD.md` — human-readable day narrative the agent writes from evidence
+
+Re-running `save-today` on the same date refreshes evidence and updates the narrative;
+preserve user corrections unless new evidence contradicts them.
+
+### save-today steps
+
+1. **Same pre-flight as the report** (Darwin gate, `gh auth status`, Linear, Telegram,
+   Juan-Bot Zulip access). Do not send anything to Zulip.
+
+2. **Collect evidence for today** (local midnight through now, or `--date` for a past day):
+
+```bash
+python3 ~/Github/dotagents/skills/work-update/save_today.py collect
+# optional: --date 2026-09-18 --outdir ~/Github/dotagents/data/work-update/days
+```
+
+The helper writes `YYYY-MM-DD.evidence.json` with sessions, GitHub authored/reviewed
+PRs and pushes, Linear snapshot, full Zulip dump path plus every in-window message from
+the user, Telegram export paths, and trace hits. It uses Zulip channels the bot can
+access: `engineering`, `ops`, `incidents`, `alerts`, `Rain Engineering Leads`. Record
+`coverage_gaps` from stderr; do not treat a failed source as no activity.
+
+3. **Rebuild context from evidence**, not from PR lists alone:
+
+   - Read `evidence.zulip.user_messages` and load full workstream transcripts from
+     `evidence.zulip.dump_dir` for topics where the user coordinated, decided, or
+     investigated. Apply the same workstream clustering rules as Step 3 (entity-based,
+     full transcript, state machine).
+   - Read relevant sessions with `sessions.py extract` for goals, pivots, and outcomes.
+   - Read Telegram exports when present for ops/product context.
+   - Separate **leadership work** (coordinate, review, plan, investigate, unblock,
+     assign, incident command) from **implementation work** (authored PRs, commits,
+     deploys, config changes).
+
+4. **Write or update `YYYY-MM-DD.md`** using this template (first person, concrete,
+   honest limits; cite workstreams and message IDs internally in the sidecar, not as
+   chat dumps in the prose):
+
+```markdown
+# Work day | <YYYY-MM-DD>
+
+Period: <local start> through <local end>.
+
+## Summary
+One short paragraph: what the day was about.
+
+## Leadership
+### Coordinating
+Who/what you moved; incident command; hands-on-deck; pauses/restores; assignments.
+### Reviewing
+Meaningful PR/issue reviews and outcomes (not just a list — what you blocked/unblocked).
+### Planning
+Sequencing, runbooks, Linear cleanup, design direction, next-step framing.
+### Investigating
+Root-cause work, false alarms ruled out, accounting, replay/drill planning.
+
+## Implementation
+Authored/shipped/config/deploy work with outcomes and deployment honesty.
+
+## Discussions and decisions
+Agreements and open threads worth remembering.
+
+## Carried to tomorrow
+Explicit open loops.
+```
+
+5. **Update `YYYY-MM-DD.json`** sidecar: copy `period`, `evidence_path`, `narrative_path`,
+   `coverage_gaps`, and a compact `themes`, `leadership`, `workstreams`, and
+   `open_threads` list for fast lookup. Keep `finalized: false` unless the user explicitly
+   approves the day note.
+
+6. **Tell the user** what was captured, coverage gaps, and where files were written. Do not
+   treat a daily file as a team-facing report.
+
+### How reports use daily files
+
+When drafting the Wednesday/Friday update (Step 1 onward), after resolving the reporting
+window load every `days/YYYY-MM-DD.md` and sidecar whose date falls in
+`(START_LOCAL_DATE, END_LOCAL_DATE]`. Use them as the **primary timeline and attribution
+source** for what the user did each day — especially coordination, review, planning, and
+investigation. Cross-check against raw collectors; prefer daily narrative for emphasis and
+ordering when consistent with evidence. If a day in the window has no daily file, collect
+that day normally and note the gap.
 
 ## 1. Establish the reporting window and continuity
 
@@ -55,6 +158,10 @@ the missed days.
 Load the previous narrative and sidecar. Track what happened to its next
 focus, blockers, open decisions, and pending PRs: completed, continued,
 changed direction, or still waiting. Carry relevant unfinished items forward.
+
+Load daily journals from `~/Github/dotagents/data/work-update/days/` for every
+date in the reporting window (see [How reports use daily files](#how-reports-use-daily-files)).
+Start the evidence summary from those day narratives before re-collecting raw sources.
 
 ## 2. Pre-flight and discover sources
 
@@ -311,13 +418,13 @@ honor an explicit title from the user. The skill command stays `/work-update`.
 
 1. **General direction**: what the user focused on, why, and where the work is
    going. Start with the actual direction, not a count of commits or PRs.
-2. **What you worked on**: main outcomes since the last update, with useful
+2. **What I worked on**: main outcomes since the last update, with useful
    context, incidents, changes of direction, and unfinished parts. Group by
    workstream and explain the result rather than narrating tools or commits.
 3. **Discussions and decisions**: important conversations, who was involved
    when relevant, what was agreed, why, and what the team should remember.
    Make tentative ideas visibly tentative; open decisions belong in section 5.
-4. **What you're continuing next**: the expected focus before the next update,
+4. **What I'm continuing next**: the expected focus before the next update,
    grounded in the user's stated plan. Close the loop on previous intentions
    when they changed or slipped. Do not turn guesses into promises.
 5. **Blockers and open decisions**: what is blocked, unclear, or waiting for
