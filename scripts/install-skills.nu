@@ -1,6 +1,7 @@
-# Mirror personal skills plus repository-owned t0.devops skills into every
+# Mirror personal skills plus the shared T0Trade/agent-skills skills into every
 # harness's skill directory, and register the shared goal-loop Stop hook on
-# Grok, Codex, and Agy.
+# Grok, Codex, and Agy. Clones ~/Github/agent-skills when it is missing and
+# fast-forwards a clean main checkout; a network failure only prints a note.
 #
 # Usage:
 #   nu ~/Github/dotagents/scripts/install-skills.nu
@@ -22,6 +23,35 @@ def skill-names [src: path]: nothing -> list<string> {
   | sort
 }
 
+def sync-shared-repo [repo: path, url: string, dry: bool] {
+  $env.GIT_TERMINAL_PROMPT = "0"
+  if not ($repo | path exists) {
+    if $dry {
+      print $"would clone ($url) into ($repo)"
+      return
+    }
+    let r = (do { ^git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 clone --quiet $url $repo } | complete)
+    if $r.exit_code != 0 {
+      print $"note: could not clone ($url): ($r.stderr | str trim)"
+    }
+    return
+  }
+  let branch = (do { ^git -C $repo branch --show-current } | complete | get stdout | str trim)
+  let dirty = (do { ^git -C $repo status --porcelain } | complete | get stdout | str trim)
+  if $branch != "main" or $dirty != "" {
+    print $"note: ($repo) is not a clean main checkout — not pulling"
+    return
+  }
+  if $dry {
+    print $"would fast-forward ($repo)"
+    return
+  }
+  let r = (do { ^git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 -C $repo pull --quiet --ff-only } | complete)
+  if $r.exit_code != 0 {
+    print $"note: could not update ($repo): ($r.stderr | str trim)"
+  }
+}
+
 def ensure-real-dir [dir: path] {
   if ($dir | path exists) {
     let info = (ls -D $dir | get 0)
@@ -38,7 +68,8 @@ def ensure-real-dir [dir: path] {
 
 def link-one [src_skill: path, dest: path, dry: bool] {
   let want = ($src_skill | path expand)
-  if ($dest | path exists) {
+  # `path exists` is false for a dangling symlink, so also ask `test -L`.
+  if ($dest | path exists) or ((do { ^test -L $dest } | complete).exit_code == 0) {
     let info = (ls -D $dest | get 0)
     if $info.type == "symlink" {
       let have = (ls -lD $dest | get 0.target? | default "" | path expand)
@@ -69,6 +100,7 @@ def prune-stale [dest_root: path, live: list<string>, sources: list<path>, dry: 
   let stale_prefixes = ($sources | append [
     ($personal_src | path dirname | path join "dotclaude" "skills")
     ($personal_src | path dirname | path join "dotcodex" "skills")
+    ($personal_src | path dirname | path join "t0.devops" "skills")
   ])
   ls -l $dest_root
   | where type == symlink
@@ -182,23 +214,25 @@ def install-hooks [dry: bool] {
 
 def main [--dry-run] {
   let personal_src = ($env.HOME | path join "Github" "dotagents" "skills")
-  let devops_src = ($env.HOME | path join "Github" "t0.devops" "skills")
+  let shared_repo = ($env.HOME | path join "Github" "agent-skills")
+  sync-shared-repo $shared_repo "https://github.com/T0Trade/agent-skills.git" $dry_run
+  let shared_src = ($shared_repo | path join "skills")
   if not ($personal_src | path exists) {
     error make {msg: $"missing ($personal_src)"}
   }
   let personal_names = (skill-names $personal_src)
-  let devops_names = if ($devops_src | path exists) {
-    skill-names $devops_src
+  let shared_names = if ($shared_src | path exists) {
+    skill-names $shared_src
   } else {
-    print $"note: missing optional repository skill source ($devops_src)"
+    print $"note: missing optional shared skill source ($shared_src)"
     []
   }
-  let conflicts = ($personal_names | where {|name| $name in $devops_names})
+  let conflicts = ($personal_names | where {|name| $name in $shared_names})
   if not ($conflicts | is-empty) {
-    error make {msg: $"duplicate skill names in dotagents and t0.devops: ($conflicts | str join ', ')"}
+    error make {msg: $"duplicate skill names in dotagents and agent-skills: ($conflicts | str join ', ')"}
   }
-  let names = ($personal_names | append $devops_names | sort)
-  let sources = [$personal_src $devops_src]
+  let names = ($personal_names | append $shared_names | sort)
+  let sources = [$personal_src $shared_src]
   let dests = [
     ($env.HOME | path join ".claude" "skills")
     ($env.HOME | path join ".codex" "skills")
@@ -215,8 +249,8 @@ def main [--dry-run] {
       let dest_skill = ($dest | path join $name)
       link-one $src_skill $dest_skill $dry_run
     }
-    for name in $devops_names {
-      let src_skill = ($devops_src | path join $name)
+    for name in $shared_names {
+      let src_skill = ($shared_src | path join $name)
       let dest_skill = ($dest | path join $name)
       link-one $src_skill $dest_skill $dry_run
     }
@@ -248,5 +282,5 @@ def main [--dry-run] {
 
   install-hooks $dry_run
 
-  print $"($names | length) skills: ($personal_names | length) personal + ($devops_names | length) t0.devops -> ($dests | length) harness dirs"
+  print $"($names | length) skills: ($personal_names | length) personal + ($shared_names | length) agent-skills -> ($dests | length) harness dirs"
 }
