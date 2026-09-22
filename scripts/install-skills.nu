@@ -1,6 +1,7 @@
 # Mirror personal skills plus the shared T0Trade/agent-skills skills into every
-# harness's skill directory, and register the shared goal-loop Stop hook on
-# Grok, Codex, and Agy. Clones ~/Github/agent-skills when it is missing and
+# harness's skill directory, register the shared goal-loop Stop hook on Grok,
+# Codex, and Agy, and link instructions/AGENTS.md as each harness's global
+# instruction file. Clones ~/Github/agent-skills when it is missing and
 # fast-forwards a clean main checkout; a network failure only prints a note.
 #
 # Usage:
@@ -278,6 +279,29 @@ def main [--dry-run] {
     if not ($text | str contains "Github/dotagents/skills") {
       print $"note: add to ($grok_cfg):\n[skills]\npaths = [\"~/Github/dotagents/skills\"]"
     }
+  }
+
+  # Global instruction files, so every session loads the graphite skill from
+  # ~/Github/agent-skills. Claude expands the @ import; other harnesses read the
+  # pointer. Codex reads AGENTS.override.md when that file exists, so target
+  # whichever file each home actually loads. An existing real file is left alone
+  # (link-one prints a skip note).
+  let instructions = ($env.HOME | path join "Github" "dotagents" "instructions" "AGENTS.md")
+  let codex_instructions = {|home|
+    if (($home | path join "AGENTS.override.md") | path exists) {
+      $home | path join "AGENTS.override.md"
+    } else {
+      $home | path join "AGENTS.md"
+    }
+  }
+  let instruction_dests = ([
+    ($env.HOME | path join ".claude" "CLAUDE.md")
+    (do $codex_instructions ($env.HOME | path join ".codex"))
+    (do $codex_instructions ($env.HOME | path join ".codex-2"))
+    ($env.HOME | path join ".gemini" "GEMINI.md")
+  ] | where {|dest| ($dest | path dirname | path exists)})
+  for dest in $instruction_dests {
+    link-one $instructions $dest $dry_run | ignore
   }
 
   install-hooks $dry_run
