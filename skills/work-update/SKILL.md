@@ -43,7 +43,7 @@ preserve user corrections unless new evidence contradicts them.
 ### save-today steps
 
 1. **Same pre-flight as the report** (Darwin gate, `gh auth status`, Linear, Telegram,
-   Juan-Bot Zulip access). Do not send anything to Zulip.
+   Zulip access for the personal account). Do not send anything to Zulip.
 
 2. **Collect evidence for today** (local midnight through now, or `--date` for a past day):
 
@@ -54,8 +54,9 @@ python3 ~/Github/dotagents/skills/work-update/save_today.py collect
 
 The helper writes `YYYY-MM-DD.evidence.json` with sessions, GitHub authored/reviewed
 PRs and pushes, Linear snapshot, full Zulip dump path plus every in-window message from
-the user, Telegram export paths, and trace hits. It uses Zulip channels the bot can
-access: `engineering`, `ops`, `incidents`, `alerts`, `Rain Engineering Leads`. Record
+the user, Juan's DMs and @-mentions (`evidence.zulip.private`), Telegram export
+paths, and trace hits. It reads every Zulip channel Juan's personal account can
+see. Record
 `coverage_gaps` from stderr; do not treat a failed source as no activity.
 
 3. **Rebuild context from evidence**, not from PR lists alone:
@@ -179,15 +180,17 @@ line, `#` comments). Keep this filename for compatibility with other skills.
 If it is missing, discover chats and ask which are work-related before
 writing it. Never print credentials or source raw secret files into output.
 
-Read the `zulip` skill and check Juan-Bot:
+Read the `zulip` skill. Read Zulip as Juan's personal account, which sees
+every channel and Juan's DMs. Check both identities (the bot only delivers):
 
 ```bash
+zulipctl --config ~/.zuliprc-personal me
+zulipctl --config ~/.zuliprc-personal channels
 zulipctl --config ~/.zuliprc-bot me
-zulipctl --config ~/.zuliprc-bot subscriptions --full
 ```
 
-Choose relevant work channels using names, descriptions, and known repo/domain
-context. Keep exact channel names and IDs. Stop that source on authentication,
+Collect every channel the personal account can see, subscribed or not.
+Keep exact channel names and IDs. Stop that source on authentication,
 TLS, organization mismatch, or permission errors. Report missing coverage and
 continue with the available sources. Do not change identities, subscriptions,
 or access permissions to generate an update.
@@ -313,7 +316,8 @@ must be checked against the work or later discussion.
 
 ### Zulip conversations
 
-Follow the `zulip` skill, always selecting `--config ~/.zuliprc-bot`. Reconstruct
+Follow the `zulip` skill. Read with `--config ~/.zuliprc-personal`, never the
+bot. Reconstruct
 each workstream from the full in-window transcript. Do not sample the first and
 last N lines, filter to the user's messages, grep for outcome verbs, or infer
 status from topic titles and last-message snippets.
@@ -326,8 +330,16 @@ python3 ~/Github/dotagents/skills/work-update/zulip_topics.py dump \
   <START_EPOCH_S> <END_EPOCH_S> --outdir "<unique-temp-dir>"
 ```
 
-Default channels are `engineering`, `ops`, `trading-ops`, `engineering-alerts`,
-and `dev`. Pass `--channel` to restrict. The helper pages each topic to
+With no `--channel`, the helper dumps every channel Juan's account can see.
+Pass `--channel` to restrict. Also dump Juan's DMs, group DMs, and @-mentions:
+
+```bash
+python3 ~/Github/dotagents/skills/work-update/zulip_private.py \
+  <START_EPOCH_S> <END_EPOCH_S> --outdir "<unique-temp-dir>/private"
+```
+
+Use DMs for context, decisions, and asks. The update is read by the team, so
+paraphrase DM content and never quote someone else's DM. The helper pages each topic to
 completion, filters `START < ts <= END`, and writes one cleaned transcript per
 topic plus `_combined/<channel>.txt`. Stdout and `_manifest.tsv` record
 `channel|topic|n|first_ts|last_ts|coverage|path`. Treat `stalled`,

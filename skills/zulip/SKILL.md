@@ -27,9 +27,11 @@ channels when speaking to the user.
   Notification Bot notice. Verify the exact channel and topic first.
 - A public channel is visible to organization members but does not
   automatically subscribe them.
-- Juan-Bot is the standing read, scraping, and summarization identity. Keep its
-  channel access in sync with Juan's, and include it as a non-human subscriber
-  when creating private channels unless the user explicitly excludes bots.
+- Read as Juan: Juan's personal account is the identity for all inspection,
+  search, scraping, and summarization, because it sees every channel and
+  Juan's DMs. Juan-Bot only sends messages to Juan (reports, gcloud-login
+  prompts). Include Juan-Bot as a non-human subscriber when creating private
+  channels unless the user explicitly excludes bots.
 - Confirm immediately before subscribing all active users unless that
   organization-wide scope was explicit.
 - Archiving channels, deleting messages or topics, deactivating users,
@@ -42,12 +44,12 @@ channels when speaking to the user.
 
 Two credential profiles are available:
 
-- `~/.zuliprc-personal`: Juan's human account. Use only for organization-admin
-  operations, history available only to Juan, or messages the user explicitly
-  authorizes sending as himself.
-- `~/.zuliprc-bot`: Juan-Bot. Prefer this for routine inspection, automation,
-  scraping, summarization, and bot-authored operational messages. It should
-  mirror Juan's channel access, including access to private channels.
+- `~/.zuliprc-personal`: Juan's human account. Use it for every read:
+  inspection, search, scraping, summarization, and Juan's DMs. Also use it for
+  organization-admin operations and for messages the user explicitly
+  authorizes sending as Juan.
+- `~/.zuliprc-bot`: Juan-Bot. Use it only to send messages to Juan, such as
+  the work-update report and gcloud-login prompts. Never read with it.
 
 Select the identity explicitly on every command:
 
@@ -58,17 +60,13 @@ zulipctl --config ~/.zuliprc-bot me
 
 An explicit `--config` takes precedence over ambient Zulip environment
 variables. Do not rely on the default `~/.zuliprc` when both identities exist.
-Do not switch to the personal identity merely to bypass an unexpected access
-error; use it only when the user's request authorizes the admin or personal
-scope.
+Reads always use the personal identity. Use the bot only for sending
+messages to Juan.
 
 Without `--config`, `zulipctl` automatically uses:
 
 1. `ZULIP_SITE`, `ZULIP_EMAIL`, and `ZULIP_API_KEY`; or
 2. `${ZULIPRC:-$HOME/.zuliprc}`.
-
-Prefer a dedicated bot or service account with the minimum required
-permissions and channel subscriptions.
 
 Never print an API key, `zuliprc`, authorization header, or environment
 containing credentials. Never enable shell tracing.
@@ -77,23 +75,20 @@ If credentials are missing, tell the user to download a `zuliprc` from
 Zulip's bot settings or Account & privacy > API key. Do not ask them to
 paste the key into chat.
 
-A newly created bot may not have access to messages sent before it
-subscribed, especially in private channels with protected history.
 Distinguish inaccessible history from an empty search result.
 
-When auditing access, compare `subscriptions --full` using both profiles. Add
-Juan-Bot to anything Juan can access but the bot cannot. For a private channel,
-include Juan-Bot in the initial subscriber list: after creation, Zulip may only
-allow a current content-access member to invite it.
+For a private channel, include Juan-Bot in the initial subscriber list so it
+can post there: after creation, Zulip may only allow a current content-access
+member to invite it.
 
 ## Connectivity gate
 
 Start every task with the selected identity's connectivity check:
 
 ```bash
-zulipctl --config ~/.zuliprc-bot me
-# Or, when the task requires Juan's identity/admin role:
 zulipctl --config ~/.zuliprc-personal me
+# Or, when the task sends a message to Juan as Juan-Bot:
+zulipctl --config ~/.zuliprc-bot me
 ```
 
 This prints safe identity and server metadata. Stop on authentication,
@@ -213,8 +208,7 @@ visibility, archive status, and requested subscribers.
 Treat Juan-Bot as a standing service-account exception when the user describes
 a private channel as visible to named people only. Report human subscribers
 separately from the bot. If the user explicitly requests no bot access, honor
-that exception and point out that automated scraping and summaries will not be
-available there.
+that exception.
 
 ## Topic operations
 

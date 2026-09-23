@@ -31,13 +31,6 @@ DEFAULT_OUT = HOME / "Github" / "dotagents" / "data" / "work-update" / "days"
 TELEGRAM_CHATS = HOME / ".config" / "daily-report-telegram-chats.txt"
 USER_EMAIL = "juan@rainlang.xyz"
 USER_ZULIP = "Juan Rios"
-SAVE_TODAY_CHANNELS = (
-    "engineering",
-    "ops",
-    "incidents",
-    "alerts",
-    "Rain Engineering Leads",
-)
 ZULIP_HEADER_COMBINED = re.compile(
     r"^\[(?P<ts>[^\]]+)\]\s+#(?P<topic>[^\s]+)\s+"
     r"(?P<sender>.+?)\s+<(?P<email>[^>]+)>\s+id=(?P<id>\d+)\s*$",
@@ -305,8 +298,6 @@ def collect_zulip(start_epoch: int, end_epoch: int, tmp_dir: Path) -> dict:
         "--outdir",
         str(tmp_dir),
     ]
-    for channel in SAVE_TODAY_CHANNELS:
-        cmd.extend(["--channel", channel])
     proc = run(cmd)
 
     channel_errors: list[str] = []
@@ -363,6 +354,30 @@ def collect_zulip(start_epoch: int, end_epoch: int, tmp_dir: Path) -> dict:
         "channel_errors": channel_errors,
         "error": partial_error,
     }
+
+
+def collect_zulip_dms(start_epoch: int, end_epoch: int, tmp_dir: Path) -> dict:
+    proc = run(
+        [
+            "python3",
+            str(SKILL_DIR / "zulip_private.py"),
+            str(start_epoch),
+            str(end_epoch),
+            "--outdir",
+            str(tmp_dir),
+        ]
+    )
+    if proc.returncode != 0:
+        return {"dump_dir": str(tmp_dir), "error": (proc.stderr or "zulip dm dump failed").strip()}
+    conversations = []
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split("|")
+        if len(parts) == 5:
+            conversations.append(
+                {"kind": parts[0], "conversation": parts[1], "messages": int(parts[2]),
+                 "first_ts": parts[3], "last_ts": parts[4]}
+            )
+    return {"dump_dir": str(tmp_dir), "conversations": conversations}
 
 
 def collect_traces(date_str: str) -> list[dict]:
@@ -445,6 +460,9 @@ def collect(date_str: str | None, outdir: Path, zulip_tmp: Path | None) -> int:
     coverage["zulip"] = bool(zulip.get("topics") or zulip.get("user_messages"))
     if zulip.get("error"):
         errors.append(f"zulip: {zulip['error']}")
+    zulip_dms = collect_zulip_dms(start_epoch, end_epoch, zdir / "_private")
+    if zulip_dms.get("error"):
+        errors.append(f"zulip dms: {zulip_dms['error']}")
 
     telegram = collect_telegram(start_epoch, end_epoch)
     coverage["telegram"] = telegram.get("error") is None and bool(telegram.get("exports"))
@@ -476,6 +494,7 @@ def collect(date_str: str | None, outdir: Path, zulip_tmp: Path | None) -> int:
                 "dump_dir": zulip.get("dump_dir"),
                 "topics": zulip.get("topics", []),
                 "user_messages": zulip.get("user_messages", []),
+                "private": zulip_dms,
             },
             "telegram": telegram,
             "traces": traces,

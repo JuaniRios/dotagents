@@ -13,8 +13,9 @@ Usage:
         DIR/_combined/<channel>.txt    chronological dump of that channel
       stdout: channel|topic|n|first_ts|last_ts|coverage|path
 
-Default channels: engineering, ops, trading-ops, engineering-alerts, dev.
-Always uses ~/.zuliprc-bot unless --config is passed.
+Default channels: every channel the account can see (subscribed or not).
+Always uses ~/.zuliprc-personal (Juan's account) unless --config is passed.
+Juan-Bot is only for sending messages to Juan, never for reading.
 """
 
 from __future__ import annotations
@@ -32,14 +33,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_CONFIG = Path.home() / ".zuliprc-bot"
-DEFAULT_CHANNELS = (
-    "engineering",
-    "ops",
-    "trading-ops",
-    "engineering-alerts",
-    "dev",
-)
+DEFAULT_CONFIG = Path.home() / ".zuliprc-personal"
 PAGE_LIMIT = 1000
 MAX_PAGES = 100
 
@@ -105,6 +99,11 @@ def safe_name(value: str) -> str:
 
 def fmt_ts(epoch: int) -> str:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def all_channels(config: Path) -> list[str]:
+    data = zulipctl(config, "channels")
+    return sorted(s["name"] for s in data.get("streams") or [])
 
 
 def list_topics(config: Path, channel: str) -> list[dict]:
@@ -326,7 +325,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    channels = args.channels or list(DEFAULT_CHANNELS)
+    channels = args.channels or all_channels(args.config)
     if args.cmd == "inventory":
         return cmd_inventory(args.config, channels)
     if args.start >= args.end:
