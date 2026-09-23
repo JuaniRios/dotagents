@@ -1,45 +1,73 @@
 ---
 name: reclaim-disk
-allowed-tools: Bash(find:*), Bash(du:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), Bash(bun:*), Bash(nix:*), Bash(nix-store:*), Bash(pgrep:*)
-description: Reclaim SSD space by finding and (with per-category approval) deleting all validated Rust target/ dirs, settled T3 Code worktrees, Foundry/cast/Anvil temporary data, Nix store garbage, compiler and Nix user caches, gitignored temp bloat, and other dev build artifacts. T3 thread state gates whole-worktree removal, never target/ cleanup. Uses T3's recorded worktree paths instead of assuming Codex, Claude, or Grok layouts. Strictly scoped to enumerated dev paths so macOS never prompts for file access. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
-argument-hint: [--dry-run] [--min-ignored <MB>] [extra-root ...]
+allowed-tools: Bash(find:*), Bash(du:*), Bash(df:*), Bash(lsblk:*), Bash(swapon:*), Bash(stat:*), Bash(rm:*), Bash(ls:*), Bash(test:*), Bash(awk:*), Bash(sort:*), Bash(dirname:*), Bash(basename:*), Bash(printf:*), Bash(echo:*), Bash(wc:*), Bash(cat:*), Bash(head:*), Bash(git:*), Bash(bun:*), Bash(python3:*), Bash(nix:*), Bash(nix-store:*), Bash(nix-env:*), Bash(pgrep:*), Bash(journalctl:*), Bash(docker:*)
+description: Map where all disk space on the machine is used, system wide, then suggest what to delete and remove only the categories the user approves. Deletable categories cover every validated Rust target/ dir (in repos, T3 or other tool worktrees, and temp dirs), settled T3 Code worktrees, stale temp-dir leftovers, Foundry/Anvil temporary data, Nix store garbage, compiler and Nix user caches, node_modules, gitignored temp bloat, and other dev build artifacts. Space that is not safe for this skill to delete (swapfiles, Nix generations, container images, logs, tool data, unallocated disk) is explained with a suggested command or config change. On macOS the scan skips TCC-protected folders so no file-access prompt appears. Nothing is deleted without explicit approval via selector prompts. Use /reclaim-disk, /reclaim-disk --dry-run, or /reclaim-disk <extra-root>.
+argument-hint: [--dry-run] [--min-ignored <MB>] [--min-map <GB>] [extra-root ...]
 disable-model-invocation: true
 ---
 
-# Reclaim disk — prune build bloat with per-category approval
+# Reclaim disk — map all usage, suggest cleanups, delete with per-category approval
 
-Find disk bloat across your dev directories and delete it **only after you
-approve each category** in a selector prompt. Built for the "weeks of worktrees"
-problem: settled T3 Code worktrees (regardless of whether Codex, Claude, Grok,
-or another provider ran them), every validated Rust `target/` inside active,
-settled, or orphaned T3 worktrees and ordinary repos, Foundry RPC and Anvil
-state caches, dead Nix store paths, `sccache`, Nix user caches, `node_modules`,
-and stray gitignored temp folders (`.tmp`, `.cache`, logs, Claude/editor
-leftovers).
+First show **where every gigabyte on the disk is**, system wide. Then suggest
+what to delete, and delete it **only after the user approves each category** in
+a selector prompt. The report must account for the whole used space of each
+real filesystem, so "why can't you free more?" always has an answer on screen.
 
-## Non-negotiable: stay scoped, never trigger macOS file-access prompts
+Deletable categories: every validated Rust `target/` (in repos, in T3 or other
+tool worktrees such as `~/.codex*/worktrees`, and in temp dirs), settled T3
+Code worktrees (regardless of whether Codex, Claude, Grok, or another provider
+ran them), stale temp-dir leftovers, Foundry RPC and Anvil state caches, dead
+Nix store paths, `sccache`, Nix user caches, `node_modules`, and stray
+gitignored temp folders (`.tmp`, `.cache`, logs, Claude/editor leftovers).
 
-macOS TCC prompts the terminal for permission the moment a command touches
-`~/Desktop`, `~/Documents`, `~/Downloads`, iCloud Drive, or certain app data.
-This command **only ever reads or deletes under an explicit allowlist of dev
-paths**, so those prompts never appear.
+Suggest-only items (never deleted by this skill): swapfiles, Nix system and
+profile generations, container images, system logs, tool session data, large
+unrecognized directories, and disk space not allocated to any partition.
 
-- **NEVER** run `find` / `du` / `rm` rooted at `/`, `~`, `$HOME` (bare),
-  `~/Desktop`, `~/Documents`, `~/Downloads`, or any iCloud path.
-- **NEVER** use `sudo`, `mdfind`, or Spotlight.
-- Only scan and delete under these roots (the allowlist):
-  - `~/Github`
-  - `~/.foundry`
-  - `~/.svm`
-  - `~/.cargo`
-  - `~/.cache`
-  - exact T3 Code worktree paths read from a validated T3 state database (never
-    a provider's session/cache directory and never an inferred path)
-  - `~/Library/Developer/Xcode/DerivedData`
-  - `~/Library/Caches`
-  - any extra root passed in the user's arguments (must be an existing absolute path under `$HOME`)
-- Always redirect scan stderr to `/dev/null` so a stray permission error never
+## Scope: read system wide, delete narrowly
+
+Reading and deleting have different scopes.
+
+**Reading (Step 0b map and the candidate scans):**
+
+- **Linux:** read the whole machine. Measure `/` and every other real
+  filesystem with `du -x` so each one is counted once and pseudo filesystems
+  (`/proc`, `/sys`, `/dev`, `/run`) are skipped. Without root, some system
+  directories are unreadable; report them as "unreadable without root" rather
+  than guessing.
+- **macOS:** TCC prompts the terminal the moment a command touches `~/Desktop`,
+  `~/Documents`, `~/Downloads`, iCloud Drive (`~/Library/Mobile Documents`), or
+  protected app data. Read system wide **except** these paths, which must never
+  be passed to `find`, `du`, `ls`, or `rm`: `~/Desktop`, `~/Documents`,
+  `~/Downloads`, `~/Library/Mobile Documents`, `~/Library/Mail`,
+  `~/Library/Messages`, `~/Library/Safari`, `~/Library/Containers`,
+  `~/Library/Group Containers`, `~/Library/Application Support/AddressBook`,
+  `~/Library/Application Support/CallHistoryDB`, `~/Pictures`, `~/Movies`,
+  `~/Music`, and `/Volumes`. Measure `$HOME` and `~/Library` child by child so
+  these are never entered. Report the bytes you could not measure as
+  "protected / not scanned" (used space minus what was measured).
+- Never use `sudo`, `mdfind`, or Spotlight.
+- Always redirect scan stderr to `/dev/null` so a permission error never
   derails the run.
+
+**Deleting:** only paths that pass `safe_rm` against `ALLOW_ROOTS`, plus the
+two Nix/Git exceptions in the Hard rules. The dev roots are:
+
+- `~/Github`
+- `~/.foundry`
+- `~/.svm`
+- `~/.cargo`
+- `~/.cache`
+- `~/Library/Developer/Xcode/DerivedData`
+- `~/Library/Caches`
+- any extra root passed in the user's arguments (must be an existing absolute
+  path under `$HOME`)
+
+Candidates found elsewhere by the system-wide scan extend `ALLOW_ROOTS` only
+by the exact rule each step gives: a validated Rust target's parent directory
+(Step 1), an exact T3 worktree root (Step 0a), or the system temp directory for
+temp leftovers (Step 6c). Never append `$HOME`, `/`, a tool's whole data dir
+(`~/.codex*`, `~/.claude`, `~/.grok`, `~/.t3`), or `/nix`.
 
 ## Step 0 — Parse arguments and define guards
 
@@ -47,7 +75,9 @@ Parse the user's arguments:
 - `--dry-run` present → build and print the full report, then **stop** (no
   prompts, no deletion).
 - `--min-ignored <MB>` → size threshold for the "Other ignored / temp bloat"
-  scan (Step 6b). Default `50`.
+  scan (Step 6b) and the temp-leftover scan (Step 6c). Default `50`.
+- `--min-map <GB>` → smallest directory the disk map (Step 0b) drills into
+  and prints. Default `1`.
 - Any other token that is an existing absolute path under `$HOME` → add it to
   the scan roots **and** the deletion allowlist.
 
@@ -57,6 +87,7 @@ The `safe_rm` guard is the last line of defense — every `rm -rf` goes through 
 ```bash
 HOME_REAL="$HOME"
 MIN_IGNORED_MB=50   # overridden by --min-ignored
+MIN_MAP_GB=1        # overridden by --min-map
 ALLOW_ROOTS=(
   "$HOME_REAL/Github"
   "$HOME_REAL/.foundry"
@@ -109,10 +140,56 @@ Git removal treatment in Step 6a.
 Keep a running `seen` set of absolute paths already collected, so later scans
 (especially Step 6b) never list the same path twice.
 
+If a long scan is easier as a script, write it in the session scratchpad and run
+it with Python 3 or `safe-ts` (read-only Deno; it has no file access, so pipe
+data to it). Keep deletion in the shell `safe_rm` above.
+
+## Step 0b — Map where all the space is (system wide, read-only)
+
+Do this first, before any candidate scan. Its output is the top section of the
+report.
+
+1. **Capacity.** Print `df -h` for every real filesystem (skip `tmpfs`,
+   `devtmpfs`, `overlay`, `squashfs`, `efivarfs`). On Linux also print
+   `lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS`; on macOS print
+   `diskutil list`. Compare each disk's size with the sum of its partitions
+   and report any unallocated space. If the user expects more capacity than
+   the disk shows, say so plainly: the disk itself is smaller, or it was grown
+   by the provider and the partition and filesystem were not.
+2. **Top level.** For each real filesystem mount `M`, run
+   `du -xk -d 1 "$M"` (on macOS measure the children of `/`, `$HOME`, and
+   `~/Library` one by one, skipping the TCC list in Scope). Do not descend into
+   another mount point.
+3. **Drill down.** Recursively re-run `du -xk -d 1` on any directory at least
+   `MIN_MAP_GB` in size, down to 5 levels below the mount, so each large
+   consumer is named at the level where it can be acted on (for example
+   `~/.codex-2/worktrees/<id>/st0x.liquidity/target`, not just `~/.codex-2`).
+   Stop descending into `/nix/store` (report it as one line: live store size),
+   and into `target/`, `node_modules/`, and `.git/` directories (report each
+   as one line).
+4. **Account for the rest.** For each filesystem, print used space from `df`,
+   the sum measured, and the difference as one of: "unreadable without root",
+   "protected / not scanned" (macOS), or "filesystem overhead / open deleted
+   files". If the difference is over 5% of used space, flag it.
+5. **Special files.** Report swapfiles and swap partitions with
+   `swapon --show` (Linux) or `sysctl vm.swapusage` (macOS), including how much
+   is in use. Report `journalctl --disk-usage` when it runs without root, and
+   `docker system df` when Docker is installed and reachable.
+
+Keep this map read-only. Every row gets one of these tags, used again in the
+report:
+
+- **deletable**: the path is a candidate in a category below;
+- **suggest**: space the skill cannot safely delete, with the exact command or
+  config change the user can apply (Step 6d);
+- **keep**: system files, the live Nix store, source code, and user data.
+
 ## Step 0a — Discover and validate all T3 worktree roots
 
 Do this before scanning build artifacts. Read each validated
 `$T3_BASE/userdata/state.sqlite` with Bun's SQLite client in read-only mode.
+If Bun is not installed, use Python 3's `sqlite3` module with a read-only URI
+(`file:<db>?mode=ro`). Never use a client that can write.
 Verify that the database contains `projection_threads` with `thread_id`,
 `title`, `worktree_path`, `deleted_at`, `settled_override`, and `settled_at`,
 plus `projection_projects.workspace_root`. If the database or schema is
@@ -137,27 +214,44 @@ is reusable by Steps 1 and 6a. It makes validated build-artifact descendants
 eligible regardless of thread state, but it does **not** make the whole
 worktree deletable; Step 6a requires every linked thread to be settled.
 
-## Step 1 — Scan: Rust `target/` directories, including T3 worktrees
+## Step 1 — Scan: Rust `target/` directories, anywhere the user can write
 
-Find every `target/` build dir under the scan roots, pruning so the search does
-not descend into `target/`, `node_modules/`, or `.git/`. Confirm each is a real
-Cargo target (has `CACHEDIR.TAG`, or a sibling `Cargo.toml`) so we never touch a
-source folder that happens to be named `target`.
+Find every `target/` build dir in the user's writable space, pruning so the
+search does not descend into `target/`, `node_modules/`, `.git/`, `/nix`, or
+the TCC list on macOS. Scan `$HOME`, the validated T3 worktree roots, the
+system temp directory (`/tmp` on Linux; `/private/tmp` and `$TMPDIR` on
+macOS), and extra roots. On macOS, scan `$HOME` child by child so no TCC path
+is entered.
+
+Confirm each is a real Cargo target so we never touch a source folder that
+happens to be named `target`:
+
+- inside the dev roots or a validated T3 worktree: `CACHEDIR.TAG`, or a sibling
+  `Cargo.toml`;
+- anywhere else (tool worktrees such as `~/.codex*/worktrees`, temp checkouts,
+  and other home directories): `CACHEDIR.TAG` **and** a sibling `Cargo.toml`,
+  and the target is owned by the current user. Skip anything under
+  `~/.cargo/registry`, `~/.cargo/git`, and `~/.rustup`.
 
 ```bash
-for root in "$HOME_REAL/Github" <extra-roots> <validated-T3-worktree-roots>; do
-  find "$root" -type d \( -name node_modules -o -name .git \) -prune -o \
+for root in "$HOME_REAL" <tmp-dirs> <extra-roots> <validated-T3-worktree-roots>; do
+  find "$root" \( -path /nix -o -name node_modules -o -name .git \
+         -o -path "$HOME_REAL/.cargo/registry" -o -path "$HOME_REAL/.cargo/git" \
+         -o -path "$HOME_REAL/.rustup" \) -prune -o \
        -type d -name target -prune -print 2>/dev/null
-done | while read -r d; do
-  if [ -f "$d/CACHEDIR.TAG" ] || [ -f "$(dirname "$d")/Cargo.toml" ]; then
-    echo "$d"
-  fi
-done
+done | sort -u   # then apply the validation rules above to each path
 ```
 
-This covers main repos, ordinary worktrees, and exact database-backed T3
-worktrees. Record each path and its `dsize`. Put **every** validated target in
-one **"Rust target/ dirs"** approval category. T3 thread state does not filter,
+This covers main repos, ordinary worktrees, exact database-backed T3
+worktrees, other tools' worktrees, and temp checkouts. For a validated target
+outside every existing `ALLOW_ROOTS` entry, append its **parent directory** to
+`ALLOW_ROOTS`, so `safe_rm` can delete the target while its root guard still
+refuses the parent. Before deleting it, repeat the validation and check that no
+running process has its working directory inside the target (`/proc/*/cwd` on
+Linux, `lsof -d cwd` on macOS).
+
+Record each path and its `dsize`. Put **every** validated target in one
+**"Rust target/ dirs"** approval category. T3 thread state does not filter,
 split, suppress, or protect a `target/`: active, unsettled, settled, and deleted
 threads all follow the same target cleanup rule. Removal preserves source and
 Git state but forces the next build to recompile.
@@ -377,14 +471,94 @@ Group survivors into one category **"Other ignored / temp bloat"**, listing each
 path + size (e.g. `.tmp/`, `.cache/`, `logs/`). Git-ignored = regenerable, but
 still requires approval like everything else.
 
+## Step 6c — Stale temp-dir leftovers
+
+Review checkouts, validation copies, and scratch dirs pile up in the system
+temp directory, which on many Linux machines sits on the root disk and is not
+cleared on reboot. List the direct children of `/tmp` (Linux) or
+`/private/tmp` and `$TMPDIR` (macOS). Keep an entry only if **all** hold:
+
+- it is owned by the current user (`[ -O "$path" ]`);
+- its size is ≥ `MIN_IGNORED_MB`, after subtracting any Rust target beneath it
+  that Step 1 already listed (list that target under Rust targets, not here);
+- it was last modified more than 24 hours ago;
+- no running process has its working directory inside it (`/proc/*/cwd` on
+  Linux, `lsof -d cwd` on macOS);
+- it is not an agent's live session or scratch directory (for example the
+  current `claude-<uid>` tree), a socket directory, or a `systemd-private-*`
+  or `.X11-unix`-style system entry;
+- it does not match a sensitive pattern from Step 6b.
+
+Group survivors into **"Stale temp leftovers"** and list each path, size, and
+age. For deletion, append the temp directory itself to `ALLOW_ROOTS`; the root
+guard in `safe_rm` still refuses the temp directory. Immediately before each
+deletion, repeat the owner and working-directory checks.
+
+## Step 6d — Suggest-only items (never deleted by this skill)
+
+Some large consumers are not safe for this skill to delete, or come back unless
+configuration changes. Build a **Suggestions** list from the disk map with the
+size, the reason, and the exact action for the user. Do not offer these in the
+selector and do not run the commands yourself. Common cases:
+
+- **Swapfile or swap partition** mostly unused, especially next to zram: on
+  NixOS, shrink or remove the `swapDevices` entry and rebuild, then delete the
+  old file. Deleting it by hand while it is active, or without the config
+  change, breaks swap or brings it back.
+- **Temp dir on the root disk that is never cleared:** on NixOS, suggest
+  `boot.tmp.cleanOnBoot = true` (or `boot.tmp.useTmpfs = true` if RAM allows).
+- **Nix generations** holding store paths live: list them with
+  `nix-env --list-generations` for the user profile and home-manager, and
+  `nix-env -p /nix/var/nix/profiles/system --list-generations` for the system.
+  Suggest `nix-collect-garbage --delete-older-than 14d` for the user, and the
+  same command with `sudo` for the system profile, run by the user.
+- **Container images and volumes:** `docker system df`; suggest
+  `docker system prune` (and `--volumes` only after they check the volumes).
+- **System logs:** `journalctl --disk-usage`; suggest
+  `sudo journalctl --vacuum-size=1G`.
+- **Tool data** (`~/.codex*`, `~/.claude`, `~/.t3`, `~/.gemini`, `~/.grok`,
+  editor data): name the largest subfolders (sessions, archived sessions,
+  packages, databases), and point to the tool's own cleanup. Tool worktrees are
+  handled only through their `target/` dirs (Step 1) or the T3 rules
+  (Step 6a); never delete a tool worktree itself here.
+- **Unallocated disk space or a disk smaller than expected:** from Step 0b.
+- **Large unrecognized directories** (≥ `MIN_MAP_GB`, not matched by any
+  category): list them with their owner and a best guess of what they are,
+  clearly labelled as a guess. The user can ask for one to be removed; treat
+  that as a new, explicit, per-path approval that still goes through
+  `safe_rm` with that exact parent appended to `ALLOW_ROOTS`, and never for a
+  path outside `$HOME` or the temp directory.
+
 ## Step 7 — Build categories and print the report
 
-Group every collected path into categories. For each category compute the
-total size (sum of `dsize`) and item count. Sort categories by size descending.
-Print a report:
+The report has three parts, in this order.
+
+**Part 1 — Where the space is.** The Step 0b map: disk and partition sizes,
+then for each filesystem the used/free totals and the tree of large
+directories, each tagged `deletable`, `suggest`, or `keep`, and the
+unaccounted remainder with its reason. For example:
 
 ```
-Reclaim-disk scan (scoped to <N> roots) — nothing deleted yet
+Disk sda 500 GB → sda1 /boot 0.5 GB, sda2 / 499.5 GB (no unallocated space)
+/  491 GB total, 383 GB used, 84 GB free
+  120.0 GB  /home/juan/Github                          (see below)
+   67.3 GB    …/st0x.liquidity/.worktrees/calm-heron/target   deletable
+   52.0 GB  /home/juan/.codex-2
+   47.0 GB    …/worktrees/12a1…/st0x.liquidity/target         deletable
+   41.0 GB  /swapfile (0 B in use)                             suggest
+   36.0 GB  /tmp
+   32.0 GB    /tmp/st0x-issuance-review-xwfTPv/target         deletable
+   19.0 GB  /nix/store (live)                                  keep
+    2.1 GB  /var                                               keep
+    0.4 GB  unaccounted (unreadable without root)
+```
+
+**Part 2 — Deletable categories.** Group every collected path into categories.
+For each category compute the total size (sum of `dsize`) and item count. Sort
+categories by size descending:
+
+```
+Reclaim-disk scan — nothing deleted yet
 ──────────────────────────────────────────────────────────────
   9.2 GB   Rust target/ dirs            (14 dirs)
   3.4 GB   node_modules                 (5 repos)
@@ -399,8 +573,9 @@ Reclaim-disk scan (scoped to <N> roots) — nothing deleted yet
   0.5 GB   Nix user cache                (~/.cache/nix)
   0.8 GB   Other ignored / temp bloat   (.tmp, .cache in 3 repos)
   0.6 GB   Hardhat artifacts/cache      (2 repos)
+  0.5 GB   Stale temp leftovers         (4 dirs in /tmp)
 ──────────────────────────────────────────────────────────────
-  Total reclaimable: 24.2 GB
+  Total reclaimable: 24.7 GB
 ```
 
 For categories with many items (e.g. 14 target dirs, or the ignored/temp
@@ -409,6 +584,12 @@ see exactly what's in each bucket. Always print every settled T3 worktree with
 its thread title and settled time, even when there is only one. If a listed
 whole worktree contains a listed target, annotate the overlap and count those
 bytes only once in `Total reclaimable`.
+
+**Part 3 — Suggestions.** The Step 6d list, largest first, each with size,
+reason, and the exact command or config change. End with one line that
+compares used space to the total of Part 2 plus Part 3, so the user can see
+how much of the disk is space they must keep (system, live Nix store, source,
+and personal data).
 
 If `--dry-run` was passed, **stop here.**
 
@@ -431,7 +612,9 @@ must tick each category they want gone.
 
 ## Step 9 — Delete approved categories and report
 
-For every ordinary path in each approved category, call `safe_rm "$path"`. For
+For every ordinary path in each approved category, call `safe_rm "$path"`
+after the per-step revalidation (Step 1 for targets outside the dev roots,
+Step 6c for temp leftovers). For
 settled T3 worktrees only, use the revalidated Git removal procedure in Step
 6a. If both a whole worktree and one of its target descendants were approved,
 remove the whole worktree first, treat the disappeared target as subsumed, and
@@ -449,11 +632,12 @@ Reclaimed 16.5 GB
   Refused: 0
 ```
 
-If `safe_rm` refused any path, list it and why.
+If `safe_rm` refused any path, list it and why. Then show `df -h` for the
+affected filesystems, and repeat the Part 3 suggestions that are still open.
 
 ## Hard rules
 
-1. **Nothing is deleted without explicit approval.** The scan/report (Steps 1–7)
+1. **Nothing is deleted without explicit approval.** The scan/report (Steps 0b–7)
    is always read-only. Deletion happens only in Step 9, only for categories the
    user ticked in Step 8.
 2. **Every ordinary deletion goes through `safe_rm`** — absolute path, no `..`,
@@ -462,14 +646,16 @@ If `safe_rm` refused any path, list it and why.
    after Step 6a's validations, and dead Nix store paths removed through
    `nix-store --gc` after Step 3a's refreshed scan. Never use raw `rm` for
    either exception.
-3. **Stay inside the allowlist.** Never scan or delete under `~/Desktop`,
-   `~/Documents`, `~/Downloads`, iCloud, bare `~`, or `/`. No `sudo`, no
-   `mdfind`. This is what keeps macOS from prompting for file access.
+3. **Read wide, delete narrow.** Reading may cover the whole machine (Scope),
+   but deletion only happens through `safe_rm` against `ALLOW_ROOTS`, extended
+   only by the exact rules in Steps 0a, 1, 6c, and 6d. On macOS, never pass a
+   TCC-protected path to any command. No `sudo`, no `mdfind`.
 4. **Never delete source or records:** repo roots, `.git`, `Cargo.toml`,
    `~/.cargo/bin`, `~/.cargo/registry/index`, Foundry `broadcast/`.
 5. **All validated targets are state-independent.** A `target` dir is offered
    regardless of T3 thread state, but only if it has `CACHEDIR.TAG` or a sibling
-   `Cargo.toml`. Settlement gates whole-worktree removal, never target cleanup.
+   `Cargo.toml` (both, and owned by the user, outside the dev roots and T3
+   worktrees). Settlement gates whole-worktree removal, never target cleanup.
 6. **Never offer or delete sensitive ignored files** regardless of size:
    `.env`, `.env.*`, `*.key`, `*.pem`, `id_rsa*`, `*.keystore`, `*secret*`,
    `.netrc`, `credentials*`. Git-ignored ≠ disposable.
@@ -484,17 +670,26 @@ If `safe_rm` refused any path, list it and why.
    approved validated target regardless of thread state. Deleting a
    build-artifact descendant never authorizes deletion of the worktree root,
    source files, branch, thread, or provider history.
-10. **Nix store cleanup uses Nix.** Never `find`, `du`, or `rm` `/nix`; never
-    delete live store paths; never use `sudo`. Only run `nix-store --gc` after
-    the user selects the dead-store category.
+10. **Nix store cleanup uses Nix.** Never `find` or `rm` inside `/nix`, and
+    measure it only as one total; never delete live store paths; never use
+    `sudo`. Only run `nix-store --gc` after the user selects the dead-store
+    category.
+11. **Suggestions are not deletions.** Never run a Step 6d command yourself,
+    never edit system configuration from this skill, and never delete a
+    swapfile, log, container image, or Nix generation.
 
 ## Failure modes
 
 - **A scan command errors on a permission boundary:** stderr is sent to
-  `/dev/null`; the path is simply skipped. If you ever see a macOS access
-  prompt, a scan root escaped the allowlist — stop and fix the root list.
-- **`du` is slow on huge trees:** acceptable; it runs once per candidate. Do not
-  switch to a whole-`$HOME` scan to "speed it up."
+  `/dev/null`; the path is reported as unreadable. If you ever see a macOS
+  access prompt, a scan entered a TCC-protected path — stop and fix the skip
+  list.
+- **The disk is completely full and the agent shell cannot start** (for example
+  `ENOSPC` creating its temp dir): nothing can run. Tell the user to free a
+  little space themselves (`df -h`, then a regenerable cache or old `/tmp`
+  entry), then run the skill again.
+- **`du` is slow on huge trees:** acceptable. Run the map in the background if
+  needed, but do not skip it.
 - **A candidate disappears between scan and delete** (concurrent build):
   `safe_rm` prints `skip (already gone)` and continues.
 - **Any thread linked to a whole-worktree candidate becomes unsettled between
