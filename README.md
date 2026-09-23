@@ -10,8 +10,13 @@ Shared T0 operational skills (`investigate`, `pnl-review`, `release-service`,
 `breakglass`, ...) live in
 [`T0Trade/agent-skills`](https://github.com/T0Trade/agent-skills), not here.
 The installer clones it to `~/Github/agent-skills` when missing, fast-forwards
-a clean `main` checkout, and links its skills next to these. A name in both
-trees is an error.
+a clean `main` checkout, and links its skills next to these.
+
+Skills that must stay private live in the private
+[`JuaniRios/dotagents-private`](https://github.com/JuaniRios/dotagents-private)
+repository (`~/Github/dotagents-private/skills/<name>/SKILL.md`). The installer
+clones, fast-forwards, and links it the same way. A name in more than one tree
+is an error.
 
 Install (or refresh) the per-harness links (`rebuild` runs this too):
 

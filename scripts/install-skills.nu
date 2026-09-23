@@ -1,15 +1,16 @@
-# Mirror personal skills plus the shared T0Trade/agent-skills skills into every
-# harness's skill directory, register the shared goal-loop Stop hook on Grok,
-# Codex, and Agy, and link instructions/AGENTS.md as each harness's global
-# instruction file. Clones ~/Github/agent-skills when it is missing and
-# fast-forwards a clean main checkout; a network failure only prints a note.
+# Mirror personal skills, private JuaniRios/dotagents-private skills, and the
+# shared T0Trade/agent-skills skills into every harness's skill directory,
+# register the shared goal-loop Stop hook on Grok, Codex, and Agy, and link
+# instructions/AGENTS.md as each harness's global instruction file. Clones
+# ~/Github/agent-skills and ~/Github/dotagents-private when missing and
+# fast-forwards clean main checkouts; a network failure only prints a note.
 #
 # Usage:
 #   nu ~/Github/dotagents/scripts/install-skills.nu
 #   nu ~/Github/dotagents/scripts/install-skills.nu --dry-run
 #
 # Each harness gets a per-entry symlink to the owning skills/<name>. Stale
-# links that point at either source (or leftover pre-unify skill trees) are
+# links that point at any source (or leftover pre-unify skill trees) are
 # removed. Duplicate names are an error: ownership must stay unambiguous.
 # Codex's .system link to ~/.codex/system-skills is preserved.
 # Claude's Stop hook stays in ~/.claude/settings.json (already pointed
@@ -216,24 +217,33 @@ def install-hooks [dry: bool] {
 def main [--dry-run] {
   let personal_src = ($env.HOME | path join "Github" "dotagents" "skills")
   let shared_repo = ($env.HOME | path join "Github" "agent-skills")
+  let private_repo = ($env.HOME | path join "Github" "dotagents-private")
   sync-shared-repo $shared_repo "https://github.com/T0Trade/agent-skills.git" $dry_run
+  sync-shared-repo $private_repo "https://github.com/JuaniRios/dotagents-private.git" $dry_run
   let shared_src = ($shared_repo | path join "skills")
+  let private_src = ($private_repo | path join "skills")
   if not ($personal_src | path exists) {
     error make {msg: $"missing ($personal_src)"}
   }
-  let personal_names = (skill-names $personal_src)
-  let shared_names = if ($shared_src | path exists) {
-    skill-names $shared_src
-  } else {
-    print $"note: missing optional shared skill source ($shared_src)"
-    []
+  let optional_names = {|src|
+    if ($src | path exists) {
+      skill-names $src
+    } else {
+      print $"note: missing optional skill source ($src)"
+      []
+    }
   }
-  let conflicts = ($personal_names | where {|name| $name in $shared_names})
+  let trees = [
+    {label: "dotagents", src: $personal_src, names: (skill-names $personal_src)}
+    {label: "agent-skills", src: $shared_src, names: (do $optional_names $shared_src)}
+    {label: "dotagents-private", src: $private_src, names: (do $optional_names $private_src)}
+  ]
+  let conflicts = ($trees | get names | flatten | uniq --repeated)
   if not ($conflicts | is-empty) {
-    error make {msg: $"duplicate skill names in dotagents and agent-skills: ($conflicts | str join ', ')"}
+    error make {msg: $"duplicate skill names across ($trees | get label | str join ', '): ($conflicts | str join ', ')"}
   }
-  let names = ($personal_names | append $shared_names | sort)
-  let sources = [$personal_src $shared_src]
+  let names = ($trees | get names | flatten | sort)
+  let sources = ($trees | get src)
   let dests = [
     ($env.HOME | path join ".claude" "skills")
     ($env.HOME | path join ".codex" "skills")
@@ -245,15 +255,10 @@ def main [--dry-run] {
 
   for dest in $dests {
     ensure-real-dir $dest
-    for name in $personal_names {
-      let src_skill = ($personal_src | path join $name)
-      let dest_skill = ($dest | path join $name)
-      link-one $src_skill $dest_skill $dry_run
-    }
-    for name in $shared_names {
-      let src_skill = ($shared_src | path join $name)
-      let dest_skill = ($dest | path join $name)
-      link-one $src_skill $dest_skill $dry_run
+    for tree in $trees {
+      for name in $tree.names {
+        link-one ($tree.src | path join $name) ($dest | path join $name) $dry_run
+      }
     }
     prune-stale $dest $names $sources $dry_run
   }
@@ -306,5 +311,6 @@ def main [--dry-run] {
 
   install-hooks $dry_run
 
-  print $"($names | length) skills: ($personal_names | length) personal + ($shared_names | length) agent-skills -> ($dests | length) harness dirs"
+  let counts = ($trees | each {|t| $"($t.names | length) ($t.label)"} | str join " + ")
+  print $"($names | length) skills: ($counts) -> ($dests | length) harness dirs"
 }
