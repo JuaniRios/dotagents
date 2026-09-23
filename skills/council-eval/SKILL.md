@@ -1,7 +1,7 @@
 ---
 name: council-eval
 description: >
-  One unbiased review from each available model (opus 5, sol 5.6,
+  One unbiased review from each available model (opus 5.5, sol 5.6,
   Cursor Grok 4.6, composer 2.5, flash 3.7) of a plan, document, diff, or
   question. Use when
   the user says council-eval, council, multi-model review, or wants
@@ -15,9 +15,9 @@ allowed-tools: Bash(*), Read, Write
 One generalist lane per **model**. No specialists. No fix loop. The
 host harness assembles; it does not add a sixth opinion.
 
-**Lanes:** `review-opus` (opus 5), `review-sol` (sol 5.6),
+**Lanes:** `review-opus` (opus 5.5), `review-sol` (sol 5.6),
 `review-grok` (Cursor Grok 4.6), `review-composer` (composer 2.5),
-`review-flash` (flash 3.7). fable 5.1 is not a council lane.
+`review-flash` (flash 3.7).
 
 Lane catalogue, CLI recipes, Max preflight, and native-vs-foreign rules:
 `panel-runtime.md`. Do not restate or fork that catalogue here.
@@ -114,7 +114,7 @@ deterministically (no synthesis agent):
 
 ```
 # Council — <target one-liner>
-Lanes: opus 5, sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7  (dropped: …)
+Lanes: opus 5.5, sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7  (dropped: …)
 
 ## Findings
 ### [SEVERITY] <title>
@@ -134,8 +134,8 @@ Do not auto-fix. Do not start review-loop.
 
 ## Hard rules
 
-1. Five generalists only (opus 5, sol 5.6, Cursor Grok 4.6, composer 2.5,
-   flash 3.7). No fable 5.1. No inspectors. No re-review loop.
+1. Five generalists only (opus 5.5, sol 5.6, Cursor Grok 4.6, composer 2.5,
+   flash 3.7). No inspectors. No re-review loop.
 2. Use panel-runtime's native/foreign routing. Cursor Grok and composer are
    always distinct Cursor-Agent processes.
 3. `claude -p` is Max-plan usage. Unset `ANTHROPIC_API_KEY`. If Max is

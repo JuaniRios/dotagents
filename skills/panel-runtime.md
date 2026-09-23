@@ -18,8 +18,7 @@ model.
 | Cursor Grok 4.6 | high | — | — | `cursor-agent -p --model cursor-grok-4.6-high` |
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
 | sol 5.6 | high | codex | isolated Codex child, `-m gpt-5.6-sol` high | `codex exec --sandbox read-only -m gpt-5.6-sol` |
-| opus 5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: opus` | `env -u ANTHROPIC_API_KEY claude -p --model opus` |
-| fable 5.1 | xhigh | claude | isolated Claude child, `model: claude-fable-5-1` | `env -u ANTHROPIC_API_KEY claude -p --model claude-fable-5-1` |
+| opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
 | flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
 
 A model is **native** only on its home harness, and only as an
@@ -28,7 +27,7 @@ other harness, reach it through that model's foreign CLI. Never
 `claude -p` when the host is Claude. Same for `codex exec` / `agy -p`
 on their home harnesses.
 
-Do not pick opus 5 or fable 5.1 through the Agy CLI (Agy lists Claude
+Do not pick opus 5.5 through the Agy CLI (Agy lists Claude
 model ids; those are not this panel's Claude path).
 
 Cursor is not a supported host harness in this contract. Cursor Grok 4.6 and
@@ -56,8 +55,8 @@ Write stdout to `$out_dir/raw-<lane>.json` (or `.txt`).
 SCHEMA="${schemaPath:-$HOME/Github/dotagents/skills/schemas/review-finding.json}"
 SCHEMA_INLINE=$(cat "$SCHEMA")
 
-# opus 5 / fable 5.1 — Max plan. Always strip a Console key.
-env -u ANTHROPIC_API_KEY claude -p --model <opus|claude-fable-5-1> \
+# opus 5.5 — Max plan. Always strip a Console key.
+env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5 \
   --output-format json --json-schema "$SCHEMA_INLINE" \
   "$(cat "$promptPath")"
 
@@ -121,7 +120,7 @@ env -u ANTHROPIC_API_KEY claude -p --output-format text "/usage"
 ```
 
 Parse `Current session: N%` and `Current week (all models): N%`. If
-session ≥ 80% or week ≥ 80%, drop opus 5 and fable 5.1 lanes and say so.
+session ≥ 80% or week ≥ 80%, drop opus 5.5 lanes and say so.
 If `/usage` fails, keep those lanes until a 429, then disable remaining
 Claude-model lanes for the rest of the run.
 
@@ -129,7 +128,7 @@ Claude-model lanes for the rest of the run.
 
 A pass counts only if **at least two different models** returned, and
 **at least one is not the host harness's home model** (treat Cursor Grok 4.6
-as host-equivalent on Grok; sol 5.6 on Codex; opus 5 / fable 5.1 on Claude;
+as host-equivalent on Grok; sol 5.6 on Codex; opus 5.5 on Claude;
 flash 3.7 on Agy).
 Otherwise the pass is `incomplete`. Do not converge.
 
@@ -142,10 +141,11 @@ Otherwise the pass is `incomplete`. Do not converge.
 | `review-sol` | sol 5.6 high |
 | `review-grok` | Cursor Grok 4.6 high |
 | `review-flash` | flash 3.7 high |
-| `review-opus` | opus 5 |
+| `review-opus` | opus 5.5 |
 | `review-composer` | composer 2.5 standard |
 
-No `review-fable`.
+The Claude general and deep specialist use the same pinned model with
+different prompts.
 
 ### Specialist lanes
 
@@ -154,7 +154,7 @@ Composite lanes combine related inspectors into one process per model.
 
 | Lane | Model | Covers | Gate |
 |---|---|---|---|
-| `fable-deep` | fable 5.1 xhigh | goal-eval **and** simplicity, one prompt | Skip on `<50` non-sensitive. Re-run if the PR description **or** behavior hunks changed. |
+| `opus-deep` | opus 5.5 xhigh | goal-eval **and** simplicity, one prompt | Skip on `<50` non-sensitive. Re-run if the PR description **or** behavior hunks changed. |
 | `flash-hygiene` | flash 3.7 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
 | `flash-config` | flash 3.7 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | Cursor Grok 4.6 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
@@ -170,8 +170,8 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. No opus 5, no fable 5.1. |
-| `50–500` and not sensitive | Five generals + `fable-deep` + `flash-hygiene` + gated `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. No opus 5.5. |
+| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
@@ -182,8 +182,8 @@ never a foreign CLI) and `review-sol`, `review-grok`, `review-composer`,
 
 Conditionally:
 
-- `review-opus` only if the host harness is Claude (native opus 5).
-- `fable-deep` if the PR description or behavior hunks changed.
+- `review-opus` only if the host harness is Claude (native opus 5.5).
+- `opus-deep` if the PR description or behavior hunks changed.
 - `flash-config` if deployed config, config schema/validation, or release/deploy
   check paths changed.
 - composites if their gate's files changed (`cmp` the filtered
@@ -192,7 +192,7 @@ Conditionally:
 Formatter-only deltas skip the pass. Cap 4 passes. Never end on a fix.
 Convergence is a **lean** clean pass that also meets quorum.
 
-A high/critical finding originally raised by opus 5 or fable 5.1 is
+A high/critical finding originally raised by opus 5.5 is
 re-checked by that same **model** once, or the lean generals are given
 that finding's text and told to verify the fix against it.
 
@@ -201,7 +201,7 @@ that finding's text and told to verify the fix against it.
 Generals: `review-sol`, `review-grok`, `review-composer`, `review-flash`, `review-opus`
 (same skip rule on short docs).
 
-`fable-deep`: goal-evaluation **and** grounding (fable 5.1; pass 1;
+`opus-deep`: goal-evaluation **and** grounding (opus 5.5; pass 1;
 re-run if the stated goal or cited sources changed).
 
 `flash-hygiene`: feasibility, clarity, style (flash 3.7).
@@ -219,12 +219,12 @@ specialist lanes only when their focus surface changed. Never end on a fix.
 
 ## Plan critics (implement-issue, plan-issue)
 
-Planner: fable 5.1 if the Claude harness is reachable (native child or
-`claude -p --model claude-fable-5-1`); otherwise the host's current model. Say
+Planner: opus 5.5 if the Claude harness is reachable (native child or
+`claude -p --model claude-opus-5-5`); otherwise the host's current model. Say
 which.
 
-Critics, in parallel, one generalist each: opus 5, sol 5.6, Cursor Grok 4.6,
-and composer 2.5. No flash 3.7. If Claude is unreachable, drop the opus 5 critic and
+Critics, in parallel, one generalist each: opus 5.5, sol 5.6, Cursor Grok 4.6,
+and composer 2.5. No flash 3.7. If Claude is unreachable, drop the opus 5.5 critic and
 label the run `portable`. If Claude is the host, label it `claude-host`.
 
 Implementer and fixer stay on the host model (or a cheap same-harness
@@ -232,8 +232,8 @@ child).
 
 ## Council lanes (council-eval)
 
-One generalist each: opus 5, sol 5.6, Cursor Grok 4.6, composer 2.5,
-and flash 3.7. No fable 5.1, specialists, or re-review. Use the shared wrappers
+One generalist each: opus 5.5, sol 5.6, Cursor Grok 4.6, composer 2.5,
+and flash 3.7. No specialists or re-review. Use the shared wrappers
 and Max preflight above; `council-eval` owns only its artifact prompt and
 deterministic report.
 
@@ -259,5 +259,5 @@ composite or focused specialist lane.
    `ANTHROPIC_API_KEY` is set. Always `env -u ANTHROPIC_API_KEY`.
 5. Do not impersonate a dropped **model**.
 6. Never name a harness as if it were a model. Lanes are owned by
-   Cursor Grok 4.6, composer 2.5, sol 5.6, opus 5, fable 5.1, or flash 3.7 —
+   Cursor Grok 4.6, composer 2.5, sol 5.6, opus 5.5, or flash 3.7 —
    not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy".

@@ -3,8 +3,8 @@ name: review-pr
 description: >
   Cross-review a pull request by number or URL without checking it out.
   Plain-language TL;DR, then the same multi-model panel as review-loop
-  (opus 5, sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7, fable 5.1
-  deep). Stays in the session so you can
+  (opus 5.5, sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7,
+  with an opus 5.5 deep lane). Stays in the session so you can
   inspect the result; clean reviews are approved automatically, while reviews
   with findings are submitted as changes requested.
   Use when reviewing someone else's PR.

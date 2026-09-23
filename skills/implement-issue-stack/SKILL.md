@@ -82,7 +82,7 @@ Log skipped checkpoints to `.tmp/issue-stack/<ID>.md`.
    `T0Trade/t0.devops` repository uses the scoped remote-stack exception in the
    graphite skill.
 4. Planner/critics per panel-runtime. `claude -p` is allowed for
-   fable 5.1 or opus 5 when the host harness is not Claude (Max plan,
+   opus 5.5 when the host harness is not Claude (Max plan,
    `env -u ANTHROPIC_API_KEY`). Never impersonate a dropped model.
 5. Parent is expanded, never implemented, unless the user picked
    "parent too".

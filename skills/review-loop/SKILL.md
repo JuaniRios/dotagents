@@ -1,9 +1,9 @@
 ---
 name: review-loop
 description: >
-  Cross-review the current branch with a multi-model panel (opus 5,
-  sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7, fable 5.1
-  deep), auto-fix findings, and re-review until clean. Use only when the user
+  Cross-review the current branch with a multi-model panel (opus 5.5,
+  sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7), including an opus 5.5
+  deep lane, auto-fix findings, and re-review until clean. Use only when the user
   explicitly asks for review-loop, a multi-model review, or an applicable
   complex implementation workflow explicitly requires it. Do not auto-trigger for ordinary review,
   self-review, submission, or trivial/localized changes. Pass `stack` to walk
