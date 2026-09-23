@@ -17,7 +17,7 @@ model.
 |---|---|---|---|---|
 | Cursor Grok 4.6 | high | — | — | `cursor-agent -p --model cursor-grok-4.6-high` |
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
-| sol 5.6 | high | codex | isolated Codex child, `-m gpt-5.6-sol` high | `codex exec --sandbox read-only -m gpt-5.6-sol` |
+| sol 5.6 | high | codex | isolated Codex child, `-m gpt-5.6-sol` high | `CODEX_HOME=~/.codex codex exec --sandbox read-only -m gpt-5.6-sol` (ccx; ccxx fallback below) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
 | flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
 
@@ -61,7 +61,12 @@ env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5 \
   "$(cat "$promptPath")"
 
 # sol 5.6 — file schema (every property is already in `required`)
-codex exec --sandbox read-only -m gpt-5.6-sol \
+# Account: ccx (CODEX_HOME=~/.codex) by default. If its output says
+# "hit your usage limit", rerun the same command once with ccxx
+# (CODEX_HOME=~/.codex-2). This account switch does not use the lane's
+# one retry. Drop the sol lanes only when both accounts are out of credits.
+# ccx/ccxx are nushell functions, so set CODEX_HOME explicitly from bash.
+CODEX_HOME="$HOME/.codex" codex exec --sandbox read-only -m gpt-5.6-sol \
   --output-schema "$SCHEMA" \
   -c service_tier="fast" \
   -c model_reasoning_effort="high" \
