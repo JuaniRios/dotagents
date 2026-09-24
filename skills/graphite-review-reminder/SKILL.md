@@ -91,7 +91,7 @@ Prefer URLs shown by Graphite tooling. If needed, construct links as:
 https://app.graphite.com/github/pr/<owner>/<repo>/<number>
 ```
 
-Use Graphite links in the message, not GitHub PR links, unless Graphite data is unavailable.
+Always use Graphite links (`https://app.graphite.com/github/pr/<owner>/<repo>/<number>`) in the message, never GitHub PR links. Build them from the PR number when Graphite data is unavailable.
 
 ## Step 6 - Draft Telegram HTML
 

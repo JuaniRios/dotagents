@@ -33,11 +33,7 @@ description steps, so helper skills receive the correct level from the start.
 
 `graphite` skill. Normally: `gt sync`, `gt top`, benign change, `gt create
 <id>-<kebab-title>`, `gt submit --no-interactive --no-edit-description`.
-For the exact `T0Trade/t0.devops` repository, use the graphite skill's
-GitHub-native remote-stack exception: local work still uses `gt`, while the
-branch push and PR creation use `git push` and `gh pr create` with the intended
-parent branch as the PR base. Then use `gh stack link` and verify native stack
-membership as required by the graphite skill.
+This applies to every work repository, `T0Trade/t0.devops` included.
 
 ## 3. Skeleton description
 
@@ -100,8 +96,7 @@ review rounds use targeted checks; do not repeatedly wait for full remote CI.
 
 ## 9. Feedback and CodeRabbit convergence
 
-1. Submit through Graphite, except for the exact `T0Trade/t0.devops` repository,
-   which uses the graphite skill's GitHub-native remote-stack workflow. Every
+1. Submit through Graphite. Every
    level must enter the CodeRabbit workflow, including config-only and
    documentation changes.
 2. Run `finish-pr-review` on the exact in-scope PR URLs. Pass the level and
@@ -134,8 +129,7 @@ what changed, and plan path. Distinguish implementation from deployment.
 
 ## Hard rules
 
-1. Version control via `gt`, with only the scoped `T0Trade/t0.devops` remote
-   push and PR exception defined by the graphite skill.
+1. Version control via `gt`, in every work repository.
 2. Deep designs need approval; clear light and standard work uses the user's
    implementation authority. Reuse approved plans without redundant prompts.
 3. Linear ↔ PR linked both ways.
