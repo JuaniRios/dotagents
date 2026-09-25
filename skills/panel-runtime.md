@@ -201,6 +201,40 @@ A high/critical finding originally raised by opus 5.5 is
 re-checked by that same **model** once, or the lean generals are given
 that finding's text and told to verify the fix against it.
 
+## Blocker verification (review-pr, publish-review)
+
+A published review blocks a merge only on a **verified blocker**: a
+`critical` or `high` finding that at least two different models stand
+behind. One model's word never blocks.
+
+Severity is strict; when in doubt, pick the lower one:
+
+| Schema | Posted as | Meaning |
+|---|---|---|
+| `critical` | `critical:` | A likely way to lose funds, leak a secret, or break production on a normal path. |
+| `high` | `should fix:` | A plausible path to losing money or to wrong production behavior. A scenario that needs several unlikely events at once is not plausible. |
+| `medium`, `low` | `minor:` | A real defect that needs an unlikely chain of events, or has a cheap workaround. |
+| `nit` | `nit:` | Style, naming, or clarity only. |
+
+After dedup, for each `critical` or `high` finding:
+
+- **Two or more models in `found_by`:** it keeps its severity.
+- **One model in `found_by`:** run two **blocker verifiers**, on two
+  different models, both different from the finder. Give each the
+  finding, the code, and the scenario, and ask for its own verdict and
+  severity without telling it the finder's. Record both in the finding
+  as `verified_by: [{model, severity, why}]` in `findings.json`. The
+  finding blocks only if both rate it `critical` or `high`. Otherwise it
+  takes the lower severity of the two, or is dismissed as invalid if
+  they show it is not a defect.
+- If fewer than two eligible models are available, the finding cannot
+  be verified and the review is `incomplete`. Never publish it as a
+  blocker, and never approve past it.
+
+Use each model's native child or foreign CLI from the table above,
+read-only, with the same one retry. Verifiers answer with the same
+finding schema.
+
 ## Critique lanes (critique-loop)
 
 Generals: `review-sol`, `review-grok`, `review-composer`, `review-flash`, `review-opus`
@@ -258,7 +292,9 @@ composite or focused specialist lane.
 1. Reports live on disk. The main session prints a two-line-per-finding
    summary and a path. Never pretty-print finding bodies into the host.
 2. Verifiers, fixer, prompt-builder, report assembler: host model (or a
-   same-harness child). Never a foreign CLI.
+   same-harness child). Never a foreign CLI. The one exception is the
+   blocker verifiers above, which must run on models other than the
+   finder's.
 3. The host does not add its own review findings except lane errors.
 4. `claude -p` is Max usage when logged in via claude.ai and no
    `ANTHROPIC_API_KEY` is set. Always `env -u ANTHROPIC_API_KEY`.

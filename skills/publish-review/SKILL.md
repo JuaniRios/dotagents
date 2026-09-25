@@ -1,13 +1,14 @@
 ---
 name: publish-review
 allowed-tools: Bash(gh:*), Bash(git:*), Bash(find:*), Bash(date:*), Bash(test:*), Bash(ls:*), Bash(jq:*), Bash(mktemp:*), Bash(cat:*), Bash(rm:*), Bash(wc:*), Read, Grep, Glob
-description: Approve clean PR reviews automatically; submit reviews with findings as changes requested. Run after /review-pr.
+description: Publish a PR review automatically. Changes requested only for verified blockers; otherwise approve, with minor comments inline. Run after /review-pr.
 argument-hint: [review-dir-path]
 ---
 
-Publish the review outcome for each PR: **APPROVE** when a completed review
-has no actionable findings, or **REQUEST_CHANGES** with inline comments when
-findings remain. Both outcomes are submitted automatically under the user's
+Publish the review outcome for each PR: **REQUEST_CHANGES** with inline
+comments when a completed review has a verified blocker (see blocker
+verification in `~/Github/dotagents/skills/panel-runtime.md`), otherwise
+**APPROVE**, with any minor findings as inline comments on it. Both outcomes are submitted automatically under the user's
 standing preference, including when called directly from `/review-pr`.
 
 ## 1. Locate the review
@@ -51,7 +52,10 @@ onward.
 For each finding, extract:
 - `path` -- relative file path
 - `line` -- the line number (use start line if a range)
-- `severity` -- HIGH, MEDIUM, LOW, NIT
+- `severity` -- CRITICAL, HIGH, MEDIUM, LOW, NIT
+- whether it is a **verified blocker**: `critical` or `high`, and in
+  `findings.json` either two or more models in `found_by` or two
+  `verified_by` models that both rate it `critical` or `high`
 - `title` -- the finding title from the heading
 - `issue` -- the `**Issue:**` content
 - `fix` -- the `**Recommended fix:**` content
@@ -60,28 +64,32 @@ For each finding, extract:
 
 Make this decision separately for every PR in a batch:
 
-- **No actionable findings in a completed review:** submit `event: "APPROVE"`
-  immediately. Never use COMMENT, an issue comment saying "no actionable
-  findings", or an empty pending review as a substitute. No further user
-  confirmation is needed. This also applies after verifying that all findings
-  have been fixed.
-- **Actionable findings remain:** compose the inline comments below and submit
-  `event: "REQUEST_CHANGES"` immediately. Never create a COMMENT or PENDING
-  review for actionable findings.
-- **Incomplete review or parsing failure:** do not infer a clean review from
+- **No verified blocker in a completed review:** submit `event: "APPROVE"`
+  immediately, with any remaining `minor` and `nit` findings as inline
+  comments (section 5). Never use COMMENT, an issue comment saying "no
+  actionable findings", or an empty pending review as a substitute. No further
+  user confirmation is needed. This also applies after verifying that all
+  blockers have been fixed.
+- **A verified blocker remains:** compose the inline comments below and submit
+  `event: "REQUEST_CHANGES"` immediately, with every finding inline. Never
+  create a COMMENT or PENDING review for it.
+- **Incomplete review, a `critical` or `high` finding that was not verified,
+  or a parsing failure:** publish nothing. Do not infer a clean review from
   an empty comments array. Report the incomplete result. Findings without an
   inline anchor still count as findings.
 
 For a clean review, verify the current head still matches the reviewed SHA.
 If it changed, review the new changes before approving. Check for an existing
 approval by this user on that SHA and reuse it instead of posting a duplicate.
-Create the approval with this payload:
+Create the approval with this payload (`comments` holds the minor findings
+from section 5, or is empty):
 
 ```json
 {
   "commit_id": "<reviewedHeadRefOid>",
   "event": "APPROVE",
-  "body": ""
+  "body": "",
+  "comments": []
 }
 ```
 
@@ -100,7 +108,9 @@ comment that:
 
 - Leads with what's wrong in 1-2 sentences
 - Suggests the fix in 1-2 sentences
-- Prefixes with a severity tag: `[high]`, `[medium]`, `[low]`, `[nit]`
+- Starts with exactly one lowercase severity prefix, mapped as in
+  panel-runtime: `critical:`, `should fix:` (high), `minor:` (medium, low),
+  `nit:`
 - Reads like a human reviewer wrote it, not a report generator
 
 Example transformation:
@@ -113,7 +123,7 @@ Example transformation:
 > `**Recommended fix:** Add a unique identifier to the Trade DTO...`
 
 **Becomes inline comment:**
-> `[high] This key can collide when two fills happen at the same
+> `should fix: This key can collide when two fills happen at the same
 > timestamp for the same symbol/venue -- Svelte will silently skip
 > rendering a row. Add a unique ID to the Trade DTO (e.g. aggregate ID
 > or tx_hash:log_index) and use that as the key.`
@@ -126,12 +136,12 @@ Build a JSON payload file with all comments:
 {
   "commit_id": "<headRefOid>",
   "event": "REQUEST_CHANGES",
-  "body": "Review findings: <N> blocking comment(s).",
+  "body": "Review findings: <N> blocking, <M> minor.",
   "comments": [
     {
       "path": "relative/file/path.rs",
       "line": 42,
-      "body": "[high] Concise comment here."
+      "body": "should fix: Concise comment here."
     }
   ]
 }
@@ -170,9 +180,10 @@ Review submitted on PR #<N> (CHANGES_REQUESTED)
 
 ## Hard rules
 
-1. A completed review with no actionable findings MUST be submitted as
-   APPROVE. Reviews with findings MUST be submitted as REQUEST_CHANGES. Never
-   use COMMENT or PENDING for either outcome.
+1. A completed review with no verified blocker MUST be submitted as APPROVE,
+   with its minor findings inline. A review with a verified blocker MUST be
+   submitted as REQUEST_CHANGES. Never use COMMENT or PENDING for either
+   outcome.
 2. Never copy markdown findings verbatim as comments. Rewrite them to be
    concise and human-readable.
 3. Skip dismissed findings (invalid and out-of-scope sections).
