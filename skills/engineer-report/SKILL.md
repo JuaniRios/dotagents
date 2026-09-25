@@ -65,7 +65,7 @@ Build an identity record with:
 
 Look for an existing mapping in:
 
-`~/Github/dotagents/data/engineer-report/team.json`
+`~/Github/dotagents-private/data/engineer-report/team.json`
 
 If it does not exist:
 
@@ -108,9 +108,18 @@ default. Do not inspect private conversations with anyone else.
 
 ## Step 3: Load continuity data
 
+Reports are saved in the private repository so both of Juan's machines
+(nix-darwin and NixOS) see them. Pull first:
+
+```bash
+~/Github/dotagents-private/scripts/data-sync.sh pull
+```
+
+A failed pull is a coverage gap; continue with the local copy.
+
 Reports are saved under:
 
-`~/Github/dotagents/data/engineer-report/reports/`
+`~/Github/dotagents-private/data/engineer-report/reports/`
 
 Read the most recent report for the same engineer.
 
@@ -633,7 +642,7 @@ Show the full report in the conversation.
 
 Save:
 
-`~/Github/dotagents/data/engineer-report/reports/<engineer>-<start>-<end>.md`
+`~/Github/dotagents-private/data/engineer-report/reports/<engineer>-<start>-<end>.md`
 
 Also save a JSON sidecar:
 
@@ -650,7 +659,17 @@ Also save a JSON sidecar:
 }
 ```
 
-The sidecar provides continuity for the next report.
+The sidecar provides continuity for the next report. The `linear-groom`
+skill also reads it.
+
+Commit and push the report, its sidecar, and any `team.json` change:
+
+```bash
+~/Github/dotagents-private/scripts/data-sync.sh save \
+  "docs: engineer report <engineer> <start>..<end>" data/engineer-report
+```
+
+Never save reports in the public `~/Github/dotagents` repository.
 
 Do not send the report to Telegram, email, or another service unless the user
 explicitly asks.
@@ -672,4 +691,5 @@ explicitly asks.
 13. Verify material claims with two independent sources.
 14. Always include links for issues and PRs.
 15. Always show blockers, paused work, stale work, and manager actions.
-16. Save the report and continuity sidecar after a successful run.
+16. Save the report and continuity sidecar after a successful run, and push
+    them with `data-sync.sh save`.

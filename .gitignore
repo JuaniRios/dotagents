@@ -8,3 +8,10 @@ data/progress-tracking/reports/
 data/teach-log/
 data/handoffs/
 data/goal-loop/
+# Reports belong in ~/Github/dotagents-private/data/ (see data/README.md).
+data/engineer-report/
+data/progress-tracking/
+data/progress-tracking.json
+data/state-of-engineering/
+data/lead-review/
+data/linear-groom/

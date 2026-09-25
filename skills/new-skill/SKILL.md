@@ -26,8 +26,12 @@ for this workflow. Use direct Git on `main` exactly as described below.
 
 `scripts/install-skills.nu` puts a per-entry symlink into each harness
 dir. Do not write files under `~/.claude/`, `~/.codex/`, `~/.grok/`,
-or `~/.gemini/`. Skill-owned runtime data (logs, reports, state) goes
-in `~/Github/dotagents/data/<name>/` so every harness can read it.
+or `~/.gemini/`. Skill-owned runtime data (logs, state) goes in
+`~/Github/dotagents/data/<name>/` so every harness can read it. Reports
+go in `~/Github/dotagents-private/data/<name>/` instead: pull with
+`~/Github/dotagents-private/scripts/data-sync.sh pull` before reading
+them, and push with `data-sync.sh save "<message>" data/<name>` after
+writing. That keeps them private and in sync across Juan's machines.
 
 Frontmatter: `name`, `description` (a **trigger**, not a summary).
 Optional frontmatter (`allowed-tools`, `argument-hint`,

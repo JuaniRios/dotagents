@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under data/work-update/days/ for richer multi-day reports.
+description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under the private repo's data/work-update/days/ for richer multi-day reports.
 argument-hint: "[save-today | since <date or timeframe>]"
 ---
 
@@ -31,7 +31,7 @@ that day before memory fades. The user is a team lead: much of their work is coo
 reviewing, planning, and investigating — not only authored PRs. Daily files make the
 multi-day report faithful to that work.
 
-Daily artifacts live under `~/Github/dotagents/data/work-update/days/`:
+Daily artifacts live under `~/Github/dotagents-private/data/work-update/days/`:
 
 - `YYYY-MM-DD.evidence.json` — structured facts collected for that local day
 - `YYYY-MM-DD.json` — sidecar (period, paths, coverage gaps, optional narrative snapshot)
@@ -49,7 +49,7 @@ preserve user corrections unless new evidence contradicts them.
 
 ```bash
 python3 ~/Github/dotagents/skills/work-update/save_today.py collect
-# optional: --date 2026-09-18 --outdir ~/Github/dotagents/data/work-update/days
+# optional: --date 2026-09-18 --outdir ~/Github/dotagents-private/data/work-update/days
 ```
 
 The helper writes `YYYY-MM-DD.evidence.json` with sessions, GitHub authored/reviewed
@@ -108,7 +108,15 @@ Explicit open loops.
    `open_threads` list for fast lookup. Keep `finalized: false` unless the user explicitly
    approves the day note.
 
-6. **Tell the user** what was captured, coverage gaps, and where files were written. Do not
+6. **Push the day to the private repo** so the NixOS machine and the
+   `linear-groom` skill see it:
+
+```bash
+~/Github/dotagents-private/scripts/data-sync.sh save \
+  "docs: work day <YYYY-MM-DD>" data/work-update/days
+```
+
+7. **Tell the user** what was captured, coverage gaps, and where files were written. Do not
    treat a daily file as a team-facing report.
 
 ### How reports use daily files
@@ -133,8 +141,16 @@ start/end timestamps to all collectors; none may recompute their own window.
 - Filter activity with `START < timestamp <= END`. Read older context when
   necessary, but do not count it as new work.
 
-Read finalized updates from `~/Github/dotagents/data/work-update/reports/`.
-Also inspect legacy `~/Github/dotagents/data/daily-report/reports/` when no
+All report data lives in the private repository
+`~/Github/dotagents-private/data/`, which syncs Juan's machines through git.
+Pull before reading (a failed pull is a coverage gap):
+
+```bash
+~/Github/dotagents-private/scripts/data-sync.sh pull
+```
+
+Read finalized updates from `~/Github/dotagents-private/data/work-update/reports/`.
+Also inspect legacy `~/Github/dotagents-private/data/daily-report/reports/` when no
 new-format update exists. Preserve those files; do not move or delete them.
 A legacy sidecar has a date but no exact cutoff: start at that date's local
 midnight, disclose the overlap, and deduplicate work against its narrative.
@@ -160,7 +176,7 @@ Load the previous narrative and sidecar. Track what happened to its next
 focus, blockers, open decisions, and pending PRs: completed, continued,
 changed direction, or still waiting. Carry relevant unfinished items forward.
 
-Load daily journals from `~/Github/dotagents/data/work-update/days/` for every
+Load daily journals from `~/Github/dotagents-private/data/work-update/days/` for every
 date in the reporting window (see [How reports use daily files](#how-reports-use-daily-files)).
 Start the evidence summary from those day narratives before re-collecting raw sources.
 
@@ -491,10 +507,10 @@ know? Incorporate corrections and re-show the exact revised text. The initial
 evidence review does not approve an unseen final draft. Never claim that AI
 verification replaces the user's responsibility for the message.
 
-Save unapproved drafts under `~/Github/dotagents/data/work-update/drafts/`.
+Save unapproved drafts under `~/Github/dotagents-private/data/work-update/drafts/`.
 Record draft delivery in its sidecar with `sent: true` and `finalized: false`;
 private delivery for review does not finalize the report or advance continuity.
-After the user explicitly finalizes the report, save the exact approved text under `~/Github/dotagents/data/work-update/reports/` as
+After the user explicitly finalizes the report, save the exact approved text under `~/Github/dotagents-private/data/work-update/reports/` as
 `<REPORT_DATE>.md` in Zulip-compatible Markdown, plus a JSON sidecar:
 
 ```json
@@ -512,6 +528,14 @@ After the user explicitly finalizes the report, save the exact approved text und
   "open_prs": [{"repo": "org/repo", "number": 123, "status": "In progress"}],
   "coverage_gaps": []
 }
+```
+
+Then commit and push the finalized report and sidecar. Drafts stay local
+(`drafts/` is gitignored):
+
+```bash
+~/Github/dotagents-private/scripts/data-sync.sh save \
+  "docs: work update <REPORT_DATE>" data/work-update/reports
 ```
 
 Only finalized sidecars set the next window. Preserve the original start for

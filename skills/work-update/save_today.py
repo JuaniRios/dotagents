@@ -27,7 +27,7 @@ from pathlib import Path
 
 HOME = Path.home()
 SKILL_DIR = Path(__file__).resolve().parent
-DEFAULT_OUT = HOME / "Github" / "dotagents" / "data" / "work-update" / "days"
+DEFAULT_OUT = HOME / "Github" / "dotagents-private" / "data" / "work-update" / "days"
 TELEGRAM_CHATS = HOME / ".config" / "daily-report-telegram-chats.txt"
 USER_EMAIL = "juan@rainlang.xyz"
 USER_ZULIP = "Juan Rios"
