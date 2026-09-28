@@ -397,6 +397,31 @@ def rcf_finish(spec, past, sizes, t0, cal, rng):
     return out
 
 
+def dependency_order(spec):
+    """Stable order in which every milestone comes after its `after` milestone.
+
+    The flow simulation works milestones in list order, so this makes it
+    respect `after` the same way the reference-class half does.
+    """
+    by_name = {s["name"]: s for s in spec}
+    out, seen = [], set()
+
+    def visit(s, path=()):
+        if s["name"] in seen:
+            return
+        if s["name"] in path:
+            sys.exit(f"Plan has a dependency cycle: {' -> '.join(path + (s['name'],))}")
+        dep = by_name.get(s.get("after"))
+        if dep:
+            visit(dep, path + (s["name"],))
+        seen.add(s["name"])
+        out.append(s)
+
+    for s in spec:
+        visit(s)
+    return out
+
+
 def cmd_forecast(args):
     snap = load()
     issues = snap["issues"]
@@ -438,6 +463,7 @@ def cmd_forecast(args):
             }
         )
     spec.sort(key=lambda s: s["order"])
+    spec = dependency_order(spec)
     cal = prepare_cal(calibration())
     tp, source, growth, sizes = evidence(issues, project_id, t0)
     rng = random.Random(args.seed)
@@ -453,7 +479,8 @@ def cmd_forecast(args):
         "throughput": tp, "throughput_source": source,
         "growth_median": statistics.median(growth), "calibration": calibration(), "milestones": [],
     }
-    print(f"{out['project']}  throughput/wk={tp} ({source})  median scope growth={out['growth_median']:.0%}  median milestone size={statistics.median(sizes):g} issues  cal={out['calibration']}")
+    shown = tp if len(tp) <= 8 else f"{len(tp)} weeks, median {statistics.median(tp):g}"
+    print(f"{out['project']}  throughput/wk={shown} ({source})  median scope growth={out['growth_median']:.0%}  median milestone size={statistics.median(sizes):g} issues  cal={out['calibration']}")
     print(f"{'milestone':34} {'open':>4} {'target':>10} {'P50':>10} {'P80':>10} {'P90':>10}")
     for s in spec:
         q = spread_quantiles(res[s["id"]], cal)
