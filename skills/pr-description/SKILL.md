@@ -1,15 +1,20 @@
 ---
 name: pr-description
-allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(mkdir:*), Bash(cat:*), Bash(test:*), Bash(basename:*), Bash(date:*), Bash(wc:*), Bash(command:*), Read, Write
-description: "Draft and publish a pull-request title and description for the current branch. Use whenever a PR needs its description written or updated — after opening a PR, after `gt submit`, when a PR still has a placeholder title, or when the user says write/update the PR description, PR body, or PR summary. Reads the full parent-aware diff and repo template, writes plain ASD-STE100 English, runs a Codex reviewer over the draft, then pushes to GitHub."
+allowed-tools: Bash(gt:*), Bash(git:*), Bash(gh:*), Bash(codex:*), Bash(mkdir:*), Bash(cat:*), Bash(test:*), Bash(basename:*), Bash(date:*), Bash(wc:*), Bash(command:*), Bash(printf:*), Bash(sha256sum:*), Bash(shasum:*), Read, Write
+description: "Draft and publish a pull-request title and merge brief for the current branch. Use whenever a PR needs its description written or updated — after opening a PR, after `gt submit`, when a PR still has a placeholder title, or when the user says write/update the PR description, PR body, or PR summary. Reads the full parent-aware diff and the CI evidence, writes a short brief for the human who approves the merge (live effect, risk, decisions, proof, rollout) in plain ASD-STE100 English, runs a Codex reviewer over the draft, then pushes to GitHub."
 argument-hint: [--stack] (optional — draft descriptions for every branch in the stack)
 ---
 
-Draft a pull-request title and description for the current branch, run a
-Codex reviewer over the draft, then push it to GitHub automatically. The
-draft must be thorough in *coverage* (read the whole diff) but *concise* in
-output — short and scannable by a reviewer with zero context, not a wall of
-prose.
+Draft a pull-request title and a **merge brief** for the current branch, run
+a Codex reviewer over the draft, then push it to GitHub automatically.
+
+Agents write most of the code, and agents review it line by line. The human
+who approves the merge does not read the diff. The brief is for that human.
+It holds only what they must judge: what changes in the running system, how
+risky it is, which choices were made, what proves it works, what nobody
+checked, and how it rolls out. Read the whole diff so the brief is right,
+then leave the mechanics out. The diff, the code comments, and the Linear
+plan already hold them.
 
 Follow these steps precisely.
 
@@ -21,9 +26,9 @@ anything else.
 - `graphite` — version-control mechanics for the rest of this command.
 - `write-as-me` — the PR body is prose the user ships under his own name, so
   it MUST be in his voice, not yours. Load it now, before you read the diff, so
-  the first draft is already in-voice. "Match the repo's tone" in step 6 is about
-  *structure* (bullets vs prose); this is about *voice*. Do not skip it just
-  because the diff is small.
+  the first draft is already in-voice. The merge brief in step 5 fixes the
+  *structure*; this is about *voice*. Do not skip it just because the diff is
+  small.
 
 You will be using `gt` for all version-control
 reads in this command; raw `git` is only acceptable for read-only inspection
@@ -48,25 +53,38 @@ to run `gt track` first.
 Print the branch, parent, head SHA, and which repo you're in. Stop and ask
 the user if any of that looks wrong.
 
-## 3. Read the full parent-aware diff
+## 3. Read the full diff and the evidence
 
 ```bash
 git --no-pager diff "$parent"..HEAD
 git --no-pager diff --stat "$parent"..HEAD
 git --no-pager log --oneline "$parent"..HEAD
+gh pr checks 2>/dev/null
 ```
 
-**Read the entire diff.** This command exists because the user wants a
-thorough description — skimming the commit messages is not enough. If the
+**Read the entire diff.** Skimming the commit messages is not enough. If the
 diff is very large (>2000 lines), read it in chunks, do not truncate.
 
-For each changed file, understand:
-- What the change does (the *what*).
-- Why it's needed (the *why* — infer from the diff, commit messages, and
-  surrounding code).
-- How it's implemented (the *how* — noteworthy design decisions, tradeoffs,
-  new dependencies, breaking changes).
-- What's tested (are there new tests? updated tests? none?).
+Then answer the approver's questions, not "what, why, how":
+
+- **Live effect.** What changes in the running system after the merge (users,
+  money, services, alerts)? When does it land: on merge, on the next release,
+  or after a manual step? Or does nothing live change?
+- **Risk triggers.** Does it touch a money path (funds movement, signing,
+  pricing, quoting, hedging), keys, IAM, or secrets, production config or
+  infrastructure, stored data or schemas, or anything hard to undo?
+- **Decisions.** Which choices could a teammate reasonably have made
+  differently? What was the alternative?
+- **Proof.** What evidence shows it works? Read the CI results, not only the
+  test names. For Terraform, open the plan log of every affected stack and read
+  its summary (`Plan: X to add, Y to change, Z to destroy`, plus any `must be
+  replaced`). For a bug fix, find the test that reproduces the bug.
+- **Gaps.** What did nobody verify? What can only be seen after deploy?
+- **Rollout.** Which steps come after the merge, what should someone watch,
+  and how is it undone? Check that the obvious rollback really undoes the
+  change. A revert does not remove state that someone installed by hand, and
+  adding back an old key may not disable a new one.
+- **Order.** Must another PR, in any repo, merge before or after this one?
 
 ## 4. Check for an existing PR description
 
@@ -82,8 +100,8 @@ If a PR exists:
   must be carried over into the new draft. Do not overwrite user-authored
   content silently.
 - If the existing body was obviously auto-generated by a previous run of
-  this command (e.g., exactly follows the template), you may regenerate it
-  from scratch.
+  this command, or follows an old What / Why / How template, you may
+  regenerate it from scratch.
 
 If no PR exists yet, note it. The final step calls `gt submit`.
 
@@ -101,44 +119,44 @@ body is rewritten, so capture them before drafting:
   (`mktemp`) so it persists, then ask the user to drag-drop it onto the PR for a
   durable URL and offer to splice that URL into the body. Never invent a URL.
 
-Carry every preserved screenshot back into the section it came from (usually
-"Anything else").
+Screenshots are evidence, so they go in the Proof section.
 
-## 5. Load the PR template
+## 5. Use the merge brief
 
-```bash
-test -f "$repo_root/.github/PULL_REQUEST_TEMPLATE.md" \
-  && cat "$repo_root/.github/PULL_REQUEST_TEMPLATE.md" \
-  || test -f "$repo_root/.github/pull_request_template.md" \
-  && cat "$repo_root/.github/pull_request_template.md"
-```
+Use the merge brief below for every repository in `ST0x-Technology` and
+`T0Trade`. The org default template at
+`ST0x-Technology/.github/pull_request_template.md` holds the same format.
+Ignore a leftover What / Why / How template in these orgs.
 
-Also check `docs/` and `.github/PULL_REQUEST_TEMPLATE/` for team-specific
-templates. If none exists, use this fallback structure:
+In a repository owned by any other organization, check for its own template
+(`.github/`, the repo root, `docs/`, and `PULL_REQUEST_TEMPLATE/`). If there
+is one, follow its sections and apply the writing rules of step 6 inside
+them. If there is none, use the merge brief.
 
 ```markdown
-## What
+<Headline: 1 to 3 sentences.> [RAI-123](https://linear.app/<workspace>/issue/RAI-123)
 
-<!-- Bullet points only (no prose paragraphs). What does this PR do? -->
+**Live effect:** <...> · **Risk:** <level> (<triggers>) · **Ships:** <...> · **Blocks:** <...>
 
-## Why
+## Needs your call
+- @person <the question>
 
-<!-- Bullet points only. The motivation. Link issues. -->
+## Decisions
+- <X, not Y, because Z.> [file.ext](<diff link>)
 
-## How
+## Risks
+- <What can go wrong, how bad, what limits it.>
 
-<!-- Bullet points only. Implementation approach, design decisions, tradeoffs. -->
+## Proof
+- <The strongest evidence.>
+- **Not verified:** <what nobody checked.>
 
-## Testing
-
-<!-- What tests were added or updated? How was this verified? -->
-
-## Anything else
-
-<!-- Screenshots, deploy notes, breaking changes, followups. -->
+## Rollout
+1. <Step, and the signal to check.>
+2. Rollback: <how, and any trap.>
 ```
 
-## 6. Draft the title and description
+## 6. Draft the title and the brief
 
 ### Title
 
@@ -161,9 +179,96 @@ Draft a concise PR title (under 70 characters). Rules:
   rewrite it to comply — do not preserve a non-compliant title just because it
   looks intentional.
 
-### Description
+### Scope: write for the approver
 
-Fill every section of the template based on what you read in the diff. Rules:
+- Every line must help a human decide to merge, or know what to watch after
+  the merge. If a reviewer agent can learn it from the diff, cut it.
+- No "How" or "Implementation" section. Mechanics stay in the diff, the code
+  comments, and the Linear plan. A mechanic that matters to the approver (a
+  latency cost, a new funding requirement, a lock held longer) is a Decision
+  or a Risk, so it goes there.
+- Describe the change in system terms (behavior, money, services, alerts),
+  not in code terms. Use identifiers only as pointers.
+
+### Headline
+
+1 to 3 sentences, with no heading above them. Say what the system does after
+the merge, where its output goes, and why now. Link the issue. In a stack,
+say which part this is and what the next part adds.
+
+### Slot line
+
+Always present, directly under the headline, in this order:
+
+- `Live effect:` none, or what changes for users, money, services, or alerts.
+- `Risk:` low, medium, or high, with the triggers in parentheses. The
+  triggers are: money path, keys or IAM, production config or
+  infrastructure, stored data, and hard to undo. Name them even for low risk
+  (for example "no money path, no keys or IAM, easy to undo"), so the reader
+  can check the claim.
+  - Low: no trigger hits, or the change is read-only and a revert undoes it.
+  - Medium: a trigger hits, and a revert or a config change undoes it.
+  - High: a trigger hits, and undo is hard (a migration, an on-chain action,
+    moved funds, a key or IAM change).
+- `Ships:` on merge, on the next release, or after a manual step.
+- `Blocks:` PRs, in any repo, that must merge after this one. Omit this slot
+  when there are none.
+
+### Sections
+
+Every section below the slot line is optional. Delete a section that has
+nothing real to say. A trivial PR is the headline plus the slot line.
+
+- **Needs your call.** Only when the author needs a human decision. @mention
+  the person who must answer. It comes first, above Decisions.
+- **Decisions.** At most 3. Only choices a teammate could reasonably dispute.
+  Write each as "X, not Y, because Z." End each with a diff link.
+- **Risks.** At most 3. What can go wrong, how bad it is, and what limits it
+  or which issue follows up. Add a diff link when the risk lives in code.
+- **Proof.** The strongest 1 to 3 pieces of evidence: the test that
+  reproduces the bug, the staging check, the Terraform plan summary, a
+  screenshot. Never a list of every test, a test count, or the lint, fmt,
+  and review runs that the checks tab already shows. Always end with a
+  `**Not verified:**` bullet that names what nobody checked, human or agent.
+  If you checked everything you could, name what the checks cannot cover
+  (for example, live traffic).
+- **Rollout.** Only when live behavior changes or a manual step is needed.
+  Numbered steps, each with the signal to check. The last step is the
+  rollback, with any trap named. Carry user-written deploy notes into this
+  section.
+
+### Budget
+
+Length follows risk, not diff size. About 150 words for low risk, 250 for
+medium, and 400 for high, not counting URLs. At most 3 bullets per section,
+each one or two lines.
+
+### Diff links
+
+Link each Decision, and each Risk that lives in code, to its lines in the
+PR's Files view:
+
+```bash
+path_hash=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)   # shasum -a 256 on macOS
+echo "https://github.com/$owner/$repo/pull/$pr_num/files#diff-${path_hash}R${line}"
+```
+
+`$path` is repo-relative and `$line` is the line number in the head version
+of the file. Use the file name as the link text. If no PR exists yet, add the
+links after `gt submit` opens it (step 9).
+
+### Banned
+
+- Restating the diff, and file-by-file lists.
+- The story of the investigation.
+- A "How" or "Implementation" section.
+- Test counts, and lists of lint, fmt, or review runs.
+- The CodeRabbit "Summary by CodeRabbit" block. Drop it when you rewrite a
+  body. If it comes back after the next CodeRabbit review, tell the user that
+  the repo's `.coderabbit.yaml` needs
+  `reviews.high_level_summary_in_walkthrough: true`.
+
+### Writing rules
 
 - **Write it in the user's voice, per the `write-as-me` skill loaded in step
   1.** Register 3-4. Terse, why-first, honest about what's untested or fragile,
@@ -182,22 +287,9 @@ Fill every section of the template based on what you read in the diff. Rules:
   governs *sentence construction* only, it never overrides the voice, the
   abbreviations, or the honesty from `write-as-me`. If plainness and the voice
   conflict, keep the voice and split the sentence.
-- **Concise and scannable above all.** Someone with zero context should grasp
-  the PR in under 30 seconds. Prefer tight bullets over paragraphs, lead with
-  the point, and cut filler. A reviewer should never have to wade through prose
-  to find what changed. Aim for the shortest description that still covers the
-  what/why/how/testing — if a sentence doesn't help a context-free reader
-  understand or review the change, drop it.
-- **What / Why / How are bullet points, never prose.** Write these three
-  sections (or their template equivalents) as tight bullets only — no paragraph
-  blocks. The bullet form forces you to condense each point to its essence; if a
-  point won't fit a single scannable bullet, it's too long. Testing and
-  "Anything else" may use prose where a bullet would be awkward.
 - **Accurate, not flowery.** Describe what the code actually does, not what
-  you wish it did. If the diff is a refactor, say so. Don't overstate impact.
-- **Concrete.** Reference specific functions, files, and symbols — not
-  "various changes to X." For non-trivial files, name them with a
-  one-line summary each.
+  you wish it did. If the diff is a refactor, say so in the slot line. Don't
+  overstate impact.
 - **Link issues** you can discover from branch name, commit messages, or
   existing PR body. GitHub issues/PRs autolink from `#123` (use the repo's
   convention, e.g. `Closes #123`). **Linear issue references MUST be real
@@ -208,22 +300,13 @@ Fill every section of the template based on what you read in the diff. Rules:
   If the existing PR body or repo already shows a workspace URL pattern,
   match it. If you cannot resolve the URL, ask the user rather than
   leaving the ID bare.
-- **Preserve user-authored content from the existing body** under the
-  appropriate section. If the user wrote a `## Deploy notes` section, keep
-  it — do not merge it into another section.
-- **Call out anything surprising**: breaking changes, new dependencies,
-  migrations, schema changes, config changes, feature flags, performance
-  implications, security-relevant changes. These go in "Anything else" or a
-  dedicated callout if the template has one.
-- **Don't invent testing you didn't find in the diff.** If there are no
-  tests, write "No new tests — <reason: refactor/docs/etc.>" or "Covered by
-  existing tests at `<path>`" only if you verified it.
-- **Keep the template's comment blocks in mind** — HTML comments like
-  `<!-- ... -->` are instructions, not content. Remove them in the final
-  output.
-- **Match the repo's tone.** If previous PR descriptions in the repo use
-  bullet points vs. prose, match them. Check with `gh pr list --limit 5
-  --json body --jq '.[].body' | head -100`.
+- **Preserve user-authored content from the existing body** in the section
+  it belongs to. Deploy notes go in Rollout, screenshots in Proof, and open
+  questions in Needs your call.
+- **Don't invent evidence.** Put in Proof only what you verified in the diff
+  or the CI results. If there are no tests, say so in Not verified.
+- **Remove template HTML comments** (`<!-- ... -->`). They are instructions,
+  not content.
 - **Do not hard-wrap body text.** Write each paragraph and bullet as one
   continuous line — let it run long. GitHub and the Graphite dashboard wrap
   soft-wrapped text to the viewport; manual newlines mid-sentence render as
@@ -237,7 +320,8 @@ If the user passed `--stack` (check the user's arguments):
 
 - For each branch in the current stack from `gt log short`, repeat steps
   2–6 with the diff scoped to that branch's parent-vs-HEAD.
-- Draft one description per branch.
+- Draft one brief per branch. Each headline says which part of the stack it
+  is and what the next part adds.
 - Show **all** drafts at once in step 8 so the user can review them in
   order.
 
@@ -254,8 +338,8 @@ the review below. This exception also replaces the reviewer gate referenced
 in steps 1 and 9; all accuracy and publishing requirements still apply.
 
 Before pushing, get a second opinion from a Codex reviewer on whether the
-draft accurately and concisely describes the diff. This replaces the human
-confirmation step — the Codex reviewer is the quality gate.
+draft is an accurate, approver-scoped brief of the diff. This replaces the
+human confirmation step — the Codex reviewer is the quality gate.
 
 First check Codex is available: `command -v codex`. If it's missing, skip this
 step (note it in the output) and proceed straight to push.
@@ -267,25 +351,34 @@ cat "$out_dir/diff.patch" | codex exec \
   --sandbox read-only \
   -m gpt-5.5 \
   -C "$repo_root" \
-  "The diff is on stdin. Below is a proposed PR title and description for it.
+  "The diff is on stdin. Below is a proposed PR title and merge brief for it.
+The brief is for the human who approves the merge, not for someone reading
+the code. Agents already review the code line by line.
 
 Title: <draft title>
 
 <draft body>
 
-Review the description against the diff. Check: (1) is it ACCURATE — does it
-match what the diff actually does, with no invented tests/changes? (2) is it
-CONCISE and scannable — could someone with zero context grasp the PR in 30
-seconds, or is it bloated with filler? (3) is anything important MISSING — a
-breaking change, migration, or risky change not called out? (4) is it IN VOICE —
-terse and direct, no em dashes anywhere, no corporate boilerplate ('Key changes
-include', 'In summary', 'It's worth noting'), no adjective inflation
-('comprehensive', 'seamless', 'robust'), no closing summary paragraph? (5) is it
-PLAIN — does it follow ASD-STE100 (Simplified Technical English)? One idea per
-sentence, sentences under ~20 words, active voice with a real subject, simple
-tenses, one word per concept reused throughout, no noun stack over 3 words, no
-Latin abbreviations ('e.g.', 'i.e.', 'etc.'), no 'and/or'. Flag any sentence a
-non-native speaker would have to read twice.
+Review the brief against the diff. Check:
+(1) ACCURATE: does it match what the diff does, with no invented evidence?
+(2) APPROVER-SCOPED: does every line help a human decide to merge, or know
+what to watch after the merge? Flag any line that restates the diff, lists
+files, narrates the investigation, lists tests or lint runs, or explains
+mechanics (a How section is not allowed).
+(3) COMPLETE: is the slot line present (Live effect, Risk with its triggers,
+Ships, and Blocks when needed) and is the risk level right? Is a disputable
+decision, a risk, a rollout step, or a rollback trap missing? Does Proof end
+with an honest 'Not verified' bullet?
+(4) BUDGET: is it within about 150 words for low risk, 250 for medium, or
+400 for high, with at most 3 bullets per section?
+(5) IN VOICE: terse and direct, no em dashes anywhere, no corporate
+boilerplate ('Key changes include', 'In summary', 'It's worth noting'), no
+adjective inflation ('comprehensive', 'seamless', 'robust')?
+(6) PLAIN: does it follow ASD-STE100 (Simplified Technical English)? One
+idea per sentence, sentences under ~20 words, active voice with a real
+subject, simple tenses, one word per concept reused throughout, no noun stack
+over 3 words, no Latin abbreviations ('e.g.', 'i.e.', 'etc.'), no 'and/or'.
+Flag any sentence a non-native speaker would have to read twice.
 
 If the draft is good as-is, reply with exactly 'LGTM'. Otherwise reply with a
 short bulleted list of concrete fixes (what to cut, what to add, what to
@@ -355,7 +448,8 @@ Then push immediately using the mechanics below.
   EOF
   gt submit --no-interactive --no-edit-description
   # gt submit does not accept --body-file directly; after it opens the PR,
-  # use gh pr edit to set the title and full description
+  # add the diff links (step 6) now that the PR number exists, then use
+  # gh pr edit to set the title and full description
   pr_num=$(gh pr view --json number --jq .number)
   gh pr edit "$pr_num" --title "<final title>" --body-file "$body_file"
   rm "$body_file"
@@ -389,24 +483,30 @@ And a one-line confirmation per PR updated.
 
 1. Push automatically after the Codex review pass — do **not** ask the user
    for confirmation. The Codex reviewer is the quality gate, not the human.
-2. Keep the description concise and scannable — readable by someone with zero
-   context in under 30 seconds. Cut filler; never pad to look thorough.
-3. Always use `--body-file` with `gh pr edit` — never pass multi-line
+2. Write for the approver, not the code reader. No How section, no restated
+   diff, no file lists, no test counts. If an agent can learn it from the
+   diff, cut it.
+3. Always include the slot line (Live effect, Risk with its triggers, Ships,
+   and Blocks when needed) and a `Not verified` bullet in Proof.
+4. Stay within the word budget for the risk tier: about 150 words for low,
+   250 for medium, and 400 for high. Delete empty sections.
+5. Always use `--body-file` with `gh pr edit` — never pass multi-line
    markdown as a `--body` string.
-4. Always diff against `gt parent`, never against trunk on a stacked branch.
-5. Preserve user-authored content from the existing PR body.
-6. Never fabricate tests, screenshots, or deploy notes that aren't real.
-7. Use `gt submit` to open new PRs, in every work repository.
-8. Never leave a bare Linear ID (`RAI-374`, `LINEAR-456`, etc.) in a PR
-   body — always render it as a markdown hyperlink to the Linear issue.
-9. Never hard-wrap PR body text — write each paragraph/bullet as one long
-   line and let the UI soft-wrap it. Newlines only between semantic blocks.
-10. Preserve screenshots across regeneration — re-insert already-hosted image
+6. Always diff against `gt parent`, never against trunk on a stacked branch.
+7. Preserve user-authored content from the existing PR body.
+8. Never fabricate tests, screenshots, plan output, or deploy notes that
+   aren't real.
+9. Use `gt submit` to open new PRs, in every work repository.
+10. Never leave a bare Linear ID (`RAI-374`, `LINEAR-456`, etc.) in a PR
+    body — always render it as a markdown hyperlink to the Linear issue.
+11. Never hard-wrap PR body text — write each paragraph/bullet as one long
+    line and let the UI soft-wrap it. Newlines only between semantic blocks.
+12. Preserve screenshots across regeneration — re-insert already-hosted image
     markdown verbatim, and never replace a real screenshot with a local path or
     an invented URL.
-11. Always draft the body in the user's voice via the `write-as-me` skill,
+13. Always draft the body in the user's voice via the `write-as-me` skill,
     loaded in step 1. Never ship a PR description containing an em dash.
-12. Always write the body in ASD-STE100 (Simplified Technical English): one idea
+14. Always write the body in ASD-STE100 (Simplified Technical English): one idea
     per sentence, short sentences, active voice, simple tenses, one word per
     concept, no Latin abbreviations. Plainness shapes the sentences, the voice
     still owns the tone.
