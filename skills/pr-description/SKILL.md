@@ -264,9 +264,10 @@ links after `gt submit` opens it (step 9).
 - A "How" or "Implementation" section.
 - Test counts, and lists of lint, fmt, or review runs.
 - The CodeRabbit "Summary by CodeRabbit" block. Drop it when you rewrite a
-  body. If it comes back after the next CodeRabbit review, tell the user that
-  the repo's `.coderabbit.yaml` needs
-  `reviews.high_level_summary_in_walkthrough: true`.
+  body. The user does not want it. If it comes back after the next
+  CodeRabbit review, tell the user that "High Level Summary"
+  (`reviews.high_level_summary`) is on again for that org in the CodeRabbit
+  app, or that the repo has a `.coderabbit.yaml` that turns it on.
 
 ### Writing rules
 
