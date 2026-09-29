@@ -347,9 +347,10 @@ step (note it in the output) and proceed straight to push.
 Write the draft (title + body) and pipe the diff to Codex:
 
 ```bash
-cat "$out_dir/diff.patch" | codex exec \
+cat "$out_dir/diff.patch" | CODEX_HOME="$HOME/.codex" codex exec \
   --sandbox read-only \
-  -m gpt-5.5 \
+  -m gpt-6.1-sol \
+  -c model_reasoning_effort="high" \
   -C "$repo_root" \
   "The diff is on stdin. Below is a proposed PR title and merge brief for it.
 The brief is for the human who approves the merge, not for someone reading
@@ -393,8 +394,11 @@ marker=$(grep -n '^codex$' "$out_dir/codex-review.log" | tail -1 | cut -d: -f1)
 test -n "$marker" && tail -n +$((marker + 1)) "$out_dir/codex-review.log" | sed '/^tokens used$/,$d'
 ```
 
-If Codex hits a daily quota error (`rate_limit`/`quota`), retry once with
-`-m o3`. If it still fails, skip the review and proceed to push.
+The reviewer is sol 6.1 on the ccx account (`CODEX_HOME=~/.codex`), the same
+as the review panels in `skills/panel-runtime.md`. If the output says "hit
+your usage limit", rerun the same command once with the ccxx account
+(`CODEX_HOME="$HOME/.codex-2"`). If both accounts are out of credits, or
+the call still fails, skip the review and proceed to push.
 
 **Apply Codex's feedback automatically** when it's reasonable — incorporate the
 suggested cuts/additions/corrections into the draft. You do not need user
