@@ -124,6 +124,13 @@ def prune-stale [dest_root: path, live: list<string>, sources: list<path>, dry: 
   | ignore
 }
 
+# Codex homes to install into. ~/.codex always; the second account's
+# ~/.codex-2 only when that account exists, so a machine without one (Marvin's
+# box) does not get an empty home that looks like a logged-out account.
+def codex-homes []: nothing -> list<string> {
+  [".codex" ".codex-2"] | where {|h| $h == ".codex" or ($env.HOME | path join $h | path exists) }
+}
+
 def hook-script []: nothing -> string {
   $env.HOME | path join "Github" "dotagents" "hooks" "goal-loop" "check-goal.sh"
 }
@@ -186,7 +193,7 @@ def install-hooks [dry: bool] {
       ]
     }
   } | to json)
-  for home_name in [".codex" ".codex-2"] {
+  for home_name in (codex-homes) {
     let codex = ($env.HOME | path join $home_name "hooks.json")
     if ($codex | path exists) and not ((open --raw $codex) | str contains "goal-loop/check-goal.sh") {
       print $"note: ($codex) exists without the goal-loop hook — add Stop -> ($script) by hand, then /hooks to trust it"
@@ -246,8 +253,7 @@ def main [--dry-run] {
   let sources = ($trees | get src)
   let dests = [
     ($env.HOME | path join ".claude" "skills")
-    ($env.HOME | path join ".codex" "skills")
-    ($env.HOME | path join ".codex-2" "skills")
+    ...(codex-homes | each {|h| $env.HOME | path join $h "skills" })
     ($env.HOME | path join ".grok" "skills")
     ($env.HOME | path join ".gemini" "config" "skills")
     ($env.HOME | path join ".gemini" "antigravity-cli" "skills")
@@ -266,7 +272,7 @@ def main [--dry-run] {
   # Codex ships system skills next to user skills. The second account
   # (CODEX_HOME=~/.codex-2) reuses the copy under ~/.codex.
   let system_src = ($env.HOME | path join ".codex" "system-skills")
-  for home_name in [".codex" ".codex-2"] {
+  for home_name in (codex-homes) {
     let system_dst = ($env.HOME | path join $home_name "skills" ".system")
     if ($system_src | path exists) and not ($system_dst | path exists) {
       if $dry_run {
