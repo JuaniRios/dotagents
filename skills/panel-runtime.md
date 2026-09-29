@@ -17,7 +17,7 @@ model.
 |---|---|---|---|---|
 | Cursor Grok 4.6 | high | — | — | `cursor-agent -p --model cursor-grok-4.6-high` |
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
-| sol 5.6 | high | codex | isolated Codex child, `-m gpt-5.6-sol` high | `CODEX_HOME=~/.codex codex exec --sandbox read-only -m gpt-5.6-sol` (ccx; ccxx fallback below) |
+| sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --sandbox read-only -m gpt-6.1-sol` (ccx; ccxx fallback below) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
 | flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
 
@@ -60,13 +60,13 @@ env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5 \
   --output-format json --json-schema "$SCHEMA_INLINE" \
   "$(cat "$promptPath")"
 
-# sol 5.6 — file schema (every property is already in `required`)
+# sol 6.1 — file schema (every property is already in `required`)
 # Account: ccx (CODEX_HOME=~/.codex) by default. If its output says
 # "hit your usage limit", rerun the same command once with ccxx
 # (CODEX_HOME=~/.codex-2). This account switch does not use the lane's
 # one retry. Drop the sol lanes only when both accounts are out of credits.
 # ccx/ccxx are nushell functions, so set CODEX_HOME explicitly from bash.
-CODEX_HOME="$HOME/.codex" codex exec --sandbox read-only -m gpt-5.6-sol \
+CODEX_HOME="$HOME/.codex" codex exec --sandbox read-only -m gpt-6.1-sol \
   --output-schema "$SCHEMA" \
   -c service_tier="fast" \
   -c model_reasoning_effort="high" \
@@ -133,7 +133,7 @@ Claude-model lanes for the rest of the run.
 
 A pass counts only if **at least two different models** returned, and
 **at least one is not the host harness's home model** (treat Cursor Grok 4.6
-as host-equivalent on Grok; sol 5.6 on Codex; opus 5.5 on Claude;
+as host-equivalent on Grok; sol 6.1 on Codex; opus 5.5 on Claude;
 flash 3.7 on Agy).
 Otherwise the pass is `incomplete`. Do not converge.
 
@@ -143,7 +143,7 @@ Otherwise the pass is `incomplete`. Do not converge.
 
 | Lane | Model |
 |---|---|
-| `review-sol` | sol 5.6 high |
+| `review-sol` | sol 6.1 high |
 | `review-grok` | Cursor Grok 4.6 high |
 | `review-flash` | flash 3.7 high |
 | `review-opus` | opus 5.5 |
@@ -163,7 +163,7 @@ Composite lanes combine related inspectors into one process per model.
 | `flash-hygiene` | flash 3.7 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
 | `flash-config` | flash 3.7 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | Cursor Grok 4.6 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
-| `sol-special` | sol 5.6 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
+| `sol-special` | sol 6.1 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 
 Sensitive = auth, secrets, payment/financial, on-chain, or migrations.
 **Sensitive always wins over size.**
@@ -247,7 +247,7 @@ re-run if the stated goal or cited sources changed).
 
 `grok-special`: consistency + scope (Cursor Grok 4.6).
 
-`sol-special`: completeness (sol 5.6; its general already covers
+`sol-special`: completeness (sol 6.1; its general already covers
 broad).
 
 Decision-changing findings are always Discuss.
@@ -262,7 +262,7 @@ Planner: opus 5.5 if the Claude harness is reachable (native child or
 `claude -p --model claude-opus-5-5`); otherwise the host's current model. Say
 which.
 
-Critics, in parallel, one generalist each: opus 5.5, sol 5.6, Cursor Grok 4.6,
+Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Cursor Grok 4.6,
 and composer 2.5. No flash 3.7. If Claude is unreachable, drop the opus 5.5 critic and
 label the run `portable`. If Claude is the host, label it `claude-host`.
 
@@ -271,7 +271,7 @@ child).
 
 ## Council lanes (council-eval)
 
-One generalist each: opus 5.5, sol 5.6, Cursor Grok 4.6, composer 2.5,
+One generalist each: opus 5.5, sol 6.1, Cursor Grok 4.6, composer 2.5,
 and flash 3.7. No specialists or re-review. Use the shared wrappers
 and Max preflight above; `council-eval` owns only its artifact prompt and
 deterministic report.
@@ -300,5 +300,5 @@ composite or focused specialist lane.
    `ANTHROPIC_API_KEY` is set. Always `env -u ANTHROPIC_API_KEY`.
 5. Do not impersonate a dropped **model**.
 6. Never name a harness as if it were a model. Lanes are owned by
-   Cursor Grok 4.6, composer 2.5, sol 5.6, opus 5.5, or flash 3.7 —
+   Cursor Grok 4.6, composer 2.5, sol 6.1, opus 5.5, or flash 3.7 —
    not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy".

@@ -3,7 +3,7 @@ name: review-pr
 description: >
   Cross-review a pull request by number or URL without checking it out.
   Plain-language TL;DR, then the same multi-model panel as review-loop
-  (opus 5.5, sol 5.6, Cursor Grok 4.6, composer 2.5, flash 3.7,
+  (opus 5.5, sol 6.1, Cursor Grok 4.6, composer 2.5, flash 3.7,
   with an opus 5.5 deep lane). Stays in the session so you can
   inspect the result. Only verified blockers (a critical or should fix that
   two models stand behind) request changes; otherwise the review is
