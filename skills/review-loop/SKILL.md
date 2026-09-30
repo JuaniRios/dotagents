@@ -88,7 +88,7 @@ git status --porcelain
 ```
 
 Dirty tree (single-branch, first pass): stop. Missing `gt`: stop.
-Missing a model's CLI: drop every lane that needs that model and say so.
+Unavailable model (panel-runtime preflight): run its lanes on the listed substitute and say so.
 
 Run Max preflight from panel-runtime (`claude -p "/usage"`).
 

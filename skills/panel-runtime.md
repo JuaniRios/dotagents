@@ -17,7 +17,7 @@ model.
 |---|---|---|---|---|
 | Cursor Grok 4.6 | high | — | — | `cursor-agent -p --model cursor-grok-4.6-high` |
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
-| sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --sandbox read-only -m gpt-6.1-sol` (ccx; ccxx fallback below) |
+| sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol` (ccx; ccxx fallback below) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
 | flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
 
@@ -37,11 +37,49 @@ as separate lanes: they share a harness and billing pool, but they are
 different models. Never replace Cursor Grok with the direct `grok` CLI; that
 would charge the separate Grok/xAI account.
 
-If a model's CLI is missing or fails after one retry, **drop every
-lane that needs that model** and say so. Do not run the work on the
-host model and still label it as the missing model. In every panel, a missing
-Cursor CLI drops every `review-composer`, `review-grok`, and
-`grok-special` lane; do not silently fall back to the direct `grok` command.
+## Availability and substitutes
+
+**Preflight once per run, before pass 1**, in parallel, 30 seconds each.
+A model is unavailable when its check fails, its CLI is missing, or the
+Max preflight below drops it:
+
+| Model | Check (unavailable when it fails or prints the text) |
+|---|---|
+| opus 5.5 | Max preflight below |
+| sol 6.1 | `codex login status` exits 0 |
+| Cursor Grok 4.6, composer 2.5 | `cursor-agent status` prints `Logged in` |
+| flash 3.7 | `agy models` exits 0 (it fails fast when logged out; a lane would sit at a login prompt) |
+
+Never start a lane on an unavailable model. **Run it on the first
+available substitute instead**, with the same lane prompt and focus:
+
+| Unavailable | Substitutes, in order |
+|---|---|
+| flash 3.7 | composer 2.5, sol 6.1, opus 5.5 |
+| composer 2.5 | flash 3.7, sol 6.1, opus 5.5 |
+| Cursor Grok 4.6 | sol 6.1, opus 5.5, composer 2.5 |
+| sol 6.1 | Cursor Grok 4.6, opus 5.5, composer 2.5 |
+| opus 5.5 | sol 6.1, Cursor Grok 4.6, composer 2.5 |
+
+A substituted lane is labeled and recorded as the model that ran it
+(`flash-hygiene (on composer 2.5)`, `found_by: ["composer-2.5"]`), never as
+the missing model, and the report lists each substitution. The same
+substitution applies when a lane fails fast twice during the run (below).
+If no substitute is available, drop the lane and say so. A missing Cursor
+CLI makes both Cursor models unavailable; never fall back to the direct
+`grok` command.
+
+**Retries and stragglers:**
+
+- A lane that fails fast (an error, a bad parse) gets one retry, then
+  moves to its substitute for the rest of the run.
+- A lane that hits its timeout is not retried in that pass: record
+  `reviewer_error` (timeout) and continue.
+- Once every other lane of a pass has returned, wait at most **3 more
+  minutes** for the rest. Then stop them, record `reviewer_error`
+  (straggler), and continue with the pass. Do not substitute a straggler
+  in that pass; if the same model straggles twice, substitute it from the
+  next pass.
 
 ## Wrapper
 
@@ -62,11 +100,12 @@ env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5 \
 
 # sol 6.1 — file schema (every property is already in `required`)
 # Account: ccx (CODEX_HOME=~/.codex) by default. If its output says
-# "hit your usage limit", rerun the same command once with ccxx
-# (CODEX_HOME=~/.codex-2). This account switch does not use the lane's
-# one retry. Drop the sol lanes only when both accounts are out of credits.
+# "hit your usage limit" and ~/.codex-2 exists, rerun the same command once
+# with ccxx (CODEX_HOME=~/.codex-2). This account switch does not use the
+# lane's one retry. Otherwise sol 6.1 is unavailable: substitute (above).
 # ccx/ccxx are nushell functions, so set CODEX_HOME explicitly from bash.
-CODEX_HOME="$HOME/.codex" codex exec --sandbox read-only -m gpt-6.1-sol \
+# --skip-git-repo-check: critiques and plans run outside a git repo.
+CODEX_HOME="$HOME/.codex" codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol \
   --output-schema "$SCHEMA" \
   -c service_tier="fast" \
   -c model_reasoning_effort="high" \
@@ -105,10 +144,11 @@ For both Cursor lanes, save stdout as `raw-<lane>-envelope.json`, extract
 `.result` with `jq -er` into `raw-<lane>.json`, then validate against the
 schema. These exact model IDs were verified with `cursor-agent models`; do not
 replace them with the direct-Grok `grok-4.6` id. A parse or validation failure
-gets the same one retry as any other lane, then becomes `reviewer_error`.
+gets the same one retry as any other lane, then moves to its substitute.
 
 Inline the artifact when the CLI cannot read files. Timeout 10 minutes
-per lane. 2–3 concurrent `claude -p` jobs are fine.
+per lane, with the straggler rule above. 2–3 concurrent `claude -p` jobs
+are fine.
 
 Parse into the schema. A dead lane is `reviewer_error`, not clean.
 Dedup by file + nearby lines + category (or doc + section for
@@ -125,9 +165,9 @@ env -u ANTHROPIC_API_KEY claude -p --output-format text "/usage"
 ```
 
 Parse `Current session: N%` and `Current week (all models): N%`. If
-session ≥ 80% or week ≥ 80%, drop opus 5.5 lanes and say so.
-If `/usage` fails, keep those lanes until a 429, then disable remaining
-Claude-model lanes for the rest of the run.
+session ≥ 80% or week ≥ 80%, opus 5.5 is unavailable: substitute its
+lanes and say so. If `/usage` fails, keep those lanes until a 429, then
+substitute the remaining Claude-model lanes for the rest of the run.
 
 ## Quorum
 
@@ -263,8 +303,8 @@ Planner: opus 5.5 if the Claude harness is reachable (native child or
 which.
 
 Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Cursor Grok 4.6,
-and composer 2.5. No flash 3.7. If Claude is unreachable, drop the opus 5.5 critic and
-label the run `portable`. If Claude is the host, label it `claude-host`.
+and composer 2.5. No flash 3.7, except as a substitute. If Claude is
+unreachable, substitute the opus 5.5 critic and label the run `portable`. If Claude is the host, label it `claude-host`.
 
 Implementer and fixer stay on the host model (or a cheap same-harness
 child).
@@ -272,7 +312,8 @@ child).
 ## Council lanes (council-eval)
 
 One generalist each: opus 5.5, sol 6.1, Cursor Grok 4.6, composer 2.5,
-and flash 3.7. No specialists or re-review. Use the shared wrappers
+and flash 3.7. Council drops an unavailable model instead of substituting it: its point is one
+answer per distinct model. No specialists or re-review. Use the shared wrappers
 and Max preflight above; `council-eval` owns only its artifact prompt and
 deterministic report.
 
@@ -298,7 +339,8 @@ composite or focused specialist lane.
 3. The host does not add its own review findings except lane errors.
 4. `claude -p` is Max usage when logged in via claude.ai and no
    `ANTHROPIC_API_KEY` is set. Always `env -u ANTHROPIC_API_KEY`.
-5. Do not impersonate a dropped **model**.
+5. Do not impersonate an unavailable **model**: a substitute runs under
+   its own name.
 6. Never name a harness as if it were a model. Lanes are owned by
    Cursor Grok 4.6, composer 2.5, sol 6.1, opus 5.5, or flash 3.7 —
    not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy".
