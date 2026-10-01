@@ -18,4 +18,4 @@ What stays here, all gitignored:
 - `teach-log/`: durable `/teach` learning logs
 - `handoffs/`: `/handoff` summaries for a fresh session
 - `goal-loop/`: directory-scoped Stop-hook goal state
-- `finish-pr-review/`: review checkpoints
+- `finish-pr/`: review checkpoints

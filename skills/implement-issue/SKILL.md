@@ -4,7 +4,7 @@ description: >
   Take a Linear issue from link to finished implementation — skeleton
   stacked PR, cross-link Linear↔PR, proportionate plan and critique,
   use light checks for low-risk config edits, one independent pass for simple
-  changes, or full review loops for complex changes. Always run finish-pr-review,
+  changes, or full review loops for complex changes. Always run finish-pr,
   which loops CodeRabbit and Rain Marvin until both approve and then marks
   the PR ready for review.
   Use when the user wants an issue implemented end to end.
@@ -100,7 +100,7 @@ review rounds use targeted checks; do not repeatedly wait for full remote CI.
 1. Submit through Graphite. Every
    level must enter the CodeRabbit workflow, including config-only and
    documentation changes.
-2. Run `finish-pr-review` on the exact in-scope PR URLs. It sets the
+2. Run `finish-pr` on the exact in-scope PR URLs. It sets the
    description, assignee, and reviewers, keeps the PR in draft, addresses
    existing feedback, and loops with CodeRabbit and Rain Marvin with no round
    cap until both approve the current head. Only then does it mark the PR
@@ -114,7 +114,7 @@ review rounds use targeted checks; do not repeatedly wait for full remote CI.
 
 At every level, verify current mergeability and required CI on the published
 head. Resolve conflicts, fix failed checks, and reassess review coverage for
-meaningful changes. Reuse finish-pr-review's exact-head evidence;
+meaningful changes. Reuse finish-pr's exact-head evidence;
 do not launch another pipeline to duplicate its final gate.
 If Graphite skipped CI, use the repository's permitted local equivalent
 (such as `nix run .#ci`) and disclose it. Do not report a PR that is still

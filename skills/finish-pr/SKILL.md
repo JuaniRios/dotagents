@@ -1,5 +1,5 @@
 ---
-name: finish-pr-review
+name: finish-pr
 description: >-
   Prepare the PR (description, assignee, engineer reviewers, kept in draft),
   address existing human and bot feedback, loop with CodeRabbit and Rain
@@ -9,7 +9,7 @@ description: >-
   implementation workflow requires it. Do not trigger for status-only checks.
 ---
 
-# Finish PR review
+# Finish PR
 
 Own the review work through verified, published fixes and a final audit.
 Do not stop after posting a review request or pushing the last fix unless
@@ -65,7 +65,7 @@ Do this for every in-scope PR before touching feedback.
 
 Record each PR's head, base, draft state, review status, and checks.
 Use durable checkpoints under
-`~/Github/dotagents/data/finish-pr-review/<run-id>/`.
+`~/Github/dotagents/data/finish-pr/<run-id>/`.
 
 Fetch and paginate all of:
 
