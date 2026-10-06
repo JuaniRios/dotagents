@@ -4,9 +4,10 @@ description: >-
   Prepare the PR (description, assignee, engineer reviewers, kept in draft),
   address existing human and bot feedback, loop with CodeRabbit and Rain
   Marvin until both approve the exact published head, and only then mark the
-  PR ready for review. Use when asked to address review feedback, drive
-  CodeRabbit or Rain Marvin, or finish PR review, or when an active
-  implementation workflow requires it. Do not trigger for status-only checks.
+  PR ready for review. A bot approval with only minor comments ends the fix
+  loop unless a comment is underrated. Use when asked to address review
+  feedback, drive CodeRabbit or Rain Marvin, or finish PR review, or when an
+  active implementation workflow requires it. Do not trigger for status-only checks.
 ---
 
 # Finish PR
@@ -165,8 +166,12 @@ Rain Marvin's review history. The handle is `@rain-marvin`.
 2. Wait for the completed review. An acknowledgement, reaction, status check,
    or command reply does not prove review coverage. Record the trigger time,
    head/base SHAs, completed review, and covered commit or diff range.
-3. Ingest every finding through steps 1 and 2: investigate, implement accepted
-   changes, verify, publish, reply, and resolve the addressed threads.
+3. If the completed review approves (verdict Approve in the review or the
+   `rain-marvin/reviewed` check) and its remaining comments are all minor or
+   nits, apply the approval rule in section 5 instead of fixing them.
+   Otherwise ingest every finding through steps 1 and 2: investigate,
+   implement accepted changes, verify, publish, reply, and resolve the
+   addressed threads.
 4. After fixes are published, use implementation judgment:
    - Request another `@rain-marvin review` when the fixes are substantive,
      touch behavior or contracts, materially change the reviewed diff, or
@@ -176,7 +181,8 @@ Rain Marvin's review history. The handle is `@rain-marvin`.
    section 7.
 5. Verify approval applies to the exact published head or an unchanged
    parent-relative diff. A command acknowledgement is not approval. If Rain
-   Marvin returns findings instead, process them and repeat this section.
+   Marvin returns findings without approving, process them and repeat this
+   section.
 
 Do not duplicate queued or running requests. Poll using the host's wait
 mechanism in intervals no longer than 60 seconds. If Rain Marvin is quiet or
@@ -210,19 +216,31 @@ Do not disable automatic review settings.
 
 Never call an unreviewed final fix converged merely because CI passed.
 
-Assess severity independently:
+### An approval with minor comments ends the loop
 
-- Bugs, safety, security, behavior, missing necessary tests, and broken
-  external contracts are substantive even if CodeRabbit labels them minor.
-- Nits are cosmetic or optional style preferences with no correctness or
-  operational effect.
+Assess severity independently, but let a bot approval end the loop:
 
-If only CodeRabbit nits remain, the user's standing policy permits stopping
-the fix loop: reply that optional polish is left out, resolve those nit
-threads, and continue to the approval step below. Nits-only still needs
-CodeRabbit's approval on the current head. Do not make another
-cosmetic edit that would create an unreviewed terminal delta.
-Human requests are not silently dismissed under this nit policy.
+- A comment is underrated when it describes funds or safety risk, broken
+  behavior on a money path, a broken external contract, or a missing test for
+  a critical path, whatever label the bot gave it.
+- Anything else a bot labels minor or nit stays minor: work that only runs
+  later than needed, rare timing edges with no funds risk, style, and
+  optional polish.
+
+When a bot approves the current head (a CodeRabbit `APPROVED` review, or Rain
+Marvin's Approve verdict) and its remaining comments are all minor or nits,
+the fix loop ends for that bot. Reply to each comment with its disposition,
+resolve the threads, and go to section 6. Do not push fixes for those
+comments: every push needs a new review round from both bots. List comments
+worth tracking in the report as candidate follow-ups, and create an issue
+only with the user's authority. Fix before ready only a comment that
+independent assessment shows is underrated, and say why in the reply.
+Human requests are never dismissed under this rule.
+
+Before any approval, a CodeRabbit review with only nits still permits
+stopping fixes: reply that optional polish is left out, resolve those
+threads, and request approval. Do not make another cosmetic edit that would
+create an unreviewed terminal delta.
 
 Poll using the host's wait mechanism, in intervals no longer than 60 seconds,
 and keep the user updated. Honor rate-limit retry times, avoid duplicate
