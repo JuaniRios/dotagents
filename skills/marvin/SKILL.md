@@ -117,17 +117,19 @@ Git and `gh`, as agreed with Juan.
    Piping through `tail` hid failures twice, and a broken PR got merged. Read
    the log when the exit code is not 0.
 4. Commit, push the branch, `gh pr create`, then `gh pr merge --squash`.
-5. Deploy. Run `rebuild` directly over SSH (under `systemd-run` it has no Git
-   credentials):
+5. Deploy happens on merge. The `pull_request` webhook makes `marvin-hooks`
+   touch `/run/marvin-deploy/trigger`, and the root `marvin-deploy` unit runs
+   `rebuild`; a failure pages `#general > marvin / failures`. Watch it:
 
    ```sh
-   ssh root@marvin.taile5cf8a.ts.net rebuild
-   ssh root@marvin.taile5cf8a.ts.net systemctl restart marvin-worker
+   ssh root@marvin.taile5cf8a.ts.net journalctl -u marvin-deploy -f
    ```
 
-   The worker reads `/etc/marvin/config.json` only at start, so restart it
-   after any config change. Agent runs live in their own units and survive the
-   restart. Pass `--show-trace` to `rebuild` for Nix errors.
+   A config change restarts the services that read `/etc/marvin/config.json`;
+   agent runs live in their own units and survive it. Run `rebuild` by hand
+   only for a direct push to `main` (no `push` webhook), a change to the
+   deploy mechanism itself, or `--show-trace` on a Nix error. The switch may
+   restart tailscaled and drop the SSH session; the switch still finishes.
 6. Verify (below), and report what changed on the live box.
 
 Never edit the box by hand, except for secrets and agent logins, which are
@@ -170,5 +172,5 @@ ssh root@marvin.taile5cf8a.ts.net 'journalctl -u marvin-worker -u marvin-zulip -
 4. Do not put personal accounts or production credentials on the box.
 5. Do not change GitHub rulesets or bypass lists without asking Juan, and back
    up the current JSON to `~/Github/.marvin-backup/` first.
-6. Restart `marvin-worker` after a config change.
+6. Confirm the merge-triggered deploy finished (`marvin-deploy`) before reporting a change as live.
 7. If this skill disagrees with the repo, fix this skill.
