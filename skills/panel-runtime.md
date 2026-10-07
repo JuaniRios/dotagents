@@ -205,6 +205,8 @@ Composite lanes combine related inspectors into one process per model.
 | `flash-config` | flash 3.7 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | Cursor Grok 4.6 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
 | `sol-special` | sol 6.1 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
+| `sol-paths` | sol 6.1 high | error paths and lifecycle states (`error-path-inspector`) | Run if the diff changes error handling, retries, polling, persisted state, status enums, events, or state transitions, and always when sensitive. Re-run if behavior hunks changed. |
+| `grok-runbook` | Cursor Grok 4.6 high | runbooks and operational scripts (`runbook-inspector`) | Run if the diff touches a runbook, `DEPLOY.md`, rollout, rollback, or recovery docs, `docs/ops*`, incident guides, or a one-off operational script. Re-run if any of those changed. |
 
 Sensitive = auth, secrets, payment/financial, on-chain, or migrations.
 **Sensitive always wins over size.**
@@ -222,6 +224,11 @@ Approach trigger = any of:
 Small follow-ups are where "patching the patch" shows up, so they must not
 be skipped.
 
+`sol-paths` and `grok-runbook` enumerate instead of reading the PR as a whole:
+every exit and state, every runbook step. General lanes skim past these narrow
+bugs; CodeRabbit caught several in 2026-10 that the full panel missed. Never
+skip them on size alone.
+
 The approach part needs web access to cite upstream sources and `gh` to
 read other repos. A native Claude child already has both. On the foreign
 CLI, add `--allowedTools "WebSearch WebFetch Read Grep Glob Bash(gh:*) Bash(git:*) Bash(rg:*)"`
@@ -235,8 +242,8 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Otherwise no opus 5.5. |
-| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-spec` / `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `sol-paths` and `grok-runbook` if their gates hold. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Otherwise no opus 5.5. |
+| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-spec` / `flash-config` / `grok-special` / `sol-special` (no edge-cases) / `sol-paths` / `grok-runbook`. |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
@@ -253,6 +260,8 @@ Conditionally:
 - `flash-spec` if behavior hunks or spec docs changed.
 - `flash-config` if deployed config, config schema/validation, or release/deploy
   check paths changed.
+- `sol-paths` if behavior hunks changed and its gate holds.
+- `grok-runbook` if runbook or operational-script paths changed.
 - composites if their gate's files changed (`cmp` the filtered
   path-list, not a semantic "slice").
 
