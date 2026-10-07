@@ -199,14 +199,34 @@ Composite lanes combine related inspectors into one process per model.
 
 | Lane | Model | Covers | Gate |
 |---|---|---|---|
-| `opus-deep` | opus 5.5 xhigh | goal-eval **and** simplicity, one prompt | Skip on `<50` non-sensitive. Re-run if the PR description **or** behavior hunks changed. |
+| `opus-deep` | opus 5.5 xhigh | goal-eval, simplicity, **and** approach (`approach-inspector`), one prompt | On `<50` non-sensitive, run only the approach part, and only when an approach trigger holds. Re-run if the PR description **or** behavior hunks changed, or the approach part alone if an approach trigger changed. |
 | `flash-hygiene` | flash 3.7 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
+| `flash-spec` | flash 3.7 high | spec-sync (`spec-sync-inspector`) | Run if the repo has a spec (`SPEC.md`, `docs/spec*`, `docs/architecture*`, `adrs/`, `docs/adr*`) and the diff changes behavior or structure, or edits those docs. Re-run if behavior hunks or those docs changed. |
 | `flash-config` | flash 3.7 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | Cursor Grok 4.6 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
 | `sol-special` | sol 6.1 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 
 Sensitive = auth, secrets, payment/financial, on-chain, or migrations.
 **Sensitive always wins over size.**
+
+Approach trigger = any of:
+
+- a dependency surface changed: manifests (`Cargo.toml`, `package.json`,
+  `pyproject.toml`, `go.mod`, `flake.nix` inputs), Dockerfiles, CI
+  workflows, or new imports of an external crate, package, or service API;
+- the branch is a follow-up in a stack (its parent is not trunk);
+- the touched files had 3 or more fix commits in the last 30 days;
+- the diff reads another service's API, database, or logs;
+- the repo is public and the diff adds data or config.
+
+Small follow-ups are where "patching the patch" shows up, so they must not
+be skipped.
+
+The approach part needs web access to cite upstream sources and `gh` to
+read other repos. A native Claude child already has both. On the foreign
+CLI, add `--allowedTools "WebSearch WebFetch Read Grep Glob Bash(gh:*) Bash(git:*) Bash(rg:*)"`
+to the `opus-deep` call only. Without web access it checks local evidence
+and lists the rest as unchecked.
 
 ### Adaptive pass 1
 
@@ -215,8 +235,8 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. No opus 5.5. |
-| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Otherwise no opus 5.5. |
+| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-spec` / `flash-config` / `grok-special` / `sol-special` (no edge-cases). |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
@@ -228,7 +248,9 @@ never a foreign CLI) and `review-sol`, `review-grok`, `review-composer`,
 Conditionally:
 
 - `review-opus` only if the host harness is Claude (native opus 5.5).
-- `opus-deep` if the PR description or behavior hunks changed.
+- `opus-deep` if the PR description or behavior hunks changed; only its
+  approach part if just an approach trigger changed.
+- `flash-spec` if behavior hunks or spec docs changed.
 - `flash-config` if deployed config, config schema/validation, or release/deploy
   check paths changed.
 - composites if their gate's files changed (`cmp` the filtered
@@ -280,8 +302,11 @@ finding schema.
 Generals: `review-sol`, `review-grok`, `review-composer`, `review-flash`, `review-opus`
 (same skip rule on short docs).
 
-`opus-deep`: goal-evaluation **and** grounding (opus 5.5; pass 1;
-re-run if the stated goal or cited sources changed).
+`opus-deep`: goal-evaluation, grounding, **and** approach (opus 5.5;
+pass 1; re-run if the stated goal or cited sources changed). The approach
+part applies `approach-inspector`'s plan section: every new component
+states its home and why, checked against the spec, the owning system, and
+any planned replacement.
 
 `flash-hygiene`: feasibility, clarity, style (flash 3.7).
 
@@ -303,7 +328,8 @@ Planner: opus 5.5 if the Claude harness is reachable (native child or
 which.
 
 Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Cursor Grok 4.6,
-and composer 2.5. No flash 3.7, except as a substitute. If Claude is
+and composer 2.5. The opus 5.5 critic also applies `approach-inspector`'s
+plan section. No flash 3.7, except as a substitute. If Claude is
 unreachable, substitute the opus 5.5 critic and label the run `portable`. If Claude is the host, label it `claude-host`.
 
 Implementer and fixer stay on the host model (or a cheap same-harness
@@ -318,6 +344,13 @@ and Max preflight above; `council-eval` owns only its artifact prompt and
 deterministic report.
 
 ## Shared prompt base (code review)
+
+Before building prompts, record the visibility of the target repo and of
+every repo the diff writes data into (`gh repo view <repo> --json
+visibility`). Put it at the top of every lane's prompt. In a public repo,
+any lane flags business-sensitive data the diff adds (spreads, pricing or
+strategy settings, internal hostnames, wallet roles, infrastructure
+layout) as a `high` security finding.
 
 Each general gets the review-loop base prompt (correctness, concurrency,
 security, conventions, maintainability, tests — no style nits).

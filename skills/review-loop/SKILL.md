@@ -159,7 +159,12 @@ Work from `findings.json`, not `review.md`. Default actions:
 Scope gate: a real fix that expands the PR's stated goal → grouped
 follow-up, not auto-fix. A simplicity finding that is a *different
 approach* (rewrite the design) is always Discuss; deleting dead
-machinery is an ordinary auto-fix.
+machinery is an ordinary auto-fix. An `approach` finding is Discuss when
+marked "this PR" and a grouped follow-up when marked "follow-up", with
+these exceptions, which are ordinary auto-fixes: swapping a deprecated
+call the diff itself added for its cited drop-in replacement, a `[record]`
+finding, and a `flash-spec` doc update. `[verdict]` findings are
+informational: print them in the summary, never fix or dismiss them.
 
 Ask the user only about Discuss items. Then print the consolidated
 plan and proceed.

@@ -36,7 +36,8 @@
               "completeness",
               "feasibility",
               "scope",
-              "cost"
+              "cost",
+              "approach"
             ]
           },
           "file": { "type": "string" },

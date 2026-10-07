@@ -64,7 +64,13 @@ agent attribution (keep that in `findings.json` only).
 
 ## 6. Stay in the session
 
-Print the compact summary, then a short "what actually changed".
+Print the compact summary, then a short "what actually changed", then
+"Design decisions to check": at most five plain-language lines on new
+components and where they live, new data and who can see it (repo
+visibility), which existing pattern the PR extends or skips, and any
+`[verdict]` lines from the approach lane. Print it even when no lane
+raised a finding. It is for the user only; never post it or `[verdict]`
+findings to the PR.
 
 The verdict follows from the findings; publish it immediately with
 `publish-review`, pinned to the reviewed head SHA. This is the user's standing
