@@ -102,11 +102,11 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
 
 ## Make a change
 
-This repo does not use Graphite. The Graphite App cannot publish here, and
-a ruleset ("no main push", 24190376) blocks direct pushes to `main`. Use plain
-Git and `gh`, as agreed with Juan.
+This repo uses Graphite like every other T0Trade repository: follow the
+`graphite` skill. A ruleset ("no main push", 24190376) blocks direct pushes
+to `main`, so every change goes through a PR.
 
-1. `cd ~/Github/marvin && git pull --ff-only`, then create a branch.
+1. `cd ~/Github/marvin && gt sync`, then `gt checkout main`.
 2. Edit. Keep the docs in step.
 3. For bot changes, run the tests without a pipe, and check the exit code:
 
@@ -116,7 +116,9 @@ Git and `gh`, as agreed with Juan.
 
    Piping through `tail` hid failures twice, and a broken PR got merged. Read
    the log when the exit code is not 0.
-4. Commit, push the branch, `gh pr create`, then `gh pr merge --squash`.
+4. Stage, `gt create <branch> -m "<message>"`, `gt submit --no-interactive`,
+   then `gt merge`. Show Juan the Graphite link
+   (`https://app.graphite.com/github/pr/T0Trade/marvin/<number>`).
 5. Deploy happens on merge. The `pull_request` webhook makes `marvin-hooks`
    touch `/run/marvin-deploy/trigger`, and the root `marvin-deploy` unit runs
    `rebuild`; a failure pages `#general > marvin / failures`. Watch it:
