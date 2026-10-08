@@ -5,8 +5,8 @@ description: >
   stacked PR, cross-link Linear↔PR, proportionate plan and critique,
   use light checks for low-risk config edits, one independent pass for simple
   changes, or full review loops for complex changes. Always run finish-pr,
-  which loops CodeRabbit and Rain Marvin until both approve and then marks
-  the PR ready for review.
+  which loops Rain Marvin (and CodeRabbit in ST0x-Technology) until the
+  required bots approve and then marks the PR ready for review.
   Use when the user wants an issue implemented end to end.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write, Edit
@@ -95,15 +95,16 @@ applicable; do not invent a full application build unless required.
 Batch final local gates and rerun invalidated checks after changes. Deep
 review rounds use targeted checks; do not repeatedly wait for full remote CI.
 
-## 9. Feedback and CodeRabbit convergence
+## 9. Feedback and bot-review convergence
 
 1. Submit through Graphite. Every
-   level must enter the CodeRabbit workflow, including config-only and
-   documentation changes.
+   level must enter the finish-pr bot-review workflow, including config-only
+   and documentation changes.
 2. Run `finish-pr` on the exact in-scope PR URLs. It sets the
    description, assignee, and reviewers, keeps the PR in draft, addresses
-   existing feedback, and loops with CodeRabbit and Rain Marvin with no round
-   cap until both approve the current head. Only then does it mark the PR
+   existing feedback, and loops with Rain Marvin, and with CodeRabbit in
+   ST0x-Technology only, with no round cap until the required bots approve the
+   current head. Only then does it mark the PR
    ready for review. It owns replies, thread resolution, and final
    verification. A blocked result is incomplete, not convergence.
    Ask only for substantive disagreements, alternatives, or real blockers.

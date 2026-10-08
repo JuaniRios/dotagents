@@ -2,10 +2,10 @@
 name: finish-pr
 description: >-
   Prepare the PR (description, assignee, engineer reviewers, kept in draft),
-  address existing human and bot feedback, loop with CodeRabbit and Rain
-  Marvin until both approve the exact published head, and only then mark the
-  PR ready for review. A bot approval with only minor comments ends the fix
-  loop unless a comment is underrated. Use when asked to address review
+  address existing human and bot feedback, loop with Rain Marvin (and, in
+  ST0x-Technology only, CodeRabbit) until the required bots approve the exact
+  published head, and only then mark the PR ready for review. A bot approval
+  with only minor comments ends the fix loop unless a comment is underrated. Use when asked to address review
   feedback, drive CodeRabbit or Rain Marvin, or finish PR review, or when an
   active implementation workflow requires it. Do not trigger for status-only checks.
 ---
@@ -131,7 +131,20 @@ on the PR.
 User-approved alternatives or rejections follow the same reply-and-resolve
 path. Do not claim a deferred issue exists before it has been created.
 
-## 3. Ensure a full CodeRabbit review
+## CodeRabbit applies only in ST0x-Technology
+
+Only the `ST0x-Technology` org pays for CodeRabbit, and only there is its
+review required (Marvin's `coderabbit/reviewed` check runs only there). For a
+PR in any other org (`T0Trade`, `rainlanguage`, `S01-Issuer`, and the rest):
+
+- Skip section 3. Do not post `@coderabbitai` commands.
+- Rain Marvin's approval alone satisfies sections 5 and 7.
+- CodeRabbit comments already on the PR are still feedback: handle them
+  through sections 1 and 2 like any other review comment.
+
+Wherever later sections say "both bots", read "Rain Marvin" for those PRs.
+
+## 3. Ensure a full CodeRabbit review (ST0x-Technology only)
 
 After existing feedback is handled, or immediately if none exists, inspect
 CodeRabbit's review history. The handle is `@coderabbitai`.
@@ -297,7 +310,8 @@ perform the final audit:
 
 Only when every condition holds on the exact published head:
 
-- CodeRabbit and Rain Marvin both approved it (section 5).
+- CodeRabbit and Rain Marvin both approved it (section 5); outside
+  ST0x-Technology, Rain Marvin approved it.
 - The section 6 audit passed: CI green, no conflicts, every addressed thread
   replied to and resolved, no unhandled substantive feedback.
 - Section 0 still holds: current description, the PR opener assigned,
@@ -313,6 +327,6 @@ condition fails, leave the PR in draft and report why.
 Report each PR with its link, head, draft/ready state, fixes, CodeRabbit
 coverage and approval, Rain Marvin coverage and approval, remaining nits or
 decisions, CI, conflicts, and missing human approvals.
-"Ready for review" requires both bot approvals on the current head, the
+"Ready for review" requires the required bot approvals on the current head, the
 final audit, and a verified `gh pr ready`. It does not mean merged,
 deployed, or human-approved.
