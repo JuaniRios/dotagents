@@ -144,9 +144,7 @@ For both Cursor lanes, save stdout as `raw-<lane>-envelope.json`, extract
 `.result` with `jq -er` into `raw-<lane>.json`, then validate against the
 schema. These exact model IDs were verified with `cursor-agent models`. Always
 pass them to `cursor-agent`, never to the direct `grok` CLI, which bills the
-separate xAI account. Grok 4.7 is in Cursor's included Cursor-model pool; the
-older `cursor-grok-4.6-*` ids are not, and they drain the small API-priced
-pool. A parse or validation failure
+separate xAI account. A parse or validation failure
 gets the same one retry as any other lane, then moves to its substitute.
 
 Inline the artifact when the CLI cannot read files. Timeout 10 minutes
