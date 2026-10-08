@@ -158,6 +158,34 @@ CodeRabbit's review history. The handle is `@coderabbitai`.
   three minutes for it to start before requesting an incremental review.
   Do not duplicate a queued or running request.
 
+### CodeRabbit command budget
+
+CodeRabbit answers a bot (such as `rain-marvin[bot]`) for only about four
+`@coderabbitai` commands on one PR. After that it ignores the bot silently
+for 12 hours or more, while it still answers people on the same PR. Every
+command counts: `review`, `full review`, `approve`, `resolve`, and replies
+that mention `@coderabbitai`. Spend them carefully:
+
+- Post at most one review command for each published head. Before you post,
+  check whether CodeRabbit already covered that head: a review on that
+  commit, or its summary listing that commit as the end of the reviewed
+  range. If it did, do not post. CodeRabbit does not review a commit again,
+  so a second `review` on a covered head does nothing.
+- Batch fixes so that each round makes one push and needs one review.
+- Do not mention `@coderabbitai` in thread replies. Reply in the thread
+  without the handle.
+- Use `approve` or `resolve` only when section 5 needs it, and only once
+  for each head.
+- Count the commands this run posted on the PR, and also the ones earlier
+  runs posted (read the PR comments). Record the count in the checkpoint.
+
+If CodeRabbit does not answer a command within five minutes (no reply, no
+reaction, no status change), treat it as the bot limit. Do not post the
+command again and do not switch to `full review`. Stop driving CodeRabbit on
+that PR, finish the Rain Marvin side, and report the PR as blocked: a person
+must post `@coderabbitai review` (or `approve`) on the current head. People
+are not subject to this limit.
+
 Record trigger time, head/base SHAs, command, review run, and covered commit.
 A request acknowledgement, green check, empty COMMENTED review, or reply
 saying a thread is fixed does not prove a code review completed.
@@ -220,12 +248,12 @@ resumed turn does not re-request coverage it already has.
 
 CodeRabbit usage-based reviews are enabled for this environment. A
 `Review rate limited` reply is a failed trigger, not a reason to wait for the
-hourly included-review allowance or to stop. Verify that no review is queued or
-running, honor an explicit retry-after time when present, otherwise wait 10-30
-seconds to avoid duplicating the failed request, then post a fresh
-`@coderabbitai review`. Repeat until a review is accepted or a different
-concrete blocker appears. Do not change billing or subscription settings.
-Do not disable automatic review settings.
+hourly included-review allowance. Verify that no review is queued or running,
+wait for the retry-after time when one is given, then post one fresh
+`@coderabbitai review`. Never retry in a loop: every retry uses up the
+command budget in section 3. If the retry also fails or gets no answer, apply
+the no-answer rule in section 3. Do not change billing or subscription
+settings. Do not disable automatic review settings.
 
 Never call an unreviewed final fix converged merely because CI passed.
 
@@ -271,9 +299,10 @@ coverage after a material change.
 
 A quiet or rate-limited service is not convergence. Diagnose a stalled run
 after 20 minutes. Retry only when evidence says the previous attempt failed
-or retry is allowed. If substantive findings repeat without progress across
-three cycles, investigate the cause and ask for the concrete missing
-decision instead of blindly editing or retriggering.
+or retry is allowed. For CodeRabbit, a command it did not answer is not such
+evidence; follow the no-answer rule in section 3. If substantive findings
+repeat without progress across three cycles, investigate the cause and ask
+for the concrete missing decision instead of blindly editing or retriggering.
 
 Convergence means both bots approved the current head: a CodeRabbit
 `APPROVED` review and a Rain Marvin approval, each on the exact published
