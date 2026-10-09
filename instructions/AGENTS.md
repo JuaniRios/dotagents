@@ -24,3 +24,20 @@ The `zulip` skill comes from T0Trade/agent-skills. On machines that have both
   of every new private channel unless Juan excludes bots: after creation, Zulip
   may only allow a current content-access member to invite it. Report it apart
   from the human subscribers.
+
+## Pull requests are not done until finish-pr passes
+
+When you open a PR or push changes to one, run the `finish-pr` skill on it
+before you report the work as done. This applies to every request, not only
+`implement-issue`. Pushing a branch, opening a PR, or seeing local tests pass
+does not finish the work.
+
+A PR is done only when `finish-pr` marked it ready for review: Rain Marvin
+(and CodeRabbit in `ST0x-Technology`) approved the exact published head, CI
+is green on that head, and every review thread has a reply and is resolved.
+If CI fails or a bot does not approve, keep fixing and looping. If a real
+blocker stops you, report the PR as blocked with the failing check or the
+missing approval. Never call it done, finished, or wrapped up.
+
+Skip this only when the user explicitly asks for a draft or a push without
+review.

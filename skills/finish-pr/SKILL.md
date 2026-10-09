@@ -6,8 +6,9 @@ description: >-
   ST0x-Technology only, CodeRabbit) until the required bots approve the exact
   published head, and only then mark the PR ready for review. A bot approval
   with only minor comments ends the fix loop unless a comment is underrated. Use when asked to address review
-  feedback, drive CodeRabbit or Rain Marvin, or finish PR review, or when an
-  active implementation workflow requires it. Do not trigger for status-only checks.
+  feedback, drive CodeRabbit or Rain Marvin, or finish PR review, when an
+  active implementation workflow requires it, and always before reporting a
+  PR you opened or changed as done. Do not trigger for status-only checks.
 ---
 
 # Finish PR
