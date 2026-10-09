@@ -10,7 +10,7 @@ nu ~/Github/dotagents/scripts/install-skills.nu
 
 Multi-model panels: read `panel-runtime.md`. Harnesses are
 claude/codex/grok/agy; models are opus 5.5, sol 6.1,
-Cursor Grok 4.7, composer 2.5, and flash 3.7. Do not fork a second catalogue.
+Cursor Grok 4.7, composer 2.5, and flash 3.8. Do not fork a second catalogue.
 
 New work goes here via the `new-skill` skill. Optional Claude/Grok
 frontmatter (`allowed-tools`, `argument-hint`) is fine. Bodies stay

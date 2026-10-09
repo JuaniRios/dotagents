@@ -2,7 +2,7 @@
 name: review-loop
 description: >
   Cross-review the current branch with a multi-model panel (opus 5.5,
-  sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.7), including an opus 5.5
+  sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.8), including an opus 5.5
   deep lane, auto-fix findings, and re-review until clean. Use only when the user
   explicitly asks for review-loop, a multi-model review, or an applicable
   complex implementation workflow explicitly requires it. Do not auto-trigger for ordinary review,

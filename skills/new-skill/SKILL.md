@@ -45,7 +45,7 @@ tool.
 If the skill fans out models, say "follow
 `~/Github/dotagents/skills/panel-runtime.md`" instead of inventing
 another catalogue. Harnesses are claude/codex/grok/agy; models are
-opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5, and flash 3.7.
+opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5, and flash 3.8.
 Do not mix the two.
 
 ## Steps

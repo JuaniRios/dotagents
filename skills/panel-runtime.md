@@ -19,7 +19,7 @@ model.
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
 | sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol` (ccx; ccxx fallback below) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
-| flash 3.7 | high | agy | isolated Agy child, `gemini-3.7-flash-high` | `agy -p --model gemini-3.7-flash-high` |
+| flash 3.8 | high | agy | isolated Agy child, `gemini-3.8-flash-high` | `agy -p --model gemini-3.8-flash-high` |
 
 A model is **native** only on its home harness, and only as an
 **isolated child pinned to that model**, not the babysitter. On any
@@ -48,15 +48,15 @@ Max preflight below drops it:
 | opus 5.5 | Max preflight below |
 | sol 6.1 | `codex login status` exits 0 |
 | Cursor Grok 4.7, composer 2.5 | `cursor-agent status` prints `Logged in` |
-| flash 3.7 | `agy models` exits 0 (it fails fast when logged out; a lane would sit at a login prompt) |
+| flash 3.8 | `agy models` exits 0 (it fails fast when logged out; a lane would sit at a login prompt) |
 
 Never start a lane on an unavailable model. **Run it on the first
 available substitute instead**, with the same lane prompt and focus:
 
 | Unavailable | Substitutes, in order |
 |---|---|
-| flash 3.7 | composer 2.5, sol 6.1, opus 5.5 |
-| composer 2.5 | flash 3.7, sol 6.1, opus 5.5 |
+| flash 3.8 | composer 2.5, sol 6.1, opus 5.5 |
+| composer 2.5 | flash 3.8, sol 6.1, opus 5.5 |
 | Cursor Grok 4.7 | sol 6.1, opus 5.5, composer 2.5 |
 | sol 6.1 | Cursor Grok 4.7, opus 5.5, composer 2.5 |
 | opus 5.5 | sol 6.1, Cursor Grok 4.7, composer 2.5 |
@@ -133,7 +133,7 @@ cursor-agent -p --output-format json --mode ask --trust \
   --model composer-2.5 \
   "$CURSOR_PROMPT"
 
-# flash 3.7 — -p last; detach stdin; headless sandbox denies read_file.
+# flash 3.8 — -p last; detach stdin; headless sandbox denies read_file.
 # --dangerously-skip-permissions also lets the model WRITE files, and
 # --mode plan does not stop it. So the lane never runs in the real repo:
 # it runs in a throwaway snapshot, and the real tree is checked after.
@@ -142,7 +142,7 @@ rsync -a --exclude target/ --exclude node_modules/ --exclude .direnv/ \
   "$repoRoot"/ "$snap"/
 before=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
 (cd "$snap" && agy --sandbox --disable-slash-commands \
-  --model gemini-3.7-flash-high \
+  --model gemini-3.8-flash-high \
   --output-format json --json-schema "$SCHEMA" \
   --print-timeout 10m \
   --dangerously-skip-permissions \
@@ -198,7 +198,7 @@ substitute the remaining Claude-model lanes for the rest of the run.
 A pass counts only if **at least two different models** returned, and
 **at least one is not the host harness's home model** (treat Cursor Grok 4.7
 as host-equivalent on Grok; sol 6.1 on Codex; opus 5.5 on Claude;
-flash 3.7 on Agy).
+flash 3.8 on Agy).
 Otherwise the pass is `incomplete`. Do not converge.
 
 ## Code-review lanes (review-loop, review-pr)
@@ -209,7 +209,7 @@ Otherwise the pass is `incomplete`. Do not converge.
 |---|---|
 | `review-sol` | sol 6.1 high |
 | `review-grok` | Cursor Grok 4.7 high |
-| `review-flash` | flash 3.7 high |
+| `review-flash` | flash 3.8 high |
 | `review-opus` | opus 5.5 |
 | `review-composer` | composer 2.5 standard |
 
@@ -224,9 +224,9 @@ Composite lanes combine related inspectors into one process per model.
 | Lane | Model | Covers | Gate |
 |---|---|---|---|
 | `opus-deep` | opus 5.5 xhigh | goal-eval, simplicity, **and** approach (`approach-inspector`), one prompt | On `<50` non-sensitive, run only the approach part, and only when an approach trigger holds. Re-run if the PR description **or** behavior hunks changed, or the approach part alone if an approach trigger changed. |
-| `flash-hygiene` | flash 3.7 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
-| `flash-spec` | flash 3.7 high | spec-sync (`spec-sync-inspector`) | Run if the repo has a spec (`SPEC.md`, `docs/spec*`, `docs/architecture*`, `adrs/`, `docs/adr*`) and the diff changes behavior or structure, or edits those docs. Re-run if behavior hunks or those docs changed. |
-| `flash-config` | flash 3.7 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
+| `flash-hygiene` | flash 3.8 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
+| `flash-spec` | flash 3.8 high | spec-sync (`spec-sync-inspector`) | Run if the repo has a spec (`SPEC.md`, `docs/spec*`, `docs/architecture*`, `adrs/`, `docs/adr*`) and the diff changes behavior or structure, or edits those docs. Re-run if behavior hunks or those docs changed. |
+| `flash-config` | flash 3.8 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | Cursor Grok 4.7 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
 | `sol-special` | sol 6.1 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 | `sol-paths` | sol 6.1 high | error paths and lifecycle states (`error-path-inspector`) | Run if the diff changes error handling, retries, polling, persisted state, status enums, events, or state transitions, and always when sensitive. Re-run if behavior hunks changed. |
@@ -341,7 +341,7 @@ part applies `approach-inspector`'s plan section: every new component
 states its home and why, checked against the spec, the owning system, and
 any planned replacement.
 
-`flash-hygiene`: feasibility, clarity, style (flash 3.7).
+`flash-hygiene`: feasibility, clarity, style (flash 3.8).
 
 `grok-special`: consistency + scope (Cursor Grok 4.7).
 
@@ -362,7 +362,7 @@ which.
 
 Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Cursor Grok 4.7,
 and composer 2.5. The opus 5.5 critic also applies `approach-inspector`'s
-plan section. No flash 3.7, except as a substitute. If Claude is
+plan section. No flash 3.8, except as a substitute. If Claude is
 unreachable, substitute the opus 5.5 critic and label the run `portable`. If Claude is the host, label it `claude-host`.
 
 Implementer and fixer stay on the host model (or a cheap same-harness
@@ -371,7 +371,7 @@ child).
 ## Council lanes (council-eval)
 
 One generalist each: opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5,
-and flash 3.7. Council drops an unavailable model instead of substituting it: its point is one
+and flash 3.8. Council drops an unavailable model instead of substituting it: its point is one
 answer per distinct model. No specialists or re-review. Use the shared wrappers
 and Max preflight above; `council-eval` owns only its artifact prompt and
 deterministic report.
@@ -408,5 +408,5 @@ composite or focused specialist lane.
 5. Do not impersonate an unavailable **model**: a substitute runs under
    its own name.
 6. Never name a harness as if it were a model. Lanes are owned by
-   Cursor Grok 4.7, composer 2.5, sol 6.1, opus 5.5, or flash 3.7 —
+   Cursor Grok 4.7, composer 2.5, sol 6.1, opus 5.5, or flash 3.8 —
    not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy".
