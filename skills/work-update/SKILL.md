@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's detailed team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Explain direction, outcomes, discussions, next focus, and blockers, with PRs grouped by status at the end. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under the private repo's data/work-update/days/ for richer multi-day reports.
+description: Draft the user's short team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Use the team's short template (Projects, Since last, Outside projects, Surprises, Decisions, Need, Capacity, Next), readable in about 30 seconds, with no PR lists and project details left to Linear project updates. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under the private repo's data/work-update/days/ for richer multi-day reports.
 argument-hint: "[save-today | since <date or timeframe>]"
 ---
 
@@ -9,8 +9,9 @@ argument-hint: "[save-today | since <date or timeframe>]"
 
 Replace daily updates with a written standup every Wednesday and Friday.
 Cover the work since the last update across all repos in `~/Github/`.
-The main message explains the work, its direction, and its context. PRs
-support the story and belong at the end. This is not a changelog.
+The update is short: what happened outside projects, what was decided, and
+who the user needs something from. Project details belong in Linear project
+updates, and PR lists belong in GitHub. This is not a changelog.
 
 The cadence starts the week of September 9, 2026, as a trial for a couple
 of weeks. Adjust when the user gives feedback; do not automatically revert
@@ -276,7 +277,9 @@ alone does not describe activity across a multi-day window.
 
 Read the `linear-cli` skill for Linear commands. Query the user's issues
 updated in the period across all states and inspect relevant status changes
-and comments. If unavailable, extract referenced issue IDs from sessions and
+and comments. For the Projects line, fetch every Linear project where the user
+is lead or driver and that moved in the period: name, URL, current health from
+its latest project update, and target date, including whether the date moved. If unavailable, extract referenced issue IDs from sessions and
 commit messages, marking their current status unverified.
 
 Discover repos and GitHub orgs from `~/Github/*/` git remotes. Worktrees share
@@ -429,74 +432,98 @@ user's emphasis, corrections, intended next focus, and any missing decisions.
 Continue verification while awaiting that input. Do not invent personal
 intent or a team agreement from activity alone.
 
-Read `write-as-me` before drafting. Use the six sections below in order; this
-structure overrides the old daily-report status/stats/emoji template. Write
-in first person, as the user would describe their work in a standup. Use
-connected paragraphs or a few useful bullets, concrete language, and honest
-limits. Explain the multi-day period within a hard 10,000-character budget
-for the entire message, including headings, whitespace, and Markdown links.
-Budget room for the complete PR list before drafting the narrative. Use these report titles:
+Read `write-as-me` before drafting. Use the short template below. It
+replaces the old six-section narrative (General direction, What I worked on,
+Discussions, Next, Blockers, PRs) and the old daily-report template. The team
+adopted it on 2026-10-09 ([announcement](https://raingroup.zulipchat.com/#narrow/channel/632881-engineering/topic/Progress.20Updates)).
 
-- Wednesday: "Mid-week progress update".
-- Friday: "End of week progress update".
+The split the team agreed on:
 
-Add the report date to the title and the covered period underneath. For a
-late or early run, use the intended Wednesday or Friday update's title;
-honor an explicit title from the user. The skill command stays `/work-update`.
+- **Linear project update** (Wed and Fri, per project): health, target date,
+  milestones, project PRs, and project decisions. This skill does not write
+  those.
+- **Zulip progress update** (this skill): everything that does not fit in a
+  project, plus one line per project. Never repeat project details here.
 
-1. **General direction**: what the user focused on, why, and where the work is
-   going. Start with the actual direction, not a count of commits or PRs.
-2. **What I worked on**: main outcomes since the last update, with useful
-   context, incidents, changes of direction, and unfinished parts. Group by
-   workstream and explain the result rather than narrating tools or commits.
-3. **Discussions and decisions**: important conversations, who was involved
-   when relevant, what was agreed, why, and what the team should remember.
-   Make tentative ideas visibly tentative; open decisions belong in section 5.
-4. **What I'm continuing next**: the expected focus before the next update,
-   grounded in the user's stated plan. Close the loop on previous intentions
-   when they changed or slipped. Do not turn guesses into promises.
-5. **Blockers and open decisions**: what is blocked, unclear, or waiting for
-   input; who or what can unblock it when known. Distinguish blockers from
-   routine planned work. If none, say so briefly only after confirming it.
-6. **PRs**: the final section, using the categories below in this exact order.
-   Omit empty categories. No stats, appendix, or concluding recap after it.
+Write in first person. A reader should get the important things in about
+30 seconds. Short is the default, not a cap: an incident period can need more
+lines, or a link to the issue. Aim for roughly 2,000 characters in a normal
+period. The hard 10,000-character limit in Step 5 still applies.
 
-Do not pad a section with invented activity. If no material discussions or
-PRs occurred, say so briefly. Use the user's own example as a style reference
-when provided; until then follow this structure and their direct guidance.
-The user owns the message: AI may collect and draft, but must not present an
-unreviewed draft as their finalized account.
+Title: "Wed update · Juan" or "Fri update · Juan", followed by the covered
+period, for example "(Sep 30 → Oct 2)". For a late or early run, use the
+intended day. Honor an explicit title from the user. The skill command stays
+`/work-update`.
 
-### PR categories
+```markdown
+**Wed update · Juan** (<period start> → <period end>)
+**Projects:** <project link> 🟢/🟡/🔴 <target date> (<short note if moved or at risk>)
+**Since last:** what the previous update said I'd do: ✅ done / ❌ not done (why)
+**Outside projects:** incidents, ops, support, planning. Add the $ impact if there was one
+**Surprises:** anything unexpected: findings, money at risk, external parties, billing, infra changes
+**Decisions:** one line each + who agreed. Open questions too, + who decides
+**Need:** @person + what
+**Capacity:** only if reduced (sick, off, on-call heavy)
+**Next:** 1-2 lines
+```
 
-Re-fetch current state before finalizing. Link each PR to Graphite using its
-actual org/repo. Use a short descriptive title and only a useful status note.
-For authored work, assign one category; reviews of others' work go under
-Reviewed. Do not repeat the whole narrative in the PR list.
+Section rules:
 
-- **Deployed**: the change is actually live in production, with evidence for
-  that change's deployed component/version. Merged or live on staging is not
-  deployed. A rollback means it is no longer deployed.
-- **Merged, not deployed**: reached the default branch but is not live in
-  production. If production deployment is unverified, explicitly annotate
-  "deployment not confirmed" rather than claiming it is known absent. For
-  docs/tooling with no production deployment, annotate "deployment not
-  applicable" here rather than inventing a production rollout.
-- **Ready for review**: the user is done and waiting for others. Confirm
-  readiness from the user's intent and current checks/review state; an open,
-  non-draft PR alone does not establish readiness.
-- **In progress**: still being implemented or revised, including active work
-  to address review feedback. Draft status is a signal, not the only evidence.
-- **Blocked**: cannot progress because of a concrete dependency, unresolved
-  decision, failing check, or other obstacle. State the blocker; ordinary
-  waiting for review belongs under Ready for review.
-- **Reviewed**: other people's PRs the user meaningfully reviewed in the
-  period, with useful outcome/context if needed.
+- **Projects**: one line per Linear project where the user is the driver or
+  tech lead and that moved in the period. Use the project's current health and
+  target date from Linear. Do not invent a health: if Linear has none, ask the
+  user. Link the project. Use ` · ` between projects.
+- **Since last**: check each "Next" and "Need" item of the previous finalized
+  update (for an old-format update, its "What I'm continuing next" and
+  "Blockers" sections). Mark ✅ or ❌. Give a short reason for ❌. Use ` · ` between items when
+  they fit on one line. An item that slipped with no reason is still listed.
+- **Outside projects**: bullets with a bold lead-in. One to three sentences
+  each. Say the result, not the steps. Keep the $ amount and the exposure when
+  money was at risk. Link the issue for the long story.
+- **Surprises**: unexpected findings only. A surprise that is also an
+  incident goes under Outside projects, not both.
+- **Decisions**: every decision in the period, including ones made in DMs
+  (paraphrased). Name who agreed or decided. Put open questions here with the
+  person who decides.
+- **Need**: every blocker and every review the user waits on, each with a
+  named person. If evidence does not show who, ask the user. Never leave a
+  blocker without an owner. Use silent mentions (`@_**Name**`) for asks that
+  are already resolved.
+- **Capacity**: only when reduced. Otherwise omit.
+- **Next**: one or two lines, grounded in the user's stated plan. Do not turn
+  guesses into promises.
 
-For an open authored PR, a verified blocker takes priority, then readiness,
-then ongoing implementation. Archived, abandoned, or closed-unmerged work is
-not forced into a false status; explain a material abandonment in the main
-narrative. Keep any unresolved classification uncertainty visible for review.
+Global rules:
+
+- Skip any section that is empty. Do not write "none".
+- No PR lists. No "Reviewed" lists. GitHub has them. Reference a PR inline
+  only when it carries an outcome or a reader must act on it.
+- No implementation narrative. Describe outcomes. The details live in the
+  PRs, the issues, and the Linear project updates.
+- Use bold labels exactly as in the template. Zulip renders them well.
+
+Do not pad a section with invented activity. The user owns the message: AI
+may collect and draft, but must not present an unreviewed draft as their
+finalized account.
+
+### PR classification (internal only)
+
+PRs no longer appear as a list in the report. Still classify the user's PRs
+internally, in the sidecar, so "Since last", "Need", and the next window stay
+correct. Re-fetch current state before finalizing.
+
+- **Deployed**: live in production, with evidence for that change's deployed
+  component and version. Merged or live on staging is not deployed.
+- **Merged, not deployed**: on the default branch but not live in production.
+  Annotate "deployment not confirmed" or "deployment not applicable".
+- **Ready for review**: the user is done and waits for others. Candidates for
+  the Need line.
+- **In progress**: still in implementation or revision.
+- **Blocked**: a concrete dependency, decision, or failing check stops it.
+  Candidates for the Need line, with the owner of the blocker.
+- **Reviewed**: other people's PRs the user meaningfully reviewed. Internal
+  only. Mention one in the report only when the review produced a decision
+  or a surprise.
 
 ## 5. Send through Zulip, review, and save
 
@@ -520,11 +547,13 @@ After the user explicitly finalizes the report, save the exact approved text und
   "period_end": "<ISO 8601 with timezone>",
   "finalized": true,
   "sent": false,
-  "general_direction": "...",
+  "projects": [{"name": "...", "url": "...", "health": "onTrack", "target": "YYYY-MM-DD"}],
+  "since_last": [{"item": "...", "done": true, "note": "..."}],
   "themes": ["..."],
+  "decisions": ["..."],
+  "open_decisions": [{"question": "...", "decider": "..."}],
+  "needs": [{"person": "...", "what": "..."}],
   "next_focus": ["..."],
-  "blockers": ["..."],
-  "open_decisions": ["..."],
   "open_prs": [{"repo": "org/repo", "number": 123, "status": "In progress"}],
   "coverage_gaps": []
 }
@@ -574,21 +603,11 @@ count the exact final Markdown in Unicode code points (Python `len(text)`),
 including headings, spaces, newlines, and link destinations. Assert the count
 is within the cap before making any send call; never send an oversized draft.
 
-Budget space for all six sections and the complete PR list first. Tighten
-repeated context, descriptions, and narrative until the entire report fits.
-Keep the user's priorities, their relevant incidents, verified attribution,
-and material status uncertainties. Include every verified PR the user reviewed
-in the reporting window, deduplicated by repository and number. Group review
-bullets by repository, with a link and short description per PR. Do not replace
-the full review list with a selection or an ambiguous sentence of numbers.
-Keep detailed evidence locally; do not cut off the end or omit required sections
-to fit. Before delivery, check all six section headings and compare the set of
-repository/PR-number pairs under Reviewed against the deduplicated verified
-review inventory. Require exact coverage; a total count alone can hide a
-missing PR and a duplicate. Shorten wording without dropping names needed for
-attribution, recovery outcomes, next priorities, or requested concrete links.
-Do not replace clear prose with an ambiguous compressed list. Send the complete
-validated Markdown through stdin in one call for the initial delivery.
+If the draft is over the cap, tighten wording. Keep the user's priorities,
+$ impact, decisions, owners in Need, and verified attribution. Do not cut off
+the end or drop a required section to fit. Before delivery, check that every
+non-empty section uses its template label, and that every item in Need names a
+person. Send the complete validated Markdown through stdin in one call.
 
 A successful API acknowledgement does not prove complete delivery: Zulip can
 silently truncate an oversized message. Fetch the returned message ID with
