@@ -5,6 +5,8 @@ description: >
   phone-assisted, no-browser login coordinated over a private Juan-Bot Zulip
   DM. Use after gcloud reports expired credentials, reauthentication failure,
   or inability to prompt, and when asked to authenticate gcloud remotely.
+  Handles both Google accounts: juan@t0trade.com (T0) and juan@s01issuer.com
+  (S01).
 allowed-tools: Bash(gcloud:*), Bash(zulipctl:*), Bash(python3:*), Bash(test:*), Bash(set:*)
 ---
 
@@ -24,7 +26,11 @@ once. Never retry a mutation automatically.
 
 ## Fixed identities and prerequisites
 
-- Google account: `juan@t0trade.com`
+- Google accounts, chosen by the project the failed command targeted:
+  - `juan@t0trade.com` for T0 projects (`t0-*`). This is the default and
+    the account gcloud should stay active on.
+  - `juan@s01issuer.com` for S01 projects (`s01-*`, such as `s01-issuance`).
+  If the target is ambiguous, ask which account before starting a login.
 - Zulip actor: Juan-Bot via `~/.zuliprc-bot`
 - Zulip recipient: `juan@rainlang.xyz`
 - Zulip cleanup identity: Juan via `~/.zuliprc-personal`
@@ -45,12 +51,14 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
    reauthentication—not IAM, IAP, API enablement, networking, or quota.
 3. Confirm the helper and `~/.zuliprc-bot` are readable. Do not print either
    credential file or any environment values.
-4. Run the helper and allow it to wait for up to 15 minutes:
+4. Record the active account (`gcloud config get-value account`), then run
+   the helper with the chosen `ACCOUNT` and allow it to wait for up to 15
+   minutes:
 
    ```bash
    set +x
    python3 "$HOME/Github/dotagents/skills/gcloud-login/scripts/zulip_remote_login.py" \
-     --account juan@t0trade.com \
+     --account "$ACCOUNT" \
      --recipient juan@rainlang.xyz \
      --zulip-config "$HOME/.zuliprc-bot" \
      --zulip-delete-config "$HOME/.zuliprc-personal" \
@@ -60,6 +68,12 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
    The helper uses `--force --no-launch-browser` deliberately. `--force`
    prevents an unattended local password prompt and guarantees the phone-link
    flow; `--no-launch-browser` prevents GUI use on the target host.
+
+   Application Default Credentials hold one account at a time. Pass
+   `--update-adc` for `juan@t0trade.com`. For `juan@s01issuer.com`, pass it
+   only when the task needs S01 ADC (for example, a client library rather
+   than the `gcloud` CLI), and say that this replaces the T0 ADC until the next
+   T0 login.
 5. Tell the user only that a private Juan-Bot DM was sent and that the helper
    is waiting. Do not repeat the authorization URL in agent chat.
 6. Wait for the helper to finish. It polls Zulip every 5 seconds, performs the
@@ -70,10 +84,14 @@ credentials remain host-local and must never enter Nix, Git, or tool output.
 7. On success, independently verify without printing tokens:
 
    ```bash
-   gcloud auth print-access-token --account=juan@t0trade.com >/dev/null
-   gcloud auth application-default print-access-token >/dev/null
+   gcloud auth print-access-token --account="$ACCOUNT" >/dev/null
+   gcloud auth application-default print-access-token >/dev/null  # only with --update-adc
    ```
 
+   `gcloud auth login` makes the new account active. After an S01 login,
+   restore the account recorded in step 4 with
+   `gcloud config set account <recorded account>`, so T0 commands keep
+   working. Pass `--account=juan@s01issuer.com` on every S01 `gcloud` command.
 8. Report the active account from `gcloud auth list`; do not report tokens,
    authorization codes, OAuth URLs, credential paths, or credential contents.
 9. If invoked because a read-only operation failed, retry it exactly once. If
