@@ -3,8 +3,10 @@ name: review-pam-grants
 description: >
   Review Privileged Access Manager grants waiting on the user, say whether
   each looks expected or suspicious, and approve or deny only after they
-  confirm. Use when asked to check PAM, approve a tf-apply grant, or when
-  a gated t0.devops apply is stuck on Await PAM approval.
+  confirm. Covers both orgs: T0 (`@t0trade.com`) and S01 (`@s01issuer.com`).
+  Use when asked to check PAM, approve a tf-apply, prod-ssh, or app-deploy
+  grant, or when a gated t0.devops or s01.devops apply is stuck on Await PAM
+  approval.
 allowed-tools: Bash(gcloud:*), Bash(gh:*), Read, Grep
 ---
 
@@ -19,13 +21,25 @@ votes. One CLI approve is one vote.
 
 ## 0. Identity
 
+The user has one Google account per org. Each org's projects accept only
+that org's account:
+
+| Org | Account | Projects |
+| --- | ------- | -------- |
+| T0  | `@t0trade.com` | `t0-*` |
+| S01 | `@s01issuer.com` | `s01-*` |
+
 ```bash
-gcloud auth list --filter=status:ACTIVE --format='value(account)'
+gcloud auth list --format='value(account)'
 ```
 
-Require an `@t0trade.com` account. If gcloud asks to reauth, stop and
-tell the user to run `gcloud auth login you@t0trade.com --no-launch-browser --update-adc`.
-Do not impersonate a service account.
+Do not switch the active account. Pass `--account="$ACCOUNT"` on every
+`gcloud` command, with the account for that project's org. Check each org
+on its own: an expired login in one org must not stop the review of the
+other. If gcloud asks to reauth for an org, skip that org, report it, and
+tell the user to run
+`gcloud auth login <account> --no-launch-browser --update-adc` (or use
+`gcloud-login`). Do not impersonate a service account.
 
 ## 1. Grants waiting for this user
 
@@ -34,23 +48,32 @@ Discover entitlements this account can approve, then list
 
 Known gated projects (try these; skip 403 / empty):
 
-`t0-liquidity` `t0-oracle` `t0-pricing` `t0-bebop` `t0-artifacts`
-`t0-price-publisher`
+- T0: `t0-liquidity` `t0-oracle` `t0-pricing` `t0-bebop` `t0-artifacts`
+  `t0-price-publisher`
+- S01: `s01-issuance` `s01-artifacts` `s01-observability`
 
 ```bash
 gcloud pam entitlements search \
+  --account="$ACCOUNT" \
   --caller-access-type=grant-approver \
   --location=global \
   --project="$PROJECT" \
   --format='value(name)'
 
 gcloud pam grants search \
+  --account="$ACCOUNT" \
   --entitlement="$ENTITLEMENT_ID" \
   --location=global \
   --project="$PROJECT" \
   --caller-relationship=can-approve \
   --format=json
 ```
+
+`can-approve` never returns the user's own grant: PAM does not let a
+requester approve their own request, even when they are a listed
+approver. If the user asks about a grant they requested, list it with
+`--caller-relationship=had-created`, report its approvals, and name the
+other approvers who can still vote. Do not try to approve it.
 
 Keep grants whose `state` is `APPROVAL_AWAITED`. If the filter flag is
 rejected, list and filter locally.
@@ -60,8 +83,8 @@ If none: say so and stop. Do not create a grant.
 For each remaining grant:
 
 ```bash
-gcloud pam grants describe "$GRANT_NAME" --format=json
-gcloud pam entitlements describe "$ENTITLEMENT_ID" \
+gcloud pam grants describe "$GRANT_NAME" --account="$ACCOUNT" --format=json
+gcloud pam entitlements describe "$ENTITLEMENT_ID" --account="$ACCOUNT" \
   --location=global --project="$PROJECT" --format=json
 ```
 
@@ -75,21 +98,37 @@ Never print Secret Manager payloads or secrets toml.
 
 Pull the GitHub Actions URL and commit from the justification when
 present. Fetch the run and the commit's files (`gh run view`,
-`gh api repos/T0Trade/t0.devops/commits/$SHA`).
+`gh api repos/$DEVOPS_REPO/commits/$SHA`). `$DEVOPS_REPO` is
+`T0Trade/t0.devops` for T0 and `S01-Issuer/s01.devops` for S01.
 
-**Expected T0 apply** (looks good):
+**Expected apply** (looks good):
 
 - Entitlement is `tf-apply-owner`.
 - Requester is `tf-apply@$PROJECT.iam.gserviceaccount.com` (the only
   eligible principal on that entitlement).
 - Requested duration is `14400s` (4 h).
 - Justification starts with `PRODUCTION APPLY on $PROJECT (terraform/<stack>)`.
-- It names a `T0Trade/t0.devops` Actions run that is in progress on
+- It names a `$DEVOPS_REPO` Actions run that is in progress on
   `Await PAM approval`.
 - `CHANGE:` matches that run's head commit subject.
 - `BY:` is a GitHub actor, not a random email.
 - Role binding is `roles/admin` on that project.
-- `approvals_needed` is 2.
+- `approvals_needed` matches the entitlement: 2 for production stacks.
+  S01 `s01-artifacts` and `s01-observability` need 1 (approvers juan,
+  kais).
+
+**Other S01 entitlements** (on `s01-issuance`, each 2 of 4 from alastair,
+josh, juan, kais):
+
+- `prod-ssh`: a human requester (one of those four) gets IAP tunnel,
+  OS admin login, and use of the VM service account for at most
+  `3600s`. Expected when the justification names a concrete task and the
+  user knows about it. Blast radius: root shell on the production
+  issuance VM, including its secrets.
+- `app-deploy`: requester is
+  `issuance-releaser@s01-artifacts.iam.gserviceaccount.com`, at most
+  `3600s`, `roles/storage.objectAdmin`. Expected when it names the
+  release run it gates.
 
 Call out the **diff class** from the commit files, in plain language:
 
@@ -105,13 +144,16 @@ vs old.
 **Suspicious** (recommend skip or deny unless the user already expected
 exactly this):
 
-- Requester is a human, or any SA other than that project's `tf-apply`.
-- Duration longer than 4 h.
-- Entitlement is not `tf-apply-owner` (maker-recovery and other
+- Requester is not the entitlement's eligible principal: for
+  `tf-apply-owner`, a human or any SA other than that project's
+  `tf-apply`.
+- Duration longer than the entitlement's maximum (4 h for
+  `tf-apply-owner`, 1 h for `prod-ssh` and `app-deploy`).
+- Entitlement is not one listed above (maker-recovery and other
   break-glass grants are a different class; name them and treat as
   high-risk).
-- No Actions URL, URL is not `T0Trade/t0.devops`, or the run is not
-  this grant's apply.
+- No Actions URL, URL is not that org's `$DEVOPS_REPO`, or the run is
+  not this grant's apply.
 - Commit subject / SHA / files do not match `CHANGE:`.
 - `bot_enabled: false`, a secrets pin bump, or an instance-replace
   the user did not just ask for.
@@ -119,8 +161,8 @@ exactly this):
 - Project is not one of the gated prod stacks above.
 
 Verdict per grant: **expected**, **suspicious**, or **not enough
-evidence**. Say why in 3-6 bullets. Always state blast radius:
-time-bound project `roles/admin` for CI.
+evidence**. Say why in 3-6 bullets. Always state blast radius
+(time-bound project `roles/admin` for CI on `tf-apply-owner`).
 
 ## 3. Ask, then maybe approve
 
@@ -134,6 +176,7 @@ On approve:
 
 ```bash
 gcloud pam grants approve "$GRANT_ID" \
+  --account="$ACCOUNT" \
   --entitlement="$ENTITLEMENT_ID" \
   --location=global \
   --project="$PROJECT" \
@@ -153,14 +196,16 @@ Timeouts: the apply job waits 60 minutes. Missed window:
 ## Hard rules
 
 1. Never approve or deny without an explicit per-grant answer.
-2. Never approve as a service account.
+2. Never approve as a service account, or with one org's account on the
+   other org's project.
 3. Never treat one vote as "the apply ran".
 4. Never revoke a grant this skill just approved.
 5. Never create a PAM grant from this skill.
 
 ## Failure modes
 
-- **gcloud reauth / not @t0trade.com**: stop.
+- **gcloud reauth for one org**: skip that org, review the other,
+  report the login command.
 - **search empty**: this account is not an approver on that
   entitlement, or nothing is waiting.
 - **approve PERMISSION_DENIED**: not in `pam_approval.approvers`.
