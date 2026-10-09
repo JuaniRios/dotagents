@@ -133,15 +133,35 @@ cursor-agent -p --output-format json --mode ask --trust \
   --model composer-2.5 \
   "$CURSOR_PROMPT"
 
-# flash 3.7 — -p last; detach stdin; headless sandbox denies read_file
-agy --sandbox --disable-slash-commands \
+# flash 3.7 — -p last; detach stdin; headless sandbox denies read_file.
+# --dangerously-skip-permissions also lets the model WRITE files, and
+# --mode plan does not stop it. So the lane never runs in the real repo:
+# it runs in a throwaway snapshot, and the real tree is checked after.
+snap=$(mktemp -d)
+rsync -a --exclude target/ --exclude node_modules/ --exclude .direnv/ \
+  "$repoRoot"/ "$snap"/
+before=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
+(cd "$snap" && agy --sandbox --disable-slash-commands \
   --model gemini-3.7-flash-high \
   --output-format json --json-schema "$SCHEMA" \
   --print-timeout 10m \
   --dangerously-skip-permissions \
   -p "$(cat "$promptPath")" \
-  < /dev/null
+  < /dev/null)
+after=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
+[ "$before" = "$after" ] || echo "flash lane changed $repoRoot" >&2
+rm -rf "$snap"
 ```
+
+**Review lanes must never change the code under review.** Every
+foreign-CLI lane runs read-only: sol uses `--sandbox read-only`, the
+Cursor lanes use `--mode ask`, and flash runs only in a snapshot copy as
+above, because no `agy` flag makes it read-only. Prompt paths inside
+the snapshot are the same relative paths. If the real tree changed during
+a lane (`before` ≠ `after`), treat that lane as `reviewer_error`, restore
+the tree from the last commit plus the fixer's known edits, and never
+let a review lane's edit reach a commit. (2026-10-09: a flash lane
+reverted applied fixes in a worktree mid-review.)
 
 For both Cursor lanes, save stdout as `raw-<lane>-envelope.json`, extract
 `.result` with `jq -er` into `raw-<lane>.json`, then validate against the
