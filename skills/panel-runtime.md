@@ -65,7 +65,10 @@ A substituted lane is labeled and recorded as the model that ran it
 (`flash-hygiene (on composer 2.5)`, `found_by: ["composer-2.5"]`), never as
 the missing model, and the report lists each substitution. The same
 substitution applies when a lane fails fast twice during the run (below).
-If no substitute is available, drop the lane and say so. A missing Cursor
+If no substitute is available, drop the lane and say so. Never wait for a
+model's usage limit or cooldown to reset: no `sleep`, no polling loop, no
+re-running the preflight to see whether it came back. A model that is out
+of usage is unavailable for the whole run. A missing Cursor
 CLI makes both Cursor models unavailable; never fall back to the direct
 `grok` command.
 
