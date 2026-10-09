@@ -70,8 +70,15 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
   (devops@rainlang.xyz). Commits as `rain-marvin[bot]`.
 - Zulip bot `rain-marvin-bot@raingroup.zulipchat.com`.
 - Linear OAuth app `rain-marvin`.
-- Model accounts are team accounts (leads@rainlang.xyz), never Juan's personal
-  ones. Codex has one account, `codex-1`; do not re-add `codex-2`.
+- Model accounts are team accounts, never Juan's personal ones. Claude has
+  three Max 20x accounts, used in order: `claude-1` leads@rainlang.xyz,
+  `claude-2` leads2@rainlang.xyz, `claude-3` ai@s01issuer.com (the S01 account
+  is intended). Cursor is leads@rainlang.xyz on an individual Ultra plan with a
+  monthly cycle. Codex has one account, `codex-1`; do not re-add `codex-2`.
+- Add an account with `marvin accounts add <claude|codex|cursor>` (no PR or
+  deploy). The box has no tmux on PATH; to drive a login from a session, run it
+  under `nix build --print-out-paths nixpkgs#tmux` and send the pasted code
+  with `send-keys`.
 - Required checks, all posted by App 5077017 on ST0x repos:
   `rain-marvin/reviewed` (ruleset 24013665), `coderabbit/reviewed` and
   `human/reviewed` (ruleset 23778102). The Graphite App must stay on the
