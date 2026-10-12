@@ -27,6 +27,22 @@ Approving `tf-apply-owner` gives CI a time-bound `roles/admin` on that
 GCP project (not standing owner). Production stacks need **2 of 4**
 votes. One CLI approve is one vote.
 
+## Never use IPv6
+
+Never use IPv6. On this network IPv6 connections hang, and Python tools
+(`gcloud`, `zulipctl`) try IPv6 first, so they stall until a timeout and
+then report a vague error. Before any `gcloud` or Zulip call, turn IPv6
+off on every network service:
+
+```bash
+networksetup -listallnetworkservices | tail -n +2 | sed 's/^\*//' |
+  while IFS= read -r s; do networksetup -setv6off "$s"; done
+```
+
+This is macOS. On a Linux host, check `ip -6 addr show scope global`; if
+it lists an address, report that IPv6 is on and stop. Do not turn IPv6
+back on.
+
 ## 0. Check both accounts
 
 The user has one Google account per org. Each org's projects accept only
@@ -220,15 +236,16 @@ Timeouts: the apply job waits 60 minutes. Missed window:
 
 ## Hard rules
 
-1. Check both accounts first. Run `gcloud-login` for any account
+1. Never use IPv6. Turn it off before any `gcloud` call.
+2. Check both accounts first. Run `gcloud-login` for any account
    whose token is missing or expired; never stop at a reauth error.
-2. Never approve or deny without an explicit per-grant answer.
+3. Never approve or deny without an explicit per-grant answer.
    After that answer, cast the vote yourself.
-3. Never approve as a service account, or with one org's account on the
+4. Never approve as a service account, or with one org's account on the
    other org's project.
-4. Never treat one vote as "the apply ran".
-5. Never revoke a grant this skill just approved.
-6. Never create a PAM grant from this skill.
+5. Never treat one vote as "the apply ran".
+6. Never revoke a grant this skill just approved.
+7. Never create a PAM grant from this skill.
 
 ## Failure modes
 

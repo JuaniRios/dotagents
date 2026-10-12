@@ -44,9 +44,26 @@ The shared nix-darwin/home-manager configuration installs `gcloud`,
 `zulipctl`, and Python on both `juanrios-m2` and `juan-dev-server`. Zulip bot
 credentials remain host-local and must never enter Nix, Git, or tool output.
 
+## Never use IPv6
+
+Never use IPv6. On this network IPv6 connections hang, and Python tools
+(`gcloud`, `zulipctl`) try IPv6 first, so they stall until a timeout and
+then report a vague error. Before any `gcloud` or Zulip call, turn IPv6
+off on every network service:
+
+```bash
+networksetup -listallnetworkservices | tail -n +2 | sed 's/^\*//' |
+  while IFS= read -r s; do networksetup -setv6off "$s"; done
+```
+
+This is macOS. On a Linux host, check `ip -6 addr show scope global`; if
+it lists an address, report that IPv6 is on and stop. Do not turn IPv6
+back on.
+
 ## Procedure
 
 1. Disable shell tracing with `set +x` and never re-enable it.
+   Then turn IPv6 off as described in "Never use IPv6".
 2. If this follows another command, confirm its failure is authentication or
    reauthentication—not IAM, IAP, API enablement, networking, or quota.
 3. Confirm the helper and `~/.zuliprc-bot` are readable. Do not print either
@@ -120,6 +137,8 @@ unambiguous. Never use a public or private channel topic for this exchange.
 
 - Missing helper, `gcloud`, Python, `zulipctl`, or bot credentials: report the
   missing prerequisite without inspecting credential material.
+- `Zulip command failed` or a hang: check IPv6 first (see "Never use
+  IPv6"), turn it off, and run the helper again.
 - Zulip connectivity or recipient mismatch: stop before starting Google login.
 - No Google URL, gcloud exits early, or Google rejects the code: send a
   non-secret failure DM, report the sanitized error, and stop.
