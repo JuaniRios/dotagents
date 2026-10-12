@@ -1,25 +1,33 @@
 ---
 name: review-pam-grants
 description: >
-  Review Privileged Access Manager grants waiting on the user, say whether
-  each looks expected or suspicious, and approve or deny only after they
-  confirm. Covers both orgs: T0 (`@t0trade.com`) and S01 (`@s01issuer.com`).
-  Use when asked to check PAM, approve a tf-apply, prod-ssh, or app-deploy
-  grant, or when a gated t0.devops or s01.devops apply is stuck on Await PAM
+  Review Privileged Access Manager grants waiting on the user and approve
+  them after the user confirms. Covers both orgs: T0 (`@t0trade.com`) and
+  S01 (`@s01issuer.com`). First check that both accounts have valid tokens,
+  and run gcloud-login for any that do not. Then find open grants and
+  verify each is safe. Last, wait for the user's confirmation and approve.
+  Use when asked to approve or check PAM, approve a tf-apply, prod-ssh, or
+  app-deploy grant, or when a gated t0.devops or s01.devops apply is stuck on Await PAM
   approval.
 allowed-tools: Bash(gcloud:*), Bash(gh:*), Read, Grep
 ---
 
 # /review-pam-grants
 
-Find PAM grants this user can approve, analyse each one, then **ask**
-before `gcloud pam grants approve` or `deny`. Never approve on sight.
+Three steps, always in this order:
+
+1. Check that both accounts have valid tokens. Run `gcloud-login` for
+   each one that does not.
+2. Find open PAM grants and verify each one is safe.
+3. Wait for the user's confirmation. If they confirm, approve.
+
+Never approve on sight.
 
 Approving `tf-apply-owner` gives CI a time-bound `roles/admin` on that
 GCP project (not standing owner). Production stacks need **2 of 4**
 votes. One CLI approve is one vote.
 
-## 0. Identity
+## 0. Check both accounts
 
 The user has one Google account per org. Each org's projects accept only
 that org's account:
@@ -29,19 +37,32 @@ that org's account:
 | T0  | `@t0trade.com` | `t0-*` |
 | S01 | `@s01issuer.com` | `s01-*` |
 
+Check both accounts before you search, every time:
+
 ```bash
-gcloud auth list --format='value(account)'
+for ACCOUNT in juan@t0trade.com juan@s01issuer.com; do
+  if gcloud auth print-access-token --account="$ACCOUNT" >/dev/null 2>&1; then
+    echo "$ACCOUNT ok"
+  else
+    echo "$ACCOUNT EXPIRED"
+  fi
+done
 ```
 
-Do not switch the active account. Pass `--account="$ACCOUNT"` on every
-`gcloud` command, with the account for that project's org. Check each org
-on its own: an expired login in one org must not stop the review of the
-other. If gcloud asks to reauth for an org, skip that org, report it, and
-tell the user to run
-`gcloud auth login <account> --no-launch-browser --update-adc` (or use
-`gcloud-login`). Do not impersonate a service account.
+If either account is missing, expired, or reports a reauth error, run the
+`gcloud-login` skill for that account. Do this always; do not tell the
+user to log in by hand and stop, and do not skip that org. Log in one
+account at a time. After the logins, run the check again. Do not continue
+until both accounts are `ok`.
 
-## 1. Grants waiting for this user
+Do not switch the active account. Pass `--account="$ACCOUNT"` on every
+`gcloud` command, with the account for that project's org. Do not suppress
+`gcloud` stderr: an auth failure must not look like "no grants". If a
+reauth error appears later in the run, run `gcloud-login` for that
+account and repeat the search for that org. Do not impersonate a
+service account.
+
+## 1. Find open grants
 
 Discover entitlements this account can approve, then list
 `APPROVAL_AWAITED` grants on each.
@@ -94,7 +115,7 @@ requested duration, create time, justification, privileged role,
 
 Never print Secret Manager payloads or secrets toml.
 
-## 2. Analyse
+## 2. Verify each grant is safe
 
 Pull the GitHub Actions URL and commit from the justification when
 present. Fetch the run and the commit's files (`gh run view`,
@@ -164,10 +185,14 @@ Verdict per grant: **expected**, **suspicious**, or **not enough
 evidence**. Say why in 3-6 bullets. Always state blast radius
 (time-bound project `roles/admin` for CI on `tf-apply-owner`).
 
-## 3. Ask, then maybe approve
+## 3. Wait for confirmation, then approve
 
 Show the table (project, entitlement, requester, duration, CHANGE,
-run URL, verdict). Ask per grant: approve, deny, or skip.
+run URL, verdict). Ask per grant: approve, deny, or skip. Then wait for
+the user's answer. Do not approve while you wait.
+
+When the user confirms a grant, approve it yourself with the command
+below. Do not hand the vote back to the user.
 
 Do not approve a **suspicious** grant unless the user explicitly
 confirms they still want that one, after seeing the bullets.
@@ -195,17 +220,22 @@ Timeouts: the apply job waits 60 minutes. Missed window:
 
 ## Hard rules
 
-1. Never approve or deny without an explicit per-grant answer.
-2. Never approve as a service account, or with one org's account on the
+1. Check both accounts first. Run `gcloud-login` for any account
+   whose token is missing or expired; never stop at a reauth error.
+2. Never approve or deny without an explicit per-grant answer.
+   After that answer, cast the vote yourself.
+3. Never approve as a service account, or with one org's account on the
    other org's project.
-3. Never treat one vote as "the apply ran".
-4. Never revoke a grant this skill just approved.
-5. Never create a PAM grant from this skill.
+4. Never treat one vote as "the apply ran".
+5. Never revoke a grant this skill just approved.
+6. Never create a PAM grant from this skill.
 
 ## Failure modes
 
-- **gcloud reauth for one org**: skip that org, review the other,
-  report the login command.
+- **gcloud reauth / expired token**: run `gcloud-login` for that
+  account, check both accounts again, then continue.
+- **search empty with an error hidden**: the search is not valid.
+  Check the accounts again before you report "no grants".
 - **search empty**: this account is not an approver on that
   entitlement, or nothing is waiting.
 - **approve PERMISSION_DENIED**: not in `pam_approval.approvers`.
