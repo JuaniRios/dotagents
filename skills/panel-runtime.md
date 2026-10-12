@@ -101,7 +101,9 @@ env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5 \
   --output-format json --json-schema "$SCHEMA_INLINE" \
   "$(cat "$promptPath")"
 
-# sol 6.1 — file schema (every property is already in `required`)
+# sol 6.1 — file schema. Codex strict output needs every property in
+# `required`; optional fields are nullable instead (`file`, `line_start`,
+# `line_end`). Keep it that way when editing the schema.
 # Account: ccx (CODEX_HOME=~/.codex) by default. If its output says
 # "hit your usage limit" and ~/.codex-2 exists, rerun the same command once
 # with ccxx (CODEX_HOME=~/.codex-2). This account switch does not use the
