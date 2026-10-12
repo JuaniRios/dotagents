@@ -116,7 +116,9 @@ back on.
 
 ## Zulip exchange
 
-The bot DM contains the target hostname, Google account, unique request ID,
+The bot DM starts with which login code it needs, `T0 login code needed`
+or `S01 login code needed`, so the user signs in with the right account.
+It also contains the target hostname, Google account, unique request ID,
 authorization link, 15-minute deadline, and the reply format:
 
 ```text

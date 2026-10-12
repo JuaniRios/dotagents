@@ -314,10 +314,21 @@ def host_label() -> str:
     return "an **unknown host**"
 
 
+def org_label(account: str) -> str:
+    domain = account.rsplit("@", 1)[-1].casefold()
+    if domain == "t0trade.com":
+        return "T0"
+    if domain == "s01issuer.com":
+        return "S01"
+    return "UNKNOWN ORG"
+
+
 def login_message(target: str, account: str, request_id: str, url: str) -> str:
+    org = org_label(account)
     return (
-        f"Google Cloud authentication is required on {target} for "
-        f"`{account}`.\n\n"
+        f"**{org} login code needed** (`{account}`)\n\n"
+        f"Google Cloud authentication is required on {target} for the "
+        f"**{org}** account `{account}`.\n\n"
         f"[Open Google authentication]({url})\n\n"
         "After Google displays the authorization code, reply to this private "
         "bot DM with only the copied code—no label, quotes, or other text.\n\n"
