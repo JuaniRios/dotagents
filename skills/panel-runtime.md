@@ -233,6 +233,7 @@ Composite lanes combine related inspectors into one process per model.
 | `sol-special` | sol 6.1 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 | `sol-paths` | sol 6.1 high | error paths and lifecycle states (`error-path-inspector`) | Run if the diff changes error handling, retries, polling, persisted state, status enums, events, or state transitions, and always when sensitive. Re-run if behavior hunks changed. |
 | `grok-runbook` | Cursor Grok 4.7 high | runbooks and operational scripts (`runbook-inspector`) | Run if the diff touches a runbook, `DEPLOY.md`, rollout, rollback, or recovery docs, `docs/ops*`, incident guides, or a one-off operational script. Re-run if any of those changed. |
+| `opus-solreuse` | opus 5.5 high | reuse of the shared Rain Solidity tools and conventions (`solidity-reuse-inspector`, from T0Trade/agent-skills) | Run if the diff touches `*.sol`, `foundry.toml`, `soldeer.lock`, `remappings.txt`, or `.gitmodules`, at any size. Re-run if any of those changed. |
 
 Sensitive = auth, secrets, payment/financial, on-chain, or migrations.
 **Sensitive always wins over size.**
@@ -259,7 +260,8 @@ The approach part needs web access to cite upstream sources and `gh` to
 read other repos. A native Claude child already has both. On the foreign
 CLI, add `--allowedTools "WebSearch WebFetch Read Grep Glob Bash(gh:*) Bash(git:*) Bash(rg:*)"`
 to the `opus-deep` call only. Without web access it checks local evidence
-and lists the rest as unchecked.
+and lists the rest as unchecked. `opus-solreuse` needs `gh` too, to check the
+catalog against the rainlanguage repos: give it the same flags.
 
 ### Adaptive pass 1
 
@@ -268,8 +270,8 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `sol-paths` and `grok-runbook` if their gates hold. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Otherwise no opus 5.5. |
-| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-spec` / `flash-config` / `grok-special` / `sol-special` (no edge-cases) / `sol-paths` / `grok-runbook`. |
+| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `sol-paths` and `grok-runbook` if their gates hold. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Add `opus-solreuse` if its gate holds. Otherwise no opus 5.5. |
+| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-spec` / `flash-config` / `grok-special` / `sol-special` (no edge-cases) / `sol-paths` / `grok-runbook` / `opus-solreuse`. |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
@@ -288,6 +290,7 @@ Conditionally:
   check paths changed.
 - `sol-paths` if behavior hunks changed and its gate holds.
 - `grok-runbook` if runbook or operational-script paths changed.
+- `opus-solreuse` if `*.sol` or Solidity build files changed.
 - composites if their gate's files changed (`cmp` the filtered
   path-list, not a semantic "slice").
 
