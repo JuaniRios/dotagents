@@ -1,8 +1,10 @@
-# Mirror personal skills, private JuaniRios/dotagents-private skills, and the
-# shared T0Trade/agent-skills skills into every harness's skill directory,
+# Mirror personal skills, private JuaniRios/dotagents-private skills, the
+# shared T0Trade/agent-skills skills, and the rainlanguage audit skills
+# (claude-audit-skills, adversarial-mutation-test) into every harness's skill directory,
 # register the shared goal-loop Stop hook on Grok, Codex, and Agy, and link
 # instructions/AGENTS.md as each harness's global instruction file. Clones
-# ~/Github/agent-skills and ~/Github/dotagents-private when missing and
+# ~/Github/agent-skills, ~/Github/dotagents-private and the rainlanguage
+# skill repos (RAIN_SKILL_REPOS) when missing and
 # fast-forwards clean main checkouts; a network failure only prints a note.
 #
 # Usage:
@@ -221,12 +223,19 @@ def install-hooks [dry: bool] {
   }
 }
 
+# Public rainlanguage repos whose skills/ Marvin's `@rain-marvin audit` runs
+# (T0Trade/marvin bot/marvin/audit.py).
+const RAIN_SKILL_REPOS = ["claude-audit-skills", "adversarial-mutation-test"]
+
 def main [--dry-run] {
   let personal_src = ($env.HOME | path join "Github" "dotagents" "skills")
   let shared_repo = ($env.HOME | path join "Github" "agent-skills")
   let private_repo = ($env.HOME | path join "Github" "dotagents-private")
   sync-shared-repo $shared_repo "https://github.com/T0Trade/agent-skills.git" $dry_run
   sync-shared-repo $private_repo "https://github.com/JuaniRios/dotagents-private.git" $dry_run
+  for repo in $RAIN_SKILL_REPOS {
+    sync-shared-repo ($env.HOME | path join "Github" $repo) $"https://github.com/rainlanguage/($repo).git" $dry_run
+  }
   let shared_src = ($shared_repo | path join "skills")
   let private_src = ($private_repo | path join "skills")
   if not ($personal_src | path exists) {
@@ -244,6 +253,10 @@ def main [--dry-run] {
     {label: "dotagents", src: $personal_src, names: (skill-names $personal_src)}
     {label: "agent-skills", src: $shared_src, names: (do $optional_names $shared_src)}
     {label: "dotagents-private", src: $private_src, names: (do $optional_names $private_src)}
+    ...($RAIN_SKILL_REPOS | each {|repo|
+      let src = ($env.HOME | path join "Github" $repo "skills")
+      {label: $repo, src: $src, names: (do $optional_names $src)}
+    })
   ]
   let conflicts = ($trees | get names | flatten | uniq --repeated)
   if not ($conflicts | is-empty) {
