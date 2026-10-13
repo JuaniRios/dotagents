@@ -38,8 +38,9 @@ This applies to every work repository, `T0Trade/t0.devops` included.
 
 ## 3. Skeleton description
 
-`pr-description` as WIP: Why from the issue (markdown link
-`[<ID>](<url>)`), What/How = `WIP`. Auto-approve the skeleton.
+`pr-description` as WIP: the merge brief headline from the issue (markdown
+link `[<ID>](<url>)`) and the slot line, each value `WIP`. No other
+sections. Auto-approve the skeleton.
 
 ## 4. Cross-link
 
@@ -85,6 +86,13 @@ Deep: run review-loop (current branch, no stack) and resolve material findings.
 Use pr-description with the selected issue level. Reuse standard's combined
 description review rather than adding a second reviewer. Never let a helper
 silently upgrade light work into an independent-review pipeline.
+
+Only pr-description writes the PR body. When a subagent or child task owns
+a PR, tell it to run pr-description (and finish-pr). Never list body
+sections, headings, or a template in its prompt, and never ask it to write
+the body by hand with `write-as-me` and `gh pr edit`. After a review round
+changes what the brief claims, rerun pr-description. Do not append to the
+body by hand.
 
 ## 8. Verification gate
 

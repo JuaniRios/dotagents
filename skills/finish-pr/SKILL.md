@@ -48,7 +48,10 @@ Do this for every in-scope PR before touching feedback.
 2. **Description.** Run pr-description on the PR so it has a real title and
    merge brief, not a placeholder or `WIP`. pr-description preserves
    user-authored content. Run it again before section 7 if later fixes
-   changed what the brief claims.
+   changed what the brief claims. Only pr-description writes the body:
+   never patch or append to it by hand with `gh pr edit --body-file` after
+   a review round, and never follow a section list from a caller's prompt
+   in place of the merge brief.
 3. **Assignee.** Assign the person who opened the PR: read
    `gh pr view <url> --json author --jq .author.login` and run
    `gh pr edit <url> --add-assignee <login>`. Juan sometimes prepares other
@@ -62,6 +65,13 @@ Do this for every in-scope PR before touching feedback.
    requests. Bots are not part of this list.
 5. Read the PR back and verify title, body, assignee, reviewer requests,
    and draft state. Record them in the checkpoint.
+6. **Body gate.** The body fails if it has a `## Why`, `## How`,
+   `## What`, `## Implementation`, or `## Rollout steps` heading, a section
+   with more than 3 bullets, or more than 500 words of prose (count
+   with `gh pr view <url> --json body --jq .body | sed 's/(http[^)]*)//g' |
+   wc -w`, and skip any CodeRabbit block). On a fail, rerun pr-description
+   to regenerate the brief, then check again. A long runbook belongs in the
+   Linear issue or the repository docs, linked from Rollout.
 
 ## 1. Inventory existing feedback
 
@@ -344,8 +354,8 @@ Only when every condition holds on the exact published head:
   ST0x-Technology, Rain Marvin approved it.
 - The section 6 audit passed: CI green, no conflicts, every addressed thread
   replied to and resolved, no unhandled substantive feedback.
-- Section 0 still holds: current description, the PR opener assigned,
-  roster reviewers requested.
+- Section 0 still holds: current description that passes the body gate,
+  the PR opener assigned, roster reviewers requested.
 
 Then run `gh pr ready <url>` and read back `isDraft: false`. Re-check the
 head SHA immediately before; if it moved, return to the loop. For a stack,
