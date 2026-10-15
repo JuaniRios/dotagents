@@ -96,8 +96,9 @@ back on.
 6. Wait for the helper to finish. It polls Zulip every 5 seconds, performs the
    connectivity gate, generates a unique request ID, accepts only a newer
    code-only private DM from Juan, and never writes the authorization code to
-   stdout/stderr. After gcloud succeeds, it permanently deletes the exact
-   request and reply by ID.
+   stdout/stderr. When it finishes, on every outcome, it permanently deletes
+   the exact request and every code-only reply by ID, and reports how many
+   login messages it deleted.
 7. On success, independently verify without printing tokens:
 
    ```bash
@@ -128,11 +129,23 @@ AUTHORIZATION_CODE
 The reply must be a private DM from `juan@rainlang.xyz` to Juan-Bot and must
 contain only the copied Google authorization code. The helper only considers
 messages newer than its bot request, extracts the code and reply message ID
-inside its own process, disables PTY echo, and submits the code once. Only
-after gcloud succeeds, it permanently deletes the reply and bot request by
-their exact IDs, then discards the code from memory. The agent must never
-fetch, quote, summarize, or display that Zulip message. Run at most one gcloud
-login request at a time across the two hosts so a code-only reply is
+inside its own process, disables PTY echo, and submits the code once. The bot
+DM is the only message the helper sends: it sends no success, failure, or
+timeout DM and reports the result on its own output instead.
+
+When the helper finishes, on every outcome (success, rejected code, timeout,
+error, Ctrl-C, or `SIGTERM`/`SIGHUP`), it permanently deletes these messages
+by their exact IDs with the Juan identity:
+
+- the bot request;
+- the reply it submitted;
+- every other code-only reply from Juan after the request, including a late
+  or rejected code.
+
+It ignores further interrupts until cleanup is done, then discards the code
+from memory. It never deletes by search or by a broader target. The agent
+must never fetch, quote, summarize, or display that Zulip message. Run at most
+one gcloud login request at a time across the two hosts so a code-only reply is
 unambiguous. Never use a public or private channel topic for this exchange.
 
 ## Failure handling
@@ -142,13 +155,18 @@ unambiguous. Never use a public or private channel topic for this exchange.
 - `Zulip command failed` or a hang: check IPv6 first (see "Never use
   IPv6"), turn it off, and run the helper again.
 - Zulip connectivity or recipient mismatch: stop before starting Google login.
-- No Google URL, gcloud exits early, or Google rejects the code: send a
-  non-secret failure DM, report the sanitized error, and stop.
-- Timeout: terminate only the helper-owned gcloud child, send a timeout DM, and
-  start a new request on the next invocation. Never reuse a request ID or code.
-- Cleanup failure after successful Google authentication: report that login
-  succeeded but the exact Zulip messages could not be permanently deleted; do
-  not claim cleanup succeeded or retry deletion against broader targets.
+- No Google URL, gcloud exits early, or Google rejects the code: delete the
+  login messages, report the sanitized error, and stop. Send no failure DM.
+- Timeout or interrupt: terminate only the helper-owned gcloud child, delete
+  the login messages, and report the sanitized error. Send no timeout DM.
+  Start a new request on the next invocation. Never reuse a request ID or code.
+- A code-only reply that arrives after cleanup ends is not deleted; a manual
+  sweep of the DM by exact ID must remove it.
+- Cleanup failure: the helper exits non-zero and reports how many messages it
+  could not delete, and whether it could not list later replies or got no
+  request message ID. After successful Google authentication, report that
+  login succeeded but cleanup failed. Do not claim cleanup succeeded or retry
+  deletion against broader targets.
 - If gcloud refreshes both requested credential stores but its macOS process
   does not finish exiting within 30 seconds, verify both token commands,
   terminate only that helper-owned process, and continue cleanup. Require both
@@ -171,7 +189,10 @@ unambiguous. Never use a public or private channel topic for this exchange.
    environment variable, Nix store path, Git repository, or shell history.
 4. Only the helper process may read the newer code-only authorization DM, and
    it may only feed that value to the helper-owned gcloud PTY once. Only the
-   helper may delete the exact request and reply message IDs after success.
+   helper may delete the exact request and reply message IDs, and it must do
+   so on every outcome.
+7. The helper sends only the bot request DM. It never sends a status,
+   failure, or timeout DM.
 5. Never use this skill to bypass 2FA, organization session controls, or other
    access policies. The user completes Google authentication themselves.
 6. Authentication recovery does not authorize a previously failed mutation to
