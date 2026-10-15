@@ -1,7 +1,7 @@
 ---
 name: work-update
 allowed-tools: Bash(*), Read, Grep, Glob, Write
-description: Draft the user's short team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Use the team's short template (Projects, Since last, Outside projects, Surprises, Decisions, Need, Capacity, Next), readable in about 30 seconds, with no PR lists and project details left to Linear project updates. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under the private repo's data/work-update/days/ for richer multi-day reports.
+description: Draft the user's short team work update for Wednesdays and Fridays, covering work since the previous update. Run only from nix-darwin and collect local sessions plus NixOS sessions over SSH, along with git, GitHub, Linear, Telegram, and Zulip. Reconstruct Zulip workstreams from every in-window message rather than sampling topics. Use the team's short template (Projects, Since last, Outside projects, Surprises, Decisions, Need, Capacity, Next), readable in about 30 seconds, with no PR lists and project details left to Linear project updates. Also drafts one Linear project update per project the user drives or leads, shows it with the report, and posts it to Linear only after the user confirms. Deliver to Juan through Juan-Bot on Zulip as exactly one message of at most 10,000 characters. Never chunk the report. The user guides and edits the report before finalization. Use `save-today` to capture each day's evidence and leadership narrative under the private repo's data/work-update/days/ for richer multi-day reports.
 argument-hint: "[save-today | since <date or timeframe>]"
 ---
 
@@ -440,8 +440,8 @@ adopted it on 2026-10-09 ([announcement](https://raingroup.zulipchat.com/#narrow
 The split the team agreed on:
 
 - **Linear project update** (Wed and Fri, per project): health, target date,
-  milestones, project PRs, and project decisions. This skill does not write
-  those.
+  milestones, project PRs, and project decisions. This skill drafts them with
+  the report and posts them after the user confirms (Step 5).
 - **Zulip progress update** (this skill): everything that does not fit in a
   project, plus one line per project. Never repeat project details here.
 
@@ -470,9 +470,10 @@ intended day. Honor an explicit title from the user. The skill command stays
 Section rules:
 
 - **Projects**: one line per Linear project where the user is the driver or
-  tech lead and that moved in the period. Use the project's current health and
-  target date from Linear. Do not invent a health: if Linear has none, ask the
-  user. Link the project. Use ` · ` between projects.
+  tech lead and that moved in the period. Use the health the user confirms
+  for that project's Linear update (see Linear project updates in Step 5), and
+  the current target date from Linear. Do not invent a health: if the evidence
+  does not settle it, ask the user. Link the project. Use ` · ` between projects.
 - **Since last**: check each "Next" and "Need" item of the previous finalized
   update (for an old-format update, its "What I'm continuing next" and
   "Blockers" sections). Mark ✅ or ❌. Give a short reason for ❌. Use ` · ` between items when
@@ -547,7 +548,7 @@ After the user explicitly finalizes the report, save the exact approved text und
   "period_end": "<ISO 8601 with timezone>",
   "finalized": true,
   "sent": false,
-  "projects": [{"name": "...", "url": "...", "health": "onTrack", "target": "YYYY-MM-DD"}],
+  "projects": [{"name": "...", "url": "...", "health": "onTrack", "target": "YYYY-MM-DD", "linear_update_id": "...", "linear_update_posted_at": "<ISO 8601>"}],
   "since_last": [{"item": "...", "done": true, "note": "..."}],
   "themes": ["..."],
   "decisions": ["..."],
@@ -571,6 +572,46 @@ Only finalized sidecars set the next window. Preserve the original start for
 revisions; use a distinct suffix for separate updates on the same date. Keep
 source references and verification notes in the sidecar as needed, outside
 the team-facing prose.
+
+### Linear project updates
+
+Draft one Linear project update for each project on the **Projects** line:
+the projects where the user is the driver or tech lead and that moved in the
+period. Read `write-as-me` and `linear-cli` first. Use the project's live
+Linear state, not memory. Each update holds:
+
+- **Health:** `on-track`, `at-risk`, or `off-track`. Propose one from the
+  evidence and the current Linear health. If the evidence does not settle it,
+  ask the user. Never post a health the user did not see.
+- **Target date:** the current target, and whether and why it moved.
+- **Milestones:** the ones that progressed or finished, and the next one.
+- **Project PRs:** merged, deployed, or blocked work that carries an outcome.
+  Link them. Keep the deployed and merged split from the PR classification.
+- **Decisions:** project decisions in the period, with who agreed.
+- **Next:** one or two lines.
+
+Keep each update short. Do not repeat it in the Zulip report: the report keeps
+its one line per project.
+
+Show every project-update draft to the user together with the report draft,
+with the exact text and the health for each. Post nothing to Linear until the
+user explicitly confirms. A confirmation covers only the text the user saw.
+If the user edits a draft, show the revised text again before you post it. The
+user can skip a project or confirm the project updates separately from the
+report.
+
+After confirmation, post each update:
+
+```bash
+linear project-update create <project-id> --health <health> \
+  --body-file <update>.md --yes --no-input
+```
+
+Then run `linear project-update list <project-id>` and check that the newest
+update has the posted text and health. Do not post twice after an ambiguous
+error: list first. Record each project's update ID, health, and post time in
+the sidecar under `projects`. A failed post is reported as failed, not as
+done. Save drafts beside the report draft in `drafts/`.
 
 ### Standing delivery: Juan-Bot to Juan
 
@@ -651,6 +692,7 @@ sidecar. Mark complete delivery only after the complete message passes readback.
   daily reports for context, marking what could not be independently checked.
 - Soften or remove unverified claims; production state and user intent must
   not be guessed. Do not invent accomplishments when the window is quiet.
-- Beyond the standing report DM in Step 5, no repo, PR, issue, or chat
-  mutation is authorized merely by gathering an update. Other follow-up
+- Beyond the standing report DM and the user-confirmed Linear project
+  updates in Step 5, no repo, PR, issue, or chat mutation is authorized
+  merely by gathering an update. Other follow-up
   actions need their own user authorization.
