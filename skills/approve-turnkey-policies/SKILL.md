@@ -54,9 +54,11 @@ Call `/public/v1/query/list_activities` through `turnkey request` with:
 - `filterByStatus`: `["ACTIVITY_STATUS_CONSENSUS_NEEDED"]`
 - `paginationOptions.limit`: `"100"`
 
-Paginate with `paginationOptions.before`, using the last activity ID from each
-page, until a page contains fewer than 100 results. De-duplicate by activity
-ID.
+Results come newest first. Paginate with `paginationOptions.after`, using the
+last (oldest) activity ID from each page; `after` returns older activities.
+Do not use `before`: it returns newer activities, so it repeats the first
+page. Stop when a page contains fewer than 100 results or no new activity IDs.
+De-duplicate by activity ID.
 
 For every result, fetch its current state through `turnkey request` at
 `/public/v1/query/get_activity`, with `organizationId` and `activityId`. Read
