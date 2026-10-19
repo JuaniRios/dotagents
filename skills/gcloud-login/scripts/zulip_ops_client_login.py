@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Complete a st0x-liquidity-client loopback sign-in using a private Zulip DM handoff.
+"""Complete a st0x ops client loopback sign-in using a private Zulip DM handoff.
 
-The client prints a Google sign-in URL and waits on a 127.0.0.1 port for the
+Covers st0x-liquidity-client (T0) and st0x-issuance-client (S01). Each client
+prints a Google sign-in URL and waits on a 127.0.0.1 port for the
 OAuth redirect. The phone cannot reach that port, so the user copies the failed
 redirect URL from the phone's address bar and replies with it. This helper
 checks the reply against the port and state of the waiting client and replays
@@ -54,6 +55,27 @@ DEFAULT_BUILD_TIMEOUT_SECONDS = 20 * 60
 POLL_SECONDS = 5.0
 CLIENT_EXIT_GRACE_SECONDS = 180.0
 
+# Per client: the wrapper command, its token cache directory, the Google account
+# org, the reply deadline the client itself enforces, and a read-only check.
+CLIENTS = {
+    "liquidity": {
+        "command": "st0x-liquidity-client",
+        "cache_dir": "st0x-liquidity-client",
+        "org": "T0",
+        "domain": "t0trade.com",
+        "reply_minutes": 15,
+        "check": "read resource health",
+    },
+    "issuance": {
+        "command": "st0x-issuance-client",
+        "cache_dir": "st0x-issuance-client",
+        "org": "S01",
+        "domain": "s01issuer.com",
+        "reply_minutes": 5,
+        "check": "read orchestrator-health",
+    },
+}
+
 
 class SignIn:
     """The port and CSRF state of the waiting client, read from its sign-in URL."""
@@ -101,9 +123,9 @@ def deliver_redirect(port: int, query: str) -> None:
         raise LoginError("Could not deliver the redirect to the waiting client") from error
 
 
-def refresh_token_path(env: str) -> Path:
+def refresh_token_path(client: str, env: str) -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "st0x-liquidity-client" / f"oauth-{env}.json"
+    return Path(base) / CLIENTS[client]["cache_dir"] / f"oauth-{env}.json"
 
 
 def mtime(path: Path) -> Optional[int]:
@@ -113,18 +135,19 @@ def mtime(path: Path) -> Optional[int]:
         return None
 
 
-def login_message(target: str, env: str, request_id: str, url: str) -> str:
+def login_message(client: str, target: str, env: str, request_id: str, url: str) -> str:
+    spec = CLIENTS[client]
     return (
-        f"**T0 liquidity client sign-in needed** (`{env}`)\n\n"
-        f"`st0x-liquidity-client` is waiting on {target}. Sign in with your "
-        "T0 account `@t0trade.com`.\n\n"
+        f"**{spec['org']} {client} client sign-in needed** (`{env}`)\n\n"
+        f"`{spec['command']}` is waiting on {target}. Sign in with your "
+        f"{spec['org']} account `@{spec['domain']}`.\n\n"
         f"[Open Google sign-in]({url})\n\n"
         "After you sign in, the browser tries to open a `127.0.0.1` address "
         "and fails. That is expected. Copy that full address from the address "
         "bar and reply to this private bot DM with only the address, with no "
         "other text.\n\n"
         f"Request: `{request_id}`\n\n"
-        "This request expires in 15 minutes. When the sign-in ends, whether it "
+        f"This request expires in {spec['reply_minutes']} minutes. When the sign-in ends, whether it "
         "succeeds or fails, the bot permanently deletes this request and your "
         "reply."
     )
@@ -157,8 +180,12 @@ def run_login(
                     if match:
                         url = match.group(0).rstrip(".,)")
                         sign_in = SignIn(url)
-                        attempt.send_request(login_message(target, args.env, request_id, url))
-                        deadline = time.monotonic() + args.timeout
+                        attempt.send_request(
+                            login_message(args.client, target, args.env, request_id, url)
+                        )
+                        deadline = time.monotonic() + min(
+                            args.timeout, CLIENTS[args.client]["reply_minutes"] * 60
+                        )
                         next_poll = time.monotonic()
                         print(
                             "Sent a private sign-in request from Juan-Bot and waiting "
@@ -208,7 +235,7 @@ def run_login(
         return_code, output = wait_for_child(
             process, master_fd, CLIENT_EXIT_GRACE_SECONDS, output
         )
-        signed_in = mtime(refresh_token_path(args.env)) != token_before
+        signed_in = mtime(refresh_token_path(args.client, args.env)) != token_before
         if return_code == 0:
             return
         safe_tail = sanitize(output[-4000:], reply_query)
@@ -224,7 +251,7 @@ def run_login(
         reply_query = None
 
 
-class LiquidityZulipBot(ZulipBot):
+class OpsClientZulipBot(ZulipBot):
     def replies_after(self, after_message_id: Optional[int]) -> list[tuple[int, str]]:
         if after_message_id is None:
             return []
@@ -266,7 +293,7 @@ def run_attempt(
                 signal.signal(sig, handler)
 
     if failure is None:
-        print("Liquidity client sign-in completed successfully.", flush=True)
+        print(f"The {args.client} client sign-in completed successfully.", flush=True)
     else:
         print(f"error: {sanitize(failure)}", file=sys.stderr, flush=True)
     if cleanup.ok:
@@ -290,11 +317,11 @@ def orchestrate(args: argparse.Namespace) -> int:
         if config.stat().st_mode & 0o077:
             raise LoginError("Zulip credential permissions are too broad")
 
-    bot = LiquidityZulipBot(zulipctl, Path(args.zulip_config).expanduser(), args.recipient)
+    bot = OpsClientZulipBot(zulipctl, Path(args.zulip_config).expanduser(), args.recipient)
     bot.connectivity_gate()
     deleter = ZulipMessageDeleter(Path(args.zulip_delete_config).expanduser(), args.recipient)
 
-    token_path = refresh_token_path(args.env)
+    token_path = refresh_token_path(args.client, args.env)
     if token_path.exists() and not args.force:
         raise LoginError(
             "A cached refresh token already exists; run the client directly, or pass "
@@ -304,11 +331,12 @@ def orchestrate(args: argparse.Namespace) -> int:
         token_path.unlink()
 
     # The wrapper is a nushell login-shell command, so run it through `nu -l`.
-    command = [nu, "-l", "-c", f"st0x-liquidity-client --env {args.env} read resource health"]
+    spec = CLIENTS[args.client]
+    command = [nu, "-l", "-c", f"{spec['command']} --env {args.env} {spec['check']}"]
     return run_attempt(args, LoginAttempt(bot, deleter), command, mtime(token_path))
 
 
-class FakeLiquidityBot(FakeBot):
+class FakeOpsClientBot(FakeBot):
     def dm(self, content: str) -> int:
         assert "sign-in needed" in content, "only the request DM may be sent"
         self.sent.append(100 + len(self.sent))
@@ -364,8 +392,10 @@ def self_test() -> int:
     command = [sys.executable, "-c", FAKE_CLIENT, str(port)]
 
     def run(replies: list[tuple[int, str]], timeout: int = 20) -> tuple[int, FakeDeleter]:
-        bot, deleter = FakeLiquidityBot(replies), FakeDeleter()
-        args = argparse.Namespace(env="production", timeout=timeout, build_timeout=20)
+        bot, deleter = FakeOpsClientBot(replies), FakeDeleter()
+        args = argparse.Namespace(
+            client="liquidity", env="production", timeout=timeout, build_timeout=20
+        )
         code = run_attempt(args, LoginAttempt(bot, deleter), command, None)
         assert bot.sent == [100], "only the request DM may be sent"
         return code, deleter
@@ -385,8 +415,8 @@ def self_test() -> int:
     assert code == 1 and sorted(deleter.deleted) == [100, 101], deleter.deleted
 
     # The client exits before printing a URL: nothing sent or deleted.
-    bot, deleter = FakeLiquidityBot([]), FakeDeleter()
-    args = argparse.Namespace(env="production", timeout=5, build_timeout=5)
+    bot, deleter = FakeOpsClientBot([]), FakeDeleter()
+    args = argparse.Namespace(client="issuance", env="production", timeout=5, build_timeout=5)
     assert run_attempt(args, LoginAttempt(bot, deleter), ["/bin/sh", "-c", "exit 3"], None) == 1
     assert bot.sent == [] and deleter.deleted == []
 
@@ -396,6 +426,7 @@ def self_test() -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--client", choices=sorted(CLIENTS), default="liquidity")
     parser.add_argument("--env", choices=["production", "staging"], default="production")
     parser.add_argument("--recipient", default="juan@rainlang.xyz")
     parser.add_argument("--zulip-config", default="~/.zuliprc-bot")

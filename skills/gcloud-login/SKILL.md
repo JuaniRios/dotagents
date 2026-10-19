@@ -6,8 +6,8 @@ description: >
   DM. Use after gcloud reports expired credentials, reauthentication failure,
   or inability to prompt, and when asked to authenticate gcloud remotely.
   Handles both Google accounts: juan@t0trade.com (T0) and juan@s01issuer.com
-  (S01). Also completes the one-time st0x-liquidity-client Google sign-in the
-  same way, when that client needs a browser sign-in on a host with no browser.
+  (S01). Also completes the one-time Google sign-in of st0x-liquidity-client and
+  st0x-issuance-client the same way, on a host with no browser.
 allowed-tools: Bash(gcloud:*), Bash(zulipctl:*), Bash(python3:*), Bash(test:*), Bash(set:*), Bash(nu:*)
 ---
 
@@ -116,40 +116,46 @@ back on.
 9. If invoked because a read-only operation failed, retry it exactly once. If
    it still fails, report the exact non-secret error and stop.
 
-## Liquidity client sign-in
+## Ops client sign-in (liquidity and issuance)
 
-`st0x-liquidity-client` (the nushell wrapper from `nix-darwin-config`) signs
-in once with Google, then caches a refresh token in
-`~/.config/st0x-liquidity-client/oauth-<env>.json`. It does not use the
-gcloud flow. It prints a Google sign-in URL and waits for the OAuth redirect
+`st0x-liquidity-client` (T0) and `st0x-issuance-client` (S01), the nushell
+wrappers from `nix-darwin-config`, each sign in once with Google, then cache a
+refresh token in `~/.config/<client>/oauth-<env>.json`. They do not use the
+gcloud flow. Each prints a Google sign-in URL and waits for the OAuth redirect
 on a `127.0.0.1` port. A phone cannot reach that port, so the user copies the
-failed `127.0.0.1` address from the phone's address bar and replies with it.
-The helper accepts the reply only if its port and `state` match the waiting
-client. It then replays only the query string to that local port.
+failed `127.0.0.1` address from the phone's address bar and replies with it,
+with or without `http://`. The helper accepts the reply only if its port and
+`state` match the waiting client. It then replays only the query string to
+that local port.
 
 Use this when a client call fails because it needs a sign-in, or when the
-user asks to sign the liquidity client in remotely. The prod and staging
-client secrets must already be in `~/.config/st0x/liquidity-client.nuon`.
+user asks to sign a client in remotely. The client secrets must already be in
+`~/.config/st0x/liquidity-client.nuon` or `~/.config/st0x/issuance-client.nuon`.
 
 ```bash
 set +x
-python3 "$HOME/Github/dotagents/skills/gcloud-login/scripts/zulip_liquidity_login.py" \
+python3 "$HOME/Github/dotagents/skills/gcloud-login/scripts/zulip_ops_client_login.py" \
+  --client liquidity \
   --env production \
   --recipient juan@rainlang.xyz \
   --zulip-config "$HOME/.zuliprc-bot" \
   --zulip-delete-config "$HOME/.zuliprc-personal"
 ```
 
-- The helper runs `st0x-liquidity-client --env <env> read resource health`
-  through `nu -l`. It allows 20 minutes for the wrapper to fetch master and
-  build before the URL appears. Then the 15-minute reply deadline starts.
+- `--client liquidity` signs in with the T0 account (`@t0trade.com`) and
+  checks with `read resource health`. `--client issuance` signs in with the
+  S01 account (`@s01issuer.com`) and checks with `read orchestrator-health`.
+  The DM names the account.
+- The issuance client stops waiting after 5 minutes, so its reply deadline
+  is 5 minutes. The liquidity one is 15 minutes. Tell the user the deadline.
+- The helper runs the check through `nu -l`. It allows 20 minutes for the
+  wrapper to fetch master and build before the URL appears. Then the reply
+  deadline starts.
 - If a cached refresh token exists, the helper stops. Pass `--force` only when
   the cached token is known to be bad. `--force` deletes it first.
-- The account is always the T0 one, `@t0trade.com`. IAP then admits it by
-  Workspace group (read, debug or capital).
-- Exit 0 means the sign-in worked and the health read passed. If the sign-in
-  worked but the read failed, the helper says so. That is an IAP, group or
-  bot problem, not an authentication problem.
+- IAP admits the account by Workspace group. Exit 0 means the sign-in worked
+  and the check passed. If the sign-in worked but the check failed, the
+  helper says so. That is an IAP, group or bot problem, not authentication.
 - Every rule in "Zulip exchange" and "Hard rules" applies. Treat the
   redirect reply like an authorization code: never fetch, quote, or display
   it. The helper deletes the request and every single-token reply on every
