@@ -40,6 +40,11 @@ formality up or down by audience, but the constants below never change.
 - **Concrete.** Real numbers, addresses, exact commands, links to the Linear
   issue / PR / doc. Never vague when a specific exists. Numbered steps when
   explaining a flow.
+- **Every PR and issue is a link.** Whenever the text names a PR or issue,
+  hyperlink it: Graphite links for PRs
+  (`[#123](https://app.graphite.com/github/pr/<owner>/<repo>/123)`), Linear
+  links for issues (`[RAI-1234](https://linear.app/makeitrain/issue/RAI-1234)`).
+  Never leave a bare `#123` or issue ID. Check the link points to the right one.
 
 ## Register gradient (pick by audience + channel)
 
