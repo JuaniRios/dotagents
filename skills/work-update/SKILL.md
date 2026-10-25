@@ -177,6 +177,12 @@ Load the previous narrative and sidecar. Track what happened to its next
 focus, blockers, open decisions, and pending PRs: completed, continued,
 changed direction, or still waiting. Carry relevant unfinished items forward.
 
+Carry items only from the **previous update**: the most recent update
+sent to the user, finalized or not, in its latest corrected version, plus
+its sidecar `user_corrections`. Never carry items from older drafts or
+reports, even when the new window overlaps them. An item that the previous
+update no longer lists was dropped. Do not bring it back.
+
 Load daily journals from `~/Github/dotagents-private/data/work-update/days/` for every
 date in the reporting window (see [How reports use daily files](#how-reports-use-daily-files)).
 Start the evidence summary from those day narratives before re-collecting raw sources.
@@ -474,9 +480,9 @@ Section rules:
   for that project's Linear update (see Linear project updates in Step 5), and
   the current target date from Linear. Do not invent a health: if the evidence
   does not settle it, ask the user. Link the project. Use ` · ` between projects.
-- **Since last**: check each "Next" and "Need" item of the previous finalized
-  update (for an old-format update, its "What I'm continuing next" and
-  "Blockers" sections). Mark ✅ or ❌. Give a short reason for ❌. Use ` · ` between items when
+- **Since last**: check each "Next" and "Need" item of the previous update
+  (see the carry rule in Step 1; for an old-format update, its "What I'm
+  continuing next" and "Blockers" sections), and nothing older. Mark ✅ or ❌. Give a short reason for ❌. Use ` · ` between items when
   they fit on one line. An item that slipped with no reason is still listed.
 - **Outside projects**: bullets with a bold lead-in. One to three sentences
   each. Say the result, not the steps. Keep the $ amount and the exposure when
