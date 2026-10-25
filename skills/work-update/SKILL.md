@@ -505,6 +505,12 @@ Global rules:
 - Skip any section that is empty. Do not write "none".
 - No PR lists. No "Reviewed" lists. GitHub has them. Reference a PR inline
   only when it carries an outcome or a reader must act on it.
+- Hyperlink every PR and issue you mention, in the report and in the Linear
+  project updates: `[#123](https://app.graphite.com/github/pr/<owner>/<repo>/123)`
+  for PRs and `[RAI-1234](https://linear.app/makeitrain/issue/RAI-1234)` for
+  Linear issues. When a line names a stack or a piece of work, link its
+  Linear issue. Never leave a bare `#123` or issue ID. Check that each link
+  points to the right PR or issue before you send.
 - No implementation narrative. Describe outcomes. The details live in the
   PRs, the issues, and the Linear project updates.
 - Use bold labels exactly as in the template. Zulip renders them well.
