@@ -1,7 +1,7 @@
 ---
 name: finish-pr
 description: >-
-  Prepare the PR (description, assignee, engineer reviewers, kept in draft),
+  Prepare the PR (description, assignee, code-owner reviewers, kept in draft),
   address existing human and bot feedback, loop with Rain Marvin (and, in
   ST0x-Technology only, CodeRabbit) until the required bots approve the exact
   published head, and only then mark the PR ready for review. A bot approval
@@ -59,10 +59,41 @@ Do this for every in-scope PR before touching feedback.
    the branch has no PR yet, it is not pushed: open it through the graphite
    skill first, and assign `JuaniRios`. Remove no other assignee without
    asking.
-4. **Reviewers.** Request the engineer roster, minus the PR author:
-   `agryaznov` (Alex), `ueco-jb` (Jakub), `rouzwelt` (Rouz), and `findolor`
-   (`gh pr edit <url> --add-reviewer <login>,...`). Keep existing
-   requests. Bots are not part of this list.
+4. **Reviewers.** Request the code owners of the changed files, minus the
+   PR author and bots. Keep existing requests.
+   - **Code owners.** Read the first file that exists among
+     `.github/CODEOWNERS`, `CODEOWNERS`, and `docs/CODEOWNERS` on the PR
+     base branch (`gh api 'repos/<owner>/<repo>/contents/<path>?ref=<base>'
+     --jq .content | base64 -d`). List the changed files with
+     `gh pr view <url> --json files --jq '.files[].path'`. For each file,
+     the last matching pattern wins, as on GitHub; a matching line with no
+     owners means that file has no owner. Request each owner: a user as
+     `<login>`, a team `@org/team` as `org/team`.
+   - **Pseudo owners.** If there is no CODEOWNERS file, or a changed file
+     has no owner, also request the repository's pseudo owners from
+     `~/Github/dotagents-private/data/pr-reviewers/<owner>/<repo>.json`.
+     Run `~/Github/dotagents-private/scripts/data-sync.sh pull` before you
+     read it. The file holds
+     `{"owners": ["<login>", ...], "source": "contributions" | "manual",
+     "updated": "<YYYY-MM-DD>", "evidence": "<one line>"}`. Juan may edit
+     it by hand (`"source": "manual"`); never overwrite a manual file.
+   - **No file yet.** Derive the pseudo owners from contributions to the
+     default branch over the last 180 days: count non-merge commits per
+     author login
+     (`gh api 'repos/<owner>/<repo>/commits?since=<date>&per_page=100'
+     --paginate --jq '.[] | select(.parents | length == 1) |
+     .author.login'`), and add one per review given on merged PRs in that
+     window. Drop bots (`[bot]` logins, `rain-marvin`, `coderabbitai`) and
+     null logins. Keep the top 3 people with at least 3 contributions; if
+     fewer than 2 people qualify, recount over the full history. Write
+     the file with `"source": "contributions"` and evidence such as
+     `commits+reviews since 2026-04-28: a=41, b=17, c=6`, then run
+     `data-sync.sh save "pr-reviewers: <owner>/<repo>"
+     data/pr-reviewers/<owner>/<repo>.json`.
+   - If GitHub rejects a login (no repository access), drop it from the
+     request. If it came from a `contributions` file, remove it from that
+     file and save. If no reviewer remains after removing the author,
+     report it rather than inventing one.
 5. Read the PR back and verify title, body, assignee, reviewer requests,
    and draft state. Record them in the checkpoint.
 6. **Body gate.** The body fails if it has a `## Why`, `## How`,
@@ -355,7 +386,7 @@ Only when every condition holds on the exact published head:
 - The section 6 audit passed: CI green, no conflicts, every addressed thread
   replied to and resolved, no unhandled substantive feedback.
 - Section 0 still holds: current description that passes the body gate,
-  the PR opener assigned, roster reviewers requested.
+  the PR opener assigned, code owners (or pseudo owners) requested.
 
 Then run `gh pr ready <url>` and read back `isDraft: false`. Re-check the
 head SHA immediately before; if it moved, return to the loop. For a stack,

@@ -7,7 +7,8 @@ here (`~/Github/dotagents/data/<skill>/`), never under `~/.claude`,
 Reports live in the private repository instead:
 `~/Github/dotagents-private/data/<skill>/`. That covers `engineer-report`,
 `work-update` (reports and day journals), `progress-tracking` (reports and
-config), `state-of-engineering`, `lead-review`, and `linear-groom`, plus
+config), `state-of-engineering`, `lead-review`, `linear-groom`, and the finish-pr
+pseudo code owners in `pr-reviewers/`, plus
 legacy `daily-report` files. Those skills pull and push through
 `~/Github/dotagents-private/scripts/data-sync.sh`, which keeps the
 nix-darwin and NixOS machines in sync and moves any legacy report files

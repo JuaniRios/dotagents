@@ -44,8 +44,9 @@ sections. Auto-approve the skeleton.
 
 ## 4. Cross-link
 
-`linear issue link <ID> "$pr_url"`. Assignee `JuaniRios`. Reviewers
-`agryaznov` (Alex), `ueco-jb` (Jakub), `rouzwelt` (Rouz), and `findolor`.
+`linear issue link <ID> "$pr_url"`. Assignee `JuaniRios`. Reviewers are
+the code owners (or pseudo owners) that finish-pr requests in its prepare
+step.
 
 ## 5. Plan
 
