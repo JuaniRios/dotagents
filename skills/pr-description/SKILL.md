@@ -228,8 +228,14 @@ Always present, directly under the headline, in this order:
 Every section below the slot line is optional. Delete a section that has
 nothing real to say. A trivial PR is the headline plus the slot line.
 
-- **Needs your call.** Only when the author needs a human decision. @mention
-  the person who must answer. It comes first, above Decisions.
+- **Needs your call.** Only when the author needs a decision from another
+  person. @mention the person who must answer. It comes first, above
+  Decisions. Never @mention Juan (`JuaniRios`) or the PR author, and never
+  give either of them a remaining action anywhere in the body: no question,
+  "pending from Juan", "author to confirm", or open step for them. The body
+  speaks as the author. Raise Juan's open items with him in the
+  conversation, in the final report to the user, and leave them out of the
+  body.
 - **Decisions.** At most 3. Only choices a teammate could reasonably dispute.
   Write each as "X, not Y, because Z." End each with a diff link.
 - **Risks.** At most 3. What can go wrong, how bad it is, and what limits it
@@ -376,7 +382,8 @@ Review the brief against the diff. Check:
 what to watch after the merge? Flag any line that restates the diff, lists
 files, narrates the investigation, lists tests or lint runs, or explains
 mechanics (a How section is not allowed).
-(3) COMPLETE: is the slot line present (Live effect, Risk with its triggers,
+(3) COMPLETE: does any line @mention JuaniRios or the PR author, or give
+either of them a remaining action? Flag it. Is the slot line present (Live effect, Risk with its triggers,
 Ships, and Blocks when needed) and is the risk level right? Is a disputable
 decision, a risk, a rollout step, or a rollback trap missing? Does Proof end
 with an honest 'Not verified' bullet?
@@ -525,3 +532,6 @@ And a one-line confirmation per PR updated.
     per sentence, short sentences, active voice, simple tenses, one word per
     concept, no Latin abbreviations. Plainness shapes the sentences, the voice
     still owns the tone.
+15. Never tag Juan (`JuaniRios`) or the PR author in the body, and never list
+    something as remaining from their side. Report those items to the user in
+    the conversation instead.
