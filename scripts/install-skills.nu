@@ -270,6 +270,7 @@ def main [--dry-run] {
     ($env.HOME | path join ".grok" "skills")
     ($env.HOME | path join ".gemini" "config" "skills")
     ($env.HOME | path join ".gemini" "antigravity-cli" "skills")
+    ($env.HOME | path join ".kimi-code" "skills")
   ]
 
   for dest in $dests {

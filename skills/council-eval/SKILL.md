@@ -2,7 +2,7 @@
 name: council-eval
 description: >
   One unbiased review from each available model (opus 5.5, sol 6.1,
-  Cursor Grok 4.7, composer 2.5, flash 3.8) of a plan, document, diff, or
+  Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8) of a plan, document, diff, or
   question. Use when
   the user says council-eval, council, multi-model review, or wants
   each model to look at the same artifact once. Not the full review-loop.
@@ -13,10 +13,10 @@ allowed-tools: Bash(*), Read, Write
 # council-eval
 
 One generalist lane per **model**. No specialists. No fix loop. The
-host harness assembles; it does not add a sixth opinion.
+host harness assembles; it does not add a seventh opinion.
 
 **Lanes:** `review-opus` (opus 5.5), `review-sol` (sol 6.1),
-`review-grok` (Cursor Grok 4.7), `review-composer` (composer 2.5),
+`review-kimi` (Kimi K3), `review-grok` (Cursor Grok 4.7), `review-composer` (composer 2.5),
 `review-flash` (flash 3.8).
 
 Lane catalogue, CLI recipes, Max preflight, and native-vs-foreign rules:
@@ -49,6 +49,7 @@ command -v claude
 command -v codex
 command -v cursor-agent
 command -v agy
+command -v kimi
 ```
 
 Drop any lane whose **model** CLI is missing, unless that model is
@@ -114,7 +115,7 @@ deterministically (no synthesis agent):
 
 ```
 # Council — <target one-liner>
-Lanes: opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.8  (dropped: …)
+Lanes: opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8  (dropped: …)
 
 ## Findings
 ### [SEVERITY] <title>
@@ -134,8 +135,8 @@ Do not auto-fix. Do not start review-loop.
 
 ## Hard rules
 
-1. Five generalists only (opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5,
-   flash 3.8). No inspectors. No re-review loop.
+1. Six generalists only (opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7,
+   composer 2.5, flash 3.8). No inspectors. No re-review loop.
 2. Use panel-runtime's native/foreign routing. Cursor Grok and composer are
    always distinct Cursor-Agent processes.
 3. `claude -p` is Max-plan usage. Unset `ANTHROPIC_API_KEY`. If Max is
@@ -146,7 +147,7 @@ Do not auto-fix. Do not start review-loop.
 
 ## Failure modes
 
-- All five lanes error: stop. Do not invent a review.
+- All six lanes error: stop. Do not invent a review.
 - Artifact path does not exist: stop and tell the user.
 - `agy -p` hangs: stdin was not detached, or `-p` was not last. Kill and retry.
 - Opus output lands on Console billing: `ANTHROPIC_API_KEY` was set. Unset and rerun only if the user asks.

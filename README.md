@@ -30,6 +30,7 @@ nu ~/Github/dotagents/scripts/install-skills.nu
 | Codex | `~/.codex/skills/<name>` and `~/.codex-2/skills/<name>` (plus `.system` → `~/.codex/system-skills`) |
 | Grok | `~/.grok/skills/<name>` and `[skills].paths` in `~/.grok/config.toml` |
 | Antigravity | `~/.gemini/config/skills/<name>` and `~/.gemini/antigravity-cli/skills/<name>` |
+| Kimi | `~/.kimi-code/skills/<name>` |
 
 Multi-lab orchestration (`review-loop`, `review-pr`, `critique-loop`,
 `implement-issue`, `plan-issue`) follows `skills/panel-runtime.md`.

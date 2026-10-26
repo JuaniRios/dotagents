@@ -7,7 +7,7 @@ Read this file before spawning reviewers. Do not restate these tables
 in those skills.
 
 **Harnesses** (where the skill is running): `claude`, `codex`, `grok`,
-`agy`. The current one is the **host**. Fan out with that host's
+`agy`, `kimi`. The current one is the **host**. Fan out with that host's
 parallel primitive. Never wrap the panel in a second orchestrator.
 
 **Models** (who reviews). Do not use a harness name as if it were a
@@ -20,12 +20,13 @@ model.
 | sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol` (ccx; ccxx fallback below) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
 | flash 3.8 | high | agy | isolated Agy child, `gemini-3.8-flash-high` | `agy -p --model gemini-3.8-flash-high` |
+| Kimi K3 | max | kimi | isolated Kimi child, `kimi-code/k3` | `kimi -m kimi-code/k3 -p` |
 
 A model is **native** only on its home harness, and only as an
 **isolated child pinned to that model**, not the babysitter. On any
 other harness, reach it through that model's foreign CLI. Never
-`claude -p` when the host is Claude. Same for `codex exec` / `agy -p`
-on their home harnesses.
+`claude -p` when the host is Claude. Same for `codex exec` / `agy -p` /
+`kimi -p` on their home harnesses.
 
 Do not pick opus 5.5 through the Agy CLI (Agy lists Claude
 model ids; those are not this panel's Claude path).
@@ -36,6 +37,12 @@ account-verified ids above so both consume the Cursor subscription. Keep them
 as separate lanes: they share a harness and billing pool, but they are
 different models. Never replace Cursor Grok with the direct `grok` CLI; that
 would charge the separate Grok/xAI account.
+
+Kimi K3 runs on the Kimi Max subscription (Kimi Code OAuth, `kimi login`).
+It is the preferred non-Anthropic, non-OpenAI model: it owns more lanes than
+flash 3.8, Cursor Grok 4.7, or composer 2.5, and it is the first substitute
+for each of them. Effort is set in `~/.kimi-code/config.toml`
+(`default_effort`), not on the command line.
 
 ## Availability and substitutes
 
@@ -49,20 +56,22 @@ Max preflight below drops it:
 | sol 6.1 | `codex login status` exits 0 |
 | Cursor Grok 4.7, composer 2.5 | `cursor-agent status` prints `Logged in` |
 | flash 3.8 | `agy models` exits 0 (it fails fast when logged out; a lane would sit at a login prompt) |
+| Kimi K3 | `kimi -m kimi-code/k3 -p "Reply with OK" < /dev/null` exits 0 and prints `OK` (no status command; a logged-out CLI exits non-zero) |
 
 Never start a lane on an unavailable model. **Run it on the first
 available substitute instead**, with the same lane prompt and focus:
 
 | Unavailable | Substitutes, in order |
 |---|---|
-| flash 3.8 | composer 2.5, sol 6.1, opus 5.5 |
-| composer 2.5 | flash 3.8, sol 6.1, opus 5.5 |
-| Cursor Grok 4.7 | sol 6.1, opus 5.5, composer 2.5 |
-| sol 6.1 | Cursor Grok 4.7, opus 5.5, composer 2.5 |
-| opus 5.5 | sol 6.1, Cursor Grok 4.7, composer 2.5 |
+| Kimi K3 | sol 6.1, opus 5.5, flash 3.8 |
+| flash 3.8 | Kimi K3, composer 2.5, sol 6.1, opus 5.5 |
+| composer 2.5 | Kimi K3, flash 3.8, sol 6.1, opus 5.5 |
+| Cursor Grok 4.7 | Kimi K3, sol 6.1, opus 5.5, composer 2.5 |
+| sol 6.1 | Kimi K3, Cursor Grok 4.7, opus 5.5, composer 2.5 |
+| opus 5.5 | sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5 |
 
 A substituted lane is labeled and recorded as the model that ran it
-(`flash-hygiene (on composer 2.5)`, `found_by: ["composer-2.5"]`), never as
+(`flash-spec (on Kimi K3)`, `found_by: ["kimi-k3"]`), never as
 the missing model, and the report lists each substitution. The same
 substitution applies when a lane fails fast twice during the run (below).
 If no substitute is available, drop the lane and say so. Never wait for a
@@ -70,7 +79,8 @@ model's usage limit or cooldown to reset: no `sleep`, no polling loop, no
 re-running the preflight to see whether it came back. A model that is out
 of usage is unavailable for the whole run. A missing Cursor
 CLI makes both Cursor models unavailable; never fall back to the direct
-`grok` command.
+`grok` command. A missing `kimi` CLI (for example on Marvin's box) makes
+Kimi K3 unavailable, and its lanes move to their substitutes.
 
 **Retries and stragglers:**
 
@@ -153,12 +163,36 @@ before=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
 after=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
 [ "$before" = "$after" ] || echo "flash lane changed $repoRoot" >&2
 rm -rf "$snap"
+
+# Kimi K3 — Kimi Max subscription. -p runs with `auto` permissions and
+# no read-only flag (--plan cannot be combined with -p), so, like flash,
+# the lane runs only in a throwaway snapshot and the real tree is checked
+# after. stream-json prints one JSON message per line; the answer is the
+# last assistant message without tool calls.
+KIMI_PROMPT="$(cat "$promptPath")
+
+Return only one JSON object matching this schema; no markdown fences or commentary:
+$SCHEMA_INLINE"
+snap=$(mktemp -d)
+rsync -a --exclude target/ --exclude node_modules/ --exclude .direnv/ \
+  "$repoRoot"/ "$snap"/
+before=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
+(cd "$snap" && kimi -m kimi-code/k3 --output-format stream-json \
+  -p "$KIMI_PROMPT" < /dev/null) > "$out_dir/raw-<lane>-stream.jsonl"
+after=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
+[ "$before" = "$after" ] || echo "kimi lane changed $repoRoot" >&2
+rm -rf "$snap"
+jq -rs '[.[] | select(.role == "assistant" and ((.tool_calls // []) | length) == 0)]
+  | last | .content
+  | if type == "string" then . else map(select(.type == "text") | .text) | join("") end' \
+  "$out_dir/raw-<lane>-stream.jsonl" > "$out_dir/raw-<lane>.json"
 ```
 
 **Review lanes must never change the code under review.** Every
 foreign-CLI lane runs read-only: sol uses `--sandbox read-only`, the
-Cursor lanes use `--mode ask`, and flash runs only in a snapshot copy as
-above, because no `agy` flag makes it read-only. Prompt paths inside
+Cursor lanes use `--mode ask`, and flash and Kimi K3 run only in a
+snapshot copy as above, because no `agy` flag, and no `kimi -p` flag,
+makes them read-only. Prompt paths inside
 the snapshot are the same relative paths. If the real tree changed during
 a lane (`before` ≠ `after`), treat that lane as `reviewer_error`, restore
 the tree from the last commit plus the fixer's known edits, and never
@@ -169,7 +203,8 @@ For both Cursor lanes, save stdout as `raw-<lane>-envelope.json`, extract
 `.result` with `jq -er` into `raw-<lane>.json`, then validate against the
 schema. These exact model IDs were verified with `cursor-agent models`. Always
 pass them to `cursor-agent`, never to the direct `grok` CLI, which bills the
-separate xAI account. A parse or validation failure
+separate xAI account. Kimi K3 output gets the same `jq` extraction and schema
+validation. A parse or validation failure
 gets the same one retry as any other lane, then moves to its substitute.
 
 Inline the artifact when the CLI cannot read files. Timeout 10 minutes
@@ -200,7 +235,7 @@ substitute the remaining Claude-model lanes for the rest of the run.
 A pass counts only if **at least two different models** returned, and
 **at least one is not the host harness's home model** (treat Cursor Grok 4.7
 as host-equivalent on Grok; sol 6.1 on Codex; opus 5.5 on Claude;
-flash 3.8 on Agy).
+flash 3.8 on Agy; Kimi K3 on Kimi).
 Otherwise the pass is `incomplete`. Do not converge.
 
 ## Code-review lanes (review-loop, review-pr)
@@ -214,6 +249,7 @@ Otherwise the pass is `incomplete`. Do not converge.
 | `review-flash` | flash 3.8 high |
 | `review-opus` | opus 5.5 |
 | `review-composer` | composer 2.5 standard |
+| `review-kimi` | Kimi K3 max |
 
 The Claude general and deep specialist use the same pinned model with
 different prompts.
@@ -221,18 +257,18 @@ different prompts.
 ### Specialist lanes
 
 Composite lanes combine related inspectors into one process per model.
-`flash-config` stays separate because its rollout matrix is independently gated.
+`kimi-config` stays separate because its rollout matrix is independently gated.
 
 | Lane | Model | Covers | Gate |
 |---|---|---|---|
 | `opus-deep` | opus 5.5 xhigh | goal-eval, simplicity, **and** approach (`approach-inspector`), one prompt | On `<50` non-sensitive, run only the approach part, and only when an approach trigger holds. Re-run if the PR description **or** behavior hunks changed, or the approach part alone if an approach trigger changed. |
-| `flash-hygiene` | flash 3.8 high | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
+| `kimi-hygiene` | Kimi K3 max | failure-modes, tests, typing, comments | Pass 1 if any of those surfaces exist. Re-run if tests / comments / types / error-path files changed. |
 | `flash-spec` | flash 3.8 high | spec-sync (`spec-sync-inspector`) | Run if the repo has a spec (`SPEC.md`, `docs/spec*`, `docs/architecture*`, `adrs/`, `docs/adr*`) and the diff changes behavior or structure, or edits those docs. Re-run if behavior hunks or those docs changed. |
-| `flash-config` | flash 3.8 high | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
+| `kimi-config` | Kimi K3 max | config-schema and deployment compatibility | Run if deployed config, config parsing/validation, schema versions, or release/deploy checks changed. Re-run if any of those paths changed. |
 | `grok-special` | Cursor Grok 4.7 high | concurrency + idiomatic Rust | Rust half only if the diff touches `*.rs` or `Cargo.toml`. Concurrency half if the diff has async/await/spawn/tokio/JoinHandle or the run is sensitive. |
 | `sol-special` | sol 6.1 high | contract + edge-cases | Contract if HTTP/RPC/SDK/on-chain/money/decimals appear. Edge-cases if `>500` lines **or** sensitive. |
 | `sol-paths` | sol 6.1 high | error paths and lifecycle states (`error-path-inspector`) | Run if the diff changes error handling, retries, polling, persisted state, status enums, events, or state transitions, and always when sensitive. Re-run if behavior hunks changed. |
-| `grok-runbook` | Cursor Grok 4.7 high | runbooks and operational scripts (`runbook-inspector`) | Run if the diff touches a runbook, `DEPLOY.md`, rollout, rollback, or recovery docs, `docs/ops*`, incident guides, or a one-off operational script. Re-run if any of those changed. |
+| `kimi-runbook` | Kimi K3 max | runbooks and operational scripts (`runbook-inspector`) | Run if the diff touches a runbook, `DEPLOY.md`, rollout, rollback, or recovery docs, `docs/ops*`, incident guides, or a one-off operational script. Re-run if any of those changed. |
 | `opus-solreuse` | opus 5.5 high | reuse of the shared Rain Solidity tools and conventions (`solidity-reuse-inspector`, from T0Trade/agent-skills) | Run if the diff touches `*.sol`, `foundry.toml`, `soldeer.lock`, `remappings.txt`, or `.gitmodules`, at any size. Re-run if any of those changed. |
 
 Sensitive = auth, secrets, payment/financial, on-chain, or migrations.
@@ -251,7 +287,7 @@ Approach trigger = any of:
 Small follow-ups are where "patching the patch" shows up, so they must not
 be skipped.
 
-`sol-paths` and `grok-runbook` enumerate instead of reading the PR as a whole:
+`sol-paths` and `kimi-runbook` enumerate instead of reading the PR as a whole:
 every exit and state, every runbook step. General lanes skim past these narrow
 bugs; CodeRabbit caught several in 2026-10 that the full panel missed. Never
 skip them on size alone.
@@ -270,15 +306,15 @@ fixtures) as in review-loop's size gate.
 
 | Diff | Run |
 |---|---|
-| `<50` and not sensitive | `review-sol`, `review-grok`, `review-composer`, `review-flash`. Add `flash-hygiene` if tests/comments/types are in the diff. Add `sol-paths` and `grok-runbook` if their gates hold. Add `flash-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Add `opus-solreuse` if its gate holds. Otherwise no opus 5.5. |
-| `50–500` and not sensitive | Five generals + `opus-deep` + `flash-hygiene` + gated `flash-spec` / `flash-config` / `grok-special` / `sol-special` (no edge-cases) / `sol-paths` / `grok-runbook` / `opus-solreuse`. |
+| `<50` and not sensitive | `review-sol`, `review-kimi`, `review-grok`, `review-composer`, `review-flash`. Add `kimi-hygiene` if tests/comments/types are in the diff. Add `sol-paths` and `kimi-runbook` if their gates hold. Add `kimi-config` if its config surfaces changed. Add `grok-special` only for the rust half if `*.rs`. Add `flash-spec` if its gate holds. Add `opus-deep` with only the approach part if an approach trigger holds. Add `opus-solreuse` if its gate holds. Otherwise no opus 5.5. |
+| `50–500` and not sensitive | Six generals + `opus-deep` + `kimi-hygiene` + gated `flash-spec` / `kimi-config` / `grok-special` / `sol-special` (no edge-cases) / `sol-paths` / `kimi-runbook` / `opus-solreuse`. |
 | `>500` **or** sensitive | Full set, including edge-cases. |
 
 ### Lean re-review (after a fix)
 
 Always: host **fix-verifiers** (one per applied fix; host model only,
-never a foreign CLI) and `review-sol`, `review-grok`, `review-composer`,
-`review-flash`.
+never a foreign CLI) and `review-sol`, `review-kimi`, `review-grok`,
+`review-composer`, `review-flash`.
 
 Conditionally:
 
@@ -286,10 +322,10 @@ Conditionally:
 - `opus-deep` if the PR description or behavior hunks changed; only its
   approach part if just an approach trigger changed.
 - `flash-spec` if behavior hunks or spec docs changed.
-- `flash-config` if deployed config, config schema/validation, or release/deploy
+- `kimi-config` if deployed config, config schema/validation, or release/deploy
   check paths changed.
 - `sol-paths` if behavior hunks changed and its gate holds.
-- `grok-runbook` if runbook or operational-script paths changed.
+- `kimi-runbook` if runbook or operational-script paths changed.
 - `opus-solreuse` if `*.sol` or Solidity build files changed.
 - composites if their gate's files changed (`cmp` the filtered
   path-list, not a semantic "slice").
@@ -337,7 +373,7 @@ finding schema.
 
 ## Critique lanes (critique-loop)
 
-Generals: `review-sol`, `review-grok`, `review-composer`, `review-flash`, `review-opus`
+Generals: `review-sol`, `review-kimi`, `review-grok`, `review-composer`, `review-flash`, `review-opus`
 (same skip rule on short docs).
 
 `opus-deep`: goal-evaluation, grounding, **and** approach (opus 5.5;
@@ -346,7 +382,7 @@ part applies `approach-inspector`'s plan section: every new component
 states its home and why, checked against the spec, the owning system, and
 any planned replacement.
 
-`flash-hygiene`: feasibility, clarity, style (flash 3.8).
+`kimi-hygiene`: feasibility, clarity, style (Kimi K3).
 
 `grok-special`: consistency + scope (Cursor Grok 4.7).
 
@@ -355,8 +391,8 @@ broad).
 
 Decision-changing findings are always Discuss.
 
-Lean re-critiques always run `review-sol`, `review-grok`, and
-`review-composer` plus host fix-verifiers. Re-run the other general or
+Lean re-critiques always run `review-sol`, `review-kimi`, `review-grok`,
+and `review-composer` plus host fix-verifiers. Re-run the other general or
 specialist lanes only when their focus surface changed. Never end on a fix.
 
 ## Plan critics (implement-issue, plan-issue)
@@ -365,9 +401,9 @@ Planner: opus 5.5 if the Claude harness is reachable (native child or
 `claude -p --model claude-opus-5-5`); otherwise the host's current model. Say
 which.
 
-Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Cursor Grok 4.7,
-and composer 2.5. The opus 5.5 critic also applies `approach-inspector`'s
-plan section. No flash 3.8, except as a substitute. If Claude is
+Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Kimi K3,
+and Cursor Grok 4.7. The opus 5.5 critic also applies `approach-inspector`'s
+plan section. No flash 3.8 or composer 2.5, except as a substitute. If Claude is
 unreachable, substitute the opus 5.5 critic and label the run `portable`. If Claude is the host, label it `claude-host`.
 
 Implementer and fixer stay on the host model (or a cheap same-harness
@@ -375,8 +411,8 @@ child).
 
 ## Council lanes (council-eval)
 
-One generalist each: opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5,
-and flash 3.8. Council drops an unavailable model instead of substituting it: its point is one
+One generalist each: opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7,
+composer 2.5, and flash 3.8. Council drops an unavailable model instead of substituting it: its point is one
 answer per distinct model. No specialists or re-review. Use the shared wrappers
 and Max preflight above; `council-eval` owns only its artifact prompt and
 deterministic report.
@@ -413,5 +449,6 @@ composite or focused specialist lane.
 5. Do not impersonate an unavailable **model**: a substitute runs under
    its own name.
 6. Never name a harness as if it were a model. Lanes are owned by
-   Cursor Grok 4.7, composer 2.5, sol 6.1, opus 5.5, or flash 3.8 —
-   not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy".
+   Cursor Grok 4.7, composer 2.5, sol 6.1, opus 5.5, flash 3.8, or
+   Kimi K3 — not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy" /
+   "Kimi".

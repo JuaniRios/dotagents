@@ -11,8 +11,8 @@ allowed-tools: Bash(*), Read, Write
 # New skill
 
 Creates one agent-neutral skill in `~/Github/dotagents/skills/<name>/`.
-Then runs `scripts/install-skills.nu` so Claude, Codex, Grok, and
-Antigravity can load it.
+Then runs `scripts/install-skills.nu` so Claude, Codex, Grok,
+Antigravity, and Kimi can load it.
 
 Skill maintenance in `~/Github/dotagents` is an explicit exception to the
 `graphite` skill. Do not invoke Graphite, initialize it, or run any `gt` command
@@ -26,7 +26,7 @@ for this workflow. Use direct Git on `main` exactly as described below.
 
 `scripts/install-skills.nu` puts a per-entry symlink into each harness
 dir. Do not write files under `~/.claude/`, `~/.codex/`, `~/.grok/`,
-or `~/.gemini/`. Skill-owned runtime data (logs, state) goes in
+`~/.gemini/`, or `~/.kimi-code/`. Skill-owned runtime data (logs, state) goes in
 `~/Github/dotagents/data/<name>/` so every harness can read it. Reports
 go in `~/Github/dotagents-private/data/<name>/` instead: pull with
 `~/Github/dotagents-private/scripts/data-sync.sh pull` before reading
@@ -44,8 +44,8 @@ tool.
 
 If the skill fans out models, say "follow
 `~/Github/dotagents/skills/panel-runtime.md`" instead of inventing
-another catalogue. Harnesses are claude/codex/grok/agy; models are
-opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5, and flash 3.8.
+another catalogue. Harnesses are claude/codex/grok/agy/kimi; models are
+opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5, and flash 3.8.
 Do not mix the two.
 
 ## Steps

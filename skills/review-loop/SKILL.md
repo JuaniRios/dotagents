@@ -2,7 +2,7 @@
 name: review-loop
 description: >
   Cross-review the current branch with a multi-model panel (opus 5.5,
-  sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.8), including an opus 5.5
+  sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8), including an opus 5.5
   deep lane, auto-fix findings, and re-review until clean. Use only when the user
   explicitly asks for review-loop, a multi-model review, or an applicable
   complex implementation workflow explicitly requires it. Do not auto-trigger for ordinary review,
@@ -24,7 +24,7 @@ owns models, wrappers, lanes, adaptive sizing, lean rounds, quorum,
 and Max preflight. This file owns the branch loop around that panel.
 
 The loop is **guest-shaped**: it runs in any harness (claude, codex,
-grok, agy). Fan out with that host's parallel primitive. Native lanes
+grok, agy, kimi). Fan out with that host's parallel primitive. Native lanes
 are isolated children pinned to the **model**, not the babysitter.
 
 **Argument:** nothing = current branch only, no version-control
@@ -83,7 +83,7 @@ wins over size** for panel sizing — see panel-runtime.
 ```bash
 git rev-parse --show-toplevel
 gt log short
-command -v gt claude codex cursor-agent agy
+command -v gt claude codex cursor-agent agy kimi
 git status --porcelain
 ```
 
