@@ -77,7 +77,8 @@ unsure, aim between 2 and 3.
 
 - Abbreviations: `lmk` (let me know), `wdyt`/`wdy`, `wby`, `tbh`, `idk`, `atm`,
   `prob`, `prio`, `tmrw`/`tmr`, `eod`, `rn`, `fyi`, `nvm`, `imo`, `mb` (my bad),
-  `u`, `ur`, `cause`, `tho`, `ye`/`yea`, `nt`.
+  `u`, `cause`, `tho`, `ye`/`yea`, `nt`.
+- Never write `ur`. Always spell out "your" (and "you're").
 - Fillers/openers: "yea…", "hmm", "damn", "ohh", "alright", "so idk", "makes sense",
   "for now", "keep in mind", "to be clear", "for sure".
 - Praise: "good catch", "nice one", "love it", "cool", "niceee".
