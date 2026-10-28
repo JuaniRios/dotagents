@@ -1,22 +1,18 @@
 ---
 name: worktree
-allowed-tools: Bash(wt:*), Bash(git:*), Bash(gt:*), Bash(nix:*), Bash(sqlx:*), Bash(jq:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(tr:*), Bash(test:*), Bash(wc:*), Bash(printf:*), Bash(command:*), Bash(dirname:*), Bash(echo:*), Bash(direnv:*), Read
-description: Create, list, or remove branch-backed worktrees with Worktrunk (`wt`). Worktrees use the configured path inside the primary repo at .worktrees/<branch>, start from current remote trunk, and receive project setup (submodules, direnv, sqlx, Graphite). Use /worktree to create, /worktree remove <name> to delete, or /worktree list.
+allowed-tools: Bash(git:*), Bash(gt:*), Bash(nix:*), Bash(sqlx:*), Bash(jq:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(tr:*), Bash(test:*), Bash(wc:*), Bash(printf:*), Bash(command:*), Bash(dirname:*), Bash(echo:*), Bash(direnv:*), Read
+description: Create, list, or remove branch-backed worktrees with native `git worktree`. Worktrees live inside the primary repo at .worktrees/<branch>, start from current remote trunk, and receive project setup (submodules, direnv, sqlx, Graphite). Use /worktree to create, /worktree remove <name> to delete, or /worktree list.
 argument-hint: [remove <name> | list]
 ---
 
-# Worktree — Worktrunk-managed parallel copies
+# Worktree — native git worktrees
 
-Use Worktrunk (`wt`) as the authority for creating, listing, and removing git
-worktrees. The user configuration sets:
+Use native `git worktree` to create, list, and remove worktrees. Do not use
+Worktrunk (`wt`) or lazygit: `wt` is not installed on every host, and lazygit
+is an interactive TUI with no scriptable worktree command.
 
-```toml
-worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"
-```
-
-Therefore every linked checkout belongs under the primary repository's
-`.worktrees/` directory. Do not duplicate Worktrunk's path calculation or use
-`git worktree add/remove` directly.
+Every linked checkout belongs under the primary repository's `.worktrees/`
+directory, at `.worktrees/<branch>` with `/` in the branch replaced by `-`.
 
 ## Layout
 
@@ -32,13 +28,12 @@ Therefore every linked checkout belongs under the primary repository's
 Parse the user's arguments:
 
 - **Empty** or missing: create a new worktree.
-- **`remove <name>`**: remove the named worktree through `wt`.
-- **`list`**: list worktrees through `wt`.
+- **`remove <name>`**: remove the named worktree.
+- **`list`**: list worktrees.
 
-## Step 1 — Verify Worktrunk and resolve the primary repo
+## Step 1 — Resolve the primary repo
 
 ```bash
-command -v wt >/dev/null || { echo "Worktrunk (wt) is not installed"; exit 1; }
 git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 repo_root=$(dirname "$git_common_dir")
 trunk=$(git -C "$repo_root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
@@ -55,13 +50,13 @@ git -C "$repo_root" fetch origin
 ```
 
 Resolve the main repo through the common Git directory so invoking this skill
-from an existing linked worktree still asks Worktrunk to operate on the
+from an existing linked worktree still creates the worktree under the
 primary checkout.
 
 ## Step 2 — Generate a memorable name
 
-Worktrunk is branch-oriented, so the memorable adjective-noun is both the
-branch name and the configured `.worktrees/<name>` leaf.
+The memorable adjective-noun is both the branch name and the
+`.worktrees/<name>` leaf. If the user named a branch, use it instead.
 
 ```bash
 adjectives="swift bold calm cool crisp deft dry eager fair fast fond free glad gold green keen kind lean lush mild neat pale pure raw red rich ripe safe sharp shy slim soft tall tame thin vast warm wide wild wise"
@@ -74,26 +69,19 @@ name="${adj_arr[$((RANDOM % ${#adj_arr[@]}))]}-${noun_arr[$((RANDOM % ${#noun_ar
 
 If `refs/heads/$name` already exists, regenerate once.
 
-## Step 3 — Create through Worktrunk
+## Step 3 — Create with git worktree
 
 ```bash
 if ! git -C "$repo_root" check-ignore --quiet .worktrees; then
   printf '\n.worktrees/\n' >> "$git_common_dir/info/exclude"
 fi
-result=$(wt -y -C "$repo_root" switch --create "$name" \
-  --base "origin/$trunk" --no-cd --format=json)
-wt_path=$(printf '%s' "$result" | jq -r '.path')
-test -n "$wt_path" && test "$wt_path" != "null"
+wt_path="$repo_root/.worktrees/$(printf '%s' "$name" | tr '/' '-')"
+git -C "$repo_root" worktree add -b "$name" "$wt_path" "origin/$trunk"
 ```
 
-Verify Worktrunk honored the configured location before continuing:
-
-```bash
-case "$wt_path" in
-  "$repo_root"/.worktrees/*) ;;
-  *) echo "Worktrunk returned unexpected path: $wt_path"; exit 1 ;;
-esac
-```
+To check out a branch that already exists on the remote instead of creating
+one, use `git -C "$repo_root" worktree add --track -b "$name" "$wt_path"
+"origin/$name"`.
 
 The repository-local exclude prevents the in-repo worktree container from
 appearing as an untracked directory without modifying tracked `.gitignore`.
@@ -201,39 +189,37 @@ Print confirmation:
 Graphite: initialized (trunk: <trunk>)
 ```
 
-## Step 5 — Remove through Worktrunk
+## Step 5 — Remove
 
 When the user's arguments starts with `remove`:
 
 1. Extract the worktree branch name or path.
 2. Resolve `repo_root` through the common Git directory as in step 1.
-3. Run foreground removal so completion is known before reporting success:
+3. Remove the worktree, then delete the branch only if it is merged:
 
    ```bash
-   wt -y -C "$repo_root" remove --foreground "<name-or-path>"
+   git -C "$repo_root" worktree remove "$wt_path"
+   git -C "$repo_root" branch -d "$name" \
+     || echo "Branch '$name' kept: it has unmerged commits"
    ```
 
-4. Do not add `--force` or `--force-delete` unless the user explicitly asks to
-   discard dirty or unmerged work. Worktrunk safely deletes the branch only
-   when its changes are already integrated.
+4. Do not add `--force` to `worktree remove`, or use `branch -D`, unless the
+   user explicitly asks to discard dirty or unmerged work.
 5. Print confirmation:
 
    ```
-   Worktree '<name>' removed through Worktrunk.
+   Worktree '<name>' removed.
    ```
 
-## Step 6 — List through Worktrunk
+## Step 6 — List
 
 When the user's arguments is `list`:
 
 ```bash
 git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 repo_root=$(dirname "$git_common_dir")
-wt -C "$repo_root" list
+git -C "$repo_root" worktree list
 ```
-
-Do not substitute `git worktree list`; Worktrunk's view includes branch,
-status, integration state, and the configured path.
 
 ## Final output
 
@@ -259,10 +245,9 @@ To remove later:
 
 ## Hard rules
 
-1. Use `wt` for create, list, and remove. Never call `git worktree add/remove`
-   from this skill.
+1. Use native `git worktree` for create, list, and remove. Never use `wt` or
+   lazygit.
 2. Worktrees are branch-backed and start at the latest `origin/<trunk>`.
-3. Require Worktrunk's returned path to be inside the primary repo's
-   `.worktrees/` directory.
+3. Create every worktree inside the primary repo's `.worktrees/` directory.
 4. Never force removal or branch deletion without explicit user approval.
 5. Always use `--reference` for submodule init to avoid network fetches.
