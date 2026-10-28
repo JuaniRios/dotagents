@@ -225,8 +225,10 @@ Always present, directly under the headline, in this order:
 
 ### Sections
 
-Every section below the slot line is optional. Delete a section that has
-nothing real to say. A trivial PR is the headline plus the slot line.
+Every section below the slot line is optional, except that Proof always
+keeps its Not verified bullet. Delete a section that has nothing real to
+say. A trivial PR is the headline, the slot line, and a Proof section with
+only the Not verified bullet.
 
 - **Needs your call.** Only when the author needs a decision from another
   person. @mention the person who must answer. It comes first, above
@@ -240,7 +242,8 @@ nothing real to say. A trivial PR is the headline plus the slot line.
   Write each as "X, not Y, because Z." End each with a diff link.
 - **Risks.** At most 3. What can go wrong, how bad it is, and what limits it
   or which issue follows up. Add a diff link when the risk lives in code.
-- **Proof.** The strongest 1 to 3 pieces of evidence: the test that
+- **Proof.** The strongest 1 or 2 pieces of evidence, so that with the
+  Not verified bullet the section stays within 3 bullets: the test that
   reproduces the bug, the staging check, the Terraform plan summary, a
   screenshot. Never a list of every test, a test count, or the lint, fmt,
   and review runs that the checks tab already shows. Always end with a
