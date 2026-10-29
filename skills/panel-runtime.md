@@ -79,8 +79,24 @@ model's usage limit or cooldown to reset: no `sleep`, no polling loop, no
 re-running the preflight to see whether it came back. A model that is out
 of usage is unavailable for the whole run. A missing Cursor
 CLI makes both Cursor models unavailable; never fall back to the direct
-`grok` command. A missing `kimi` CLI (for example on Marvin's box) makes
-Kimi K3 unavailable, and its lanes move to their substitutes.
+`grok` command. A missing `kimi` CLI makes Kimi K3 unavailable, and its
+lanes move to their substitutes. Check the CLI with `command -v` before
+its preflight command; a missing CLI needs no other check.
+
+**On Marvin's box** (`MARVIN_JOB_ID` is set), Kimi K3 and flash 3.8 are
+not installed: Marvin has no Kimi or Gemini subscription. Do not
+preflight them and do not look for `kimi` or `agy`. They are
+unavailable for the whole run, so skip them in every substitute chain:
+
+| Unavailable | Substitutes on Marvin, in order |
+|---|---|
+| Kimi K3, flash 3.8 | sol 6.1, opus 5.5 |
+| composer 2.5 | sol 6.1, opus 5.5 |
+| Cursor Grok 4.7 | sol 6.1, opus 5.5, composer 2.5 |
+| sol 6.1 | Cursor Grok 4.7, opus 5.5, composer 2.5 |
+| opus 5.5 | sol 6.1, Cursor Grok 4.7, composer 2.5 |
+
+Council on Marvin drops Kimi K3 and flash 3.8 and says so.
 
 **Retries and stragglers:**
 
