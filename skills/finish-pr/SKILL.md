@@ -2,11 +2,11 @@
 name: finish-pr
 description: >-
   Prepare the PR (description, assignee, code-owner reviewers, kept in draft),
-  address existing human and bot feedback, loop with Rain Marvin (and, in
-  ST0x-Technology only, CodeRabbit) until the required bots approve the exact
-  published head, and only then mark the PR ready for review. A bot approval
-  with only minor comments ends the fix loop unless a comment is underrated. Use when asked to address review
-  feedback, drive CodeRabbit or Rain Marvin, or finish PR review, when an
+  address existing human and bot feedback, loop with Rain Marvin until it
+  approves the exact published head, and only then mark the PR ready for
+  review. A Rain Marvin approval with only minor comments ends the fix loop
+  unless a comment is underrated. Use when asked to address review
+  feedback, drive Rain Marvin, or finish PR review, when an
   active implementation workflow requires it, and always before reporting a
   PR you opened or changed as done. Do not trigger for status-only checks.
 ---
@@ -43,11 +43,11 @@ as incomplete, not wrapped up.
 
 Do this for every in-scope PR before touching feedback.
 
-1. **Draft.** The PR stays a draft until section 7. If it is open and not a
+1. **Draft.** The PR stays a draft until section 6. If it is open and not a
    draft, convert it with `gh pr ready --undo <url>` and verify `isDraft`.
 2. **Description.** Run pr-description on the PR so it has a real title and
    merge brief, not a placeholder or `WIP`. pr-description preserves
-   user-authored content. Run it again before section 7 if later fixes
+   user-authored content. Run it again before section 6 if later fixes
    changed what the brief claims. Only pr-description writes the body:
    never patch or append to it by hand with `gh pr edit --body-file` after
    a review round, and never follow a section list from a caller's prompt
@@ -122,9 +122,9 @@ feedback reopens the concern or current evidence shows it remains unfixed.
 
 Split review bodies into individual findings. Deduplicate repeated findings
 across threads, summaries, and replies. Retain source URLs and thread IDs.
-Reconcile substantive concerns in CodeRabbit's and Rain Marvin's summaries
-with the actual fixes and discussions; neither blindly trust nor silently
-discard them.
+Reconcile substantive concerns in bot summaries (Rain Marvin's, and
+CodeRabbit's on older PRs) with the actual fixes and discussions; neither
+blindly trust nor silently discard them.
 Ignore praise, generic walkthroughs, and optional bot promotion checklists.
 
 Read current code and relevant tests before deciding. Classify each item:
@@ -158,8 +158,8 @@ Parallel read-only analysis is fine; shared-worktree mutations are serial.
    immediately; after sending, read the thread back and verify the reply's
    author and body. On GitHub, also verify the acting user's pending-review
    count is zero before resolving any thread.
-7. Only after that publication check succeeds, resolve every addressed human,
-   CodeRabbit, and Rain Marvin thread. Verify resolution; do not rely on
+7. Only after that publication check succeeds, resolve every addressed human
+   and bot thread. Verify resolution; do not rely on
    automatic bot resolution. If publishing or read-back verification fails,
    leave the thread unresolved and report the failure. Never resolve first and
    publish later.
@@ -173,73 +173,14 @@ on the PR.
 User-approved alternatives or rejections follow the same reply-and-resolve
 path. Do not claim a deferred issue exists before it has been created.
 
-## CodeRabbit applies only in ST0x-Technology
+## CodeRabbit is not used
 
-Only the `ST0x-Technology` org pays for CodeRabbit, and only there is its
-review required (Marvin's `coderabbit/reviewed` check runs only there). For a
-PR in any other org (`T0Trade`, `rainlanguage`, `S01-Issuer`, and the rest):
+CodeRabbit is not installed or required in any org. Do not post
+`@coderabbitai` commands, request its review, or wait for it. CodeRabbit
+comments already on an older PR are still feedback: handle them through
+sections 1 and 2 like any other review comment.
 
-- Skip section 3. Do not post `@coderabbitai` commands.
-- Rain Marvin's approval alone satisfies sections 5 and 7.
-- CodeRabbit comments already on the PR are still feedback: handle them
-  through sections 1 and 2 like any other review comment.
-
-Wherever later sections say "both bots", read "Rain Marvin" for those PRs.
-
-## 3. Ensure a full CodeRabbit review (ST0x-Technology only)
-
-After existing feedback is handled, or immediately if none exists, inspect
-CodeRabbit's review history. The handle is `@coderabbitai`.
-
-- Reuse a confirmed completed full-PR review as the baseline.
-- If no full review is confirmed, request `@coderabbitai full review` once.
-  A prior incremental review alone does not establish a full baseline.
-- For every subsequent round, use `@coderabbitai review`, never another
-  full review merely because the head changed or the branch was restacked.
-- Prefer an automatic review already running for the new push. Allow up to
-  three minutes for it to start before requesting an incremental review.
-  Do not duplicate a queued or running request.
-
-### CodeRabbit command budget
-
-CodeRabbit answers a bot (such as `rain-marvin[bot]`) for only about four
-`@coderabbitai` commands on one PR. After that it ignores the bot silently
-for 12 hours or more, while it still answers people on the same PR. Every
-command counts: `review`, `full review`, `approve`, `resolve`, and replies
-that mention `@coderabbitai`. Spend them carefully:
-
-- Post at most one review command for each published head. Before you post,
-  check whether CodeRabbit already covered that head: a review on that
-  commit, or its summary listing that commit as the end of the reviewed
-  range. If it did, do not post. CodeRabbit does not review a commit again,
-  so a second `review` on a covered head does nothing.
-- Batch fixes so that each round makes one push and needs one review.
-- Do not mention `@coderabbitai` in thread replies. Reply in the thread
-  without the handle.
-- Use `approve` or `resolve` only when section 5 needs it, and only once
-  for each head.
-- Count the commands this run posted on the PR, and also the ones earlier
-  runs posted (read the PR comments). Record the count in the checkpoint.
-
-If CodeRabbit does not answer a command within five minutes (no reply, no
-reaction, no status change), treat it as the bot limit. Do not post the
-command again and do not switch to `full review`. Stop driving CodeRabbit on
-that PR, finish the Rain Marvin side, and report the PR as blocked: a person
-must post `@coderabbitai review` (or `approve`) on the current head. People
-are not subject to this limit.
-
-Record trigger time, head/base SHAs, command, review run, and covered commit.
-A request acknowledgement, green check, empty COMMENTED review, or reply
-saying a thread is fixed does not prove a code review completed.
-Check the completed run and its reviewed commit range. CodeRabbit may
-report a clean review only in its updated summary rather than a review body.
-"Already reviewed" is sufficient only with matching coverage evidence.
-
-A rebase-only SHA change may reuse coverage only after verifying the
-parent-relative diff is unchanged and no conflict resolution or relevant
-base change altered its meaning. Otherwise request incremental review.
-
-## 4. Drive Rain Marvin through review and approval
+## 3. Drive Rain Marvin through review and approval
 
 After existing feedback is handled, or immediately if none exists, inspect
 Rain Marvin's review history. The handle is `@rain-marvin`.
@@ -251,7 +192,7 @@ Rain Marvin's review history. The handle is `@rain-marvin`.
    head/base SHAs, completed review, and covered commit or diff range.
 3. If the completed review approves (verdict Approve in the review or the
    `rain-marvin/reviewed` check) and its remaining comments are all minor or
-   nits, apply the approval rule in section 5 instead of fixing them.
+   nits, apply the approval rule in section 4 instead of fixing them.
    Otherwise ingest every finding through steps 1 and 2: investigate,
    implement accepted changes, verify, publish, reply, and resolve the
    addressed threads.
@@ -261,7 +202,7 @@ Rain Marvin's review history. The handle is `@rain-marvin`.
      leave meaningful uncertainty that another review can resolve.
    - Otherwise post `@rain-marvin approve` and wait for Rain Marvin's approval.
    Rain Marvin's approval of the exact published head is required before
-   section 7.
+   section 6.
 5. Verify approval applies to the exact published head or an unchanged
    parent-relative diff. A command acknowledgement is not approval. If Rain
    Marvin returns findings without approving, process them and repeat this
@@ -269,39 +210,30 @@ Rain Marvin's review history. The handle is `@rain-marvin`.
 
 Do not duplicate queued or running requests. Poll using the host's wait
 mechanism in intervals no longer than 60 seconds. If Rain Marvin is quiet or
-stalled, apply the same 20-minute diagnosis and blocker rules as CodeRabbit.
-The follow-up review-versus-approval choice is governed by the implementation
-judgment above.
+stalled, apply the stall rules in section 4. The follow-up
+review-versus-approval choice is governed by the implementation judgment
+above.
 
-## 5. Drive to convergence
+## 4. Drive to convergence
 
-After each completed CodeRabbit or Rain Marvin review, ingest all new feedback
-through steps 1 and 2. After any new fix, obtain the review coverage required
-by sections 3 and 4 and repeat until both bots approve.
+After each completed Rain Marvin review, ingest all new feedback through
+steps 1 and 2. After any new fix, obtain the review coverage required by
+section 3 and repeat until Rain Marvin approves.
 
 ### No round cap
 
-Loop until **both** CodeRabbit and Rain Marvin have approved the exact
-published head. There is no round budget: ignore caller levels and caps
-(light/standard/deep) for this loop. Stop early only on a real blocker or
-the no-progress rule below, and then report "blocked", never "ready".
-Record each completed CodeRabbit and Rain Marvin run in the checkpoint so a
-resumed turn does not re-request coverage it already has.
-
-CodeRabbit usage-based reviews are enabled for this environment. A
-`Review rate limited` reply is a failed trigger, not a reason to wait for the
-hourly included-review allowance. Verify that no review is queued or running,
-wait for the retry-after time when one is given, then post one fresh
-`@coderabbitai review`. Never retry in a loop: every retry uses up the
-command budget in section 3. If the retry also fails or gets no answer, apply
-the no-answer rule in section 3. Do not change billing or subscription
-settings. Do not disable automatic review settings.
+Loop until Rain Marvin has approved the exact published head. There is no
+round budget: ignore caller levels and caps (light/standard/deep) for this
+loop. Stop early only on a real blocker or the no-progress rule below, and
+then report "blocked", never "ready". Record each completed Rain Marvin run
+in the checkpoint so a resumed turn does not re-request coverage it already
+has.
 
 Never call an unreviewed final fix converged merely because CI passed.
 
 ### An approval with minor comments ends the loop
 
-Assess severity independently, but let a bot approval end the loop:
+Assess severity independently, but let Rain Marvin's approval end the loop:
 
 - A comment is underrated when it describes funds or safety risk, broken
   behavior on a money path, a broken external contract, or a missing test for
@@ -310,54 +242,45 @@ Assess severity independently, but let a bot approval end the loop:
   later than needed, rare timing edges with no funds risk, style, and
   optional polish.
 
-When a bot approves the current head (a CodeRabbit `APPROVED` review, or Rain
-Marvin's Approve verdict) and its remaining comments are all minor or nits,
-the fix loop ends for that bot. Reply to each comment with its disposition,
-resolve the threads, and go to section 6. Do not push fixes for those
-comments: every push needs a new review round from both bots. List comments
-worth tracking in the report as candidate follow-ups, and create an issue
-only with the user's authority. Fix before ready only a comment that
+When Rain Marvin approves the current head (its Approve verdict) and its
+remaining comments are all minor or nits, the fix loop ends. Reply to each
+comment with its disposition, resolve the threads, and go to section 5. Do
+not push fixes for those comments: every push needs a new review round. List
+comments worth tracking in the report as candidate follow-ups, and create an
+issue only with the user's authority. Fix before ready only a comment that
 independent assessment shows is underrated, and say why in the reply.
 Human requests are never dismissed under this rule.
 
-Before any approval, a CodeRabbit review with only nits still permits
-stopping fixes: reply that optional polish is left out, resolve those
-threads, and request approval. Do not make another cosmetic edit that would
-create an unreviewed terminal delta.
+Before any approval, a review with only nits still permits stopping fixes:
+reply that optional polish is left out, resolve those threads, and request
+approval. Do not make another cosmetic edit that would create an unreviewed
+terminal delta.
 
 Poll using the host's wait mechanism, in intervals no longer than 60 seconds,
 and keep the user updated. Honor rate-limit retry times, avoid duplicate
 commands, and continue useful work on other PRs while waiting.
 Do not change billing settings or bypass access restrictions.
 
-After exact-head coverage is clean and every CodeRabbit thread is resolved,
-GitHub can still show an older CodeRabbit `CHANGES_REQUESTED` review. In that
-case post `@coderabbitai resolve`, then verify that CodeRabbit approved the
-current head and that the PR review decision is no longer blocked. This command
-only clears resolved review state; it never substitutes for current-head review
-coverage. Apply the same evidence standard to Rain Marvin: its requested
-approval must be visible on the current head and never substitutes for review
-coverage after a material change.
+Rain Marvin's requested approval must be visible on the current head and
+never substitutes for review coverage after a material change.
 
 A quiet or rate-limited service is not convergence. Diagnose a stalled run
 after 20 minutes. Retry only when evidence says the previous attempt failed
-or retry is allowed. For CodeRabbit, a command it did not answer is not such
-evidence; follow the no-answer rule in section 3. If substantive findings
-repeat without progress across three cycles, investigate the cause and ask
-for the concrete missing decision instead of blindly editing or retriggering.
+or retry is allowed. If substantive findings repeat without progress across
+three cycles, investigate the cause and ask for the concrete missing
+decision instead of blindly editing or retriggering.
 
-Convergence means both bots approved the current head: a CodeRabbit
-`APPROVED` review and a Rain Marvin approval, each on the exact published
-head (or an unchanged parent-relative diff), with no later push. Any new
-push after an approval sends that bot back through the loop.
+Convergence means Rain Marvin approved the current head (or an unchanged
+parent-relative diff), with no later push. Any new push after an approval
+sends the PR back through the loop.
 
 Persist checkpoints so interrupted work resumes without a new full review.
 If permissions, service availability, or a user decision genuinely blocks
 progress, report "blocked" with remaining work, never "wrapped up".
 
-## 6. Final verification and handoff
+## 5. Final verification and handoff
 
-Do not wait for every intermediate remote CI run. Once both bots approve,
+Do not wait for every intermediate remote CI run. Once Rain Marvin approves,
 perform the final audit:
 
 - Check current trunk/base compatibility and resolve actual conflicts.
@@ -369,21 +292,20 @@ perform the final audit:
   and disclose it. Missing evidence is not green CI.
 - Refresh all feedback sources after final checks. New substantive feedback
   or uncovered changes return to the loop.
-- Verify accepted findings from humans, CodeRabbit, and Rain Marvin have
-  published fixes, replies, and resolved threads, and out-of-diff findings have
-  recorded answers. For each resolved thread, read back evidence that its reply
-  was publicly published before the resolution; a pending review or local
-  reply draft fails this audit.
+- Verify accepted findings from humans and bots have published fixes,
+  replies, and resolved threads, and out-of-diff findings have recorded
+  answers. For each resolved thread, read back evidence that its reply was
+  publicly published before the resolution; a pending review or local reply
+  draft fails this audit.
 - Report human approvals separately, including stale approvals. Do not
   manufacture approval or wait indefinitely for another person's review.
 
-## 7. Mark ready for review
+## 6. Mark ready for review
 
 Only when every condition holds on the exact published head:
 
-- CodeRabbit and Rain Marvin both approved it (section 5); outside
-  ST0x-Technology, Rain Marvin approved it.
-- The section 6 audit passed: CI green, no conflicts, every addressed thread
+- Rain Marvin approved it (section 4).
+- The section 5 audit passed: CI green, no conflicts, every addressed thread
   replied to and resolved, no unhandled substantive feedback.
 - Section 0 still holds: current description that passes the body gate,
   the PR opener assigned, code owners (or pseudo owners) requested.
@@ -393,11 +315,11 @@ head SHA immediately before; if it moved, return to the loop. For a stack,
 mark PRs ready bottom-up, each only after its own conditions hold. If any
 condition fails, leave the PR in draft and report why.
 
-## 8. Report
+## 7. Report
 
-Report each PR with its link, head, draft/ready state, fixes, CodeRabbit
-coverage and approval, Rain Marvin coverage and approval, remaining nits or
-decisions, CI, conflicts, and missing human approvals.
-"Ready for review" requires the required bot approvals on the current head, the
+Report each PR with its link, head, draft/ready state, fixes, Rain Marvin
+coverage and approval, remaining nits or decisions, CI, conflicts, and
+missing human approvals.
+"Ready for review" requires Rain Marvin's approval on the current head, the
 final audit, and a verified `gh pr ready`. It does not mean merged,
 deployed, or human-approved.

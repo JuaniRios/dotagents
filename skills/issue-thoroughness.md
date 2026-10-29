@@ -27,8 +27,8 @@ Assess the changed behavior and blast radius. Config-only defaults to light
 only when its semantics are understood and low risk; announce exceptions.
 
 Respect an explicit thoroughness request. An explicit request for a full
-local review overrides the lighter local-review default. CodeRabbit and Rain
-Marvin run at every implementation level, through finish-pr. If the user
+local review overrides the lighter local-review default. Rain Marvin
+runs at every implementation level, through finish-pr. If the user
 requests a lighter pass on sensitive work, explain the concrete risk and
 agree on the reduced scope instead of silently skipping safety checks.
 
@@ -55,22 +55,21 @@ sensitive behavior, uncertain contracts, or a material design choice.
 Escalate before the risky work and explain why. An ordinary review finding
 does not automatically escalate a standard task; a design-level finding does.
 
-## CodeRabbit at every implementation level
+## Rain Marvin at every implementation level
 
 Always invoke finish-pr on the implementation's in-scope PRs, including
-config-only work. It handles existing feedback first, ensures a completed
-full-review baseline, and uses incremental reviews thereafter. Reuse valid
-current-head coverage instead of posting redundant requests. Planning alone
-does not create a PR or trigger CodeRabbit.
+config-only work. It handles existing feedback first, then drives Rain
+Marvin's review. Reuse valid current-head coverage instead of posting
+redundant requests. Planning alone does not create a PR or trigger review.
 
-There is no round cap at any level: finish-pr loops with CodeRabbit
-and Rain Marvin until both approve the current head, then marks the PR ready
-for review. It owns fixes, replies, resolution, and final checks. This does
+There is no round cap at any level: finish-pr loops with Rain Marvin until
+it approves the current head, then marks the PR ready for review. It owns
+fixes, replies, resolution, and final checks. This does
 not require adding a local model-review loop.
 
 Required CI and repository checks still apply at every level. Use ci before
 Rust or Nix pushes as required; depth controls review overhead, not whether
 broken code may be shipped. Report skipped optional local reviews honestly. Do not
-claim CodeRabbit convergence when no covered review occurred.
+claim review convergence when no covered review occurred.
 
 No level authorizes merging, deployment, or unrequested scope expansion.

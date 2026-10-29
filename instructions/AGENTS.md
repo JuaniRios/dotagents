@@ -33,8 +33,8 @@ before you report the work as done. This applies to every request, not only
 does not finish the work.
 
 A PR is done only when `finish-pr` marked it ready for review: Rain Marvin
-(and CodeRabbit in `ST0x-Technology`) approved the exact published head, CI
-is green on that head, and every review thread has a reply and is resolved.
+approved the exact published head, CI is green on that head, and every
+review thread has a reply and is resolved.
 If CI fails or a bot does not approve, keep fixing and looping. If a real
 blocker stops you, report the PR as blocked with the failing check or the
 missing approval. Never call it done, finished, or wrapped up.

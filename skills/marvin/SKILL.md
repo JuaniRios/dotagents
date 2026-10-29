@@ -80,9 +80,11 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
   under `nix build --print-out-paths nixpkgs#tmux` and send the pasted code
   with `send-keys`.
 - Required checks, all posted by App 5077017 on ST0x repos:
-  `rain-marvin/reviewed` (ruleset 24013665), `coderabbit/reviewed` and
-  `human/reviewed` (ruleset 23778102). The Graphite App must stay on the
-  default-branch bypass list, because its merge queue fast-forwards trunk.
+  `rain-marvin/reviewed` (ruleset 24013665) and `human/reviewed` (ruleset
+  23778102). `coderabbit/reviewed` is off: no org is in `ORGS` in
+  `coderabbit_gate.py`, and the ruleset no longer requires it. The Graphite
+  App must stay on the default-branch bypass list, because its merge queue
+  fast-forwards trunk.
 - Off-box backup of secrets, state, and old ruleset JSON:
   `~/Github/.marvin-backup/`.
 
