@@ -38,10 +38,10 @@ as separate lanes: they share a harness and billing pool, but they are
 different models. Never replace Cursor Grok with the direct `grok` CLI; that
 would charge the separate Grok/xAI account.
 
-Kimi K3 runs on the Kimi Max subscription (Kimi Code OAuth, `kimi login`).
-It is the preferred non-Anthropic, non-OpenAI model: it owns more lanes than
-flash 3.8, Cursor Grok 4.7, or composer 2.5, and it is the first substitute
-for each of them. Effort is set in `~/.kimi-code/config.toml`
+Kimi K3 runs on the Kimi Max subscription (Kimi Code OAuth with `kimi login`,
+or a Kimi Code API key in `~/.kimi-code/config.toml`). It owns more lanes
+than flash 3.8, Cursor Grok 4.7, or composer 2.5. Effort is set in
+`~/.kimi-code/config.toml`
 (`default_effort`), not on the command line.
 
 ## Availability and substitutes
@@ -59,16 +59,20 @@ Max preflight below drops it:
 | Kimi K3 | `kimi -m kimi-code/k3 -p "Reply with OK" < /dev/null` exits 0 and prints `OK` (no status command; a logged-out CLI exits non-zero) |
 
 Never start a lane on an unavailable model. **Run it on the first
-available substitute instead**, with the same lane prompt and focus:
+available substitute instead**, with the same lane prompt and focus.
+
+Substitutes follow one preference order: **opus 5.5, sol 6.1, Kimi K3,
+Cursor Grok 4.7, composer 2.5, flash 3.8**. A lane's substitute is the
+first available model in that order, other than the missing model:
 
 | Unavailable | Substitutes, in order |
 |---|---|
-| Kimi K3 | sol 6.1, opus 5.5, flash 3.8 |
-| flash 3.8 | Kimi K3, composer 2.5, sol 6.1, opus 5.5 |
-| composer 2.5 | Kimi K3, flash 3.8, sol 6.1, opus 5.5 |
-| Cursor Grok 4.7 | Kimi K3, sol 6.1, opus 5.5, composer 2.5 |
-| sol 6.1 | Kimi K3, Cursor Grok 4.7, opus 5.5, composer 2.5 |
-| opus 5.5 | sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5 |
+| opus 5.5 | sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8 |
+| sol 6.1 | opus 5.5, Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8 |
+| Kimi K3 | opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.8 |
+| Cursor Grok 4.7 | opus 5.5, sol 6.1, Kimi K3, composer 2.5, flash 3.8 |
+| composer 2.5 | opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7, flash 3.8 |
+| flash 3.8 | opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5 |
 
 A substituted lane is labeled and recorded as the model that ran it
 (`flash-spec (on Kimi K3)`, `found_by: ["kimi-k3"]`), never as
