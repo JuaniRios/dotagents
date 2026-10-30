@@ -17,7 +17,7 @@ model.
 |---|---|---|---|---|
 | Cursor Grok 4.7 | high | — | — | `cursor-agent -p --model grok-4.7-high` |
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
-| sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol` (ccx; ccxx fallback below) |
+| sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol` (ccx) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
 | flash 3.8 | high | agy | isolated Agy child, `gemini-3.8-flash-high` | `agy -p --model gemini-3.8-flash-high` |
 | Kimi K3 | max | kimi | isolated Kimi child, `kimi-code/k3` | `kimi -m kimi-code/k3 -p` |
@@ -124,11 +124,9 @@ env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5 \
 # sol 6.1 — file schema. Codex strict output needs every property in
 # `required`; optional fields are nullable instead (`file`, `line_start`,
 # `line_end`). Keep it that way when editing the schema.
-# Account: ccx (CODEX_HOME=~/.codex) by default. If its output says
-# "hit your usage limit" and ~/.codex-2 exists, rerun the same command once
-# with ccxx (CODEX_HOME=~/.codex-2). This account switch does not use the
-# lane's one retry. Otherwise sol 6.1 is unavailable: substitute (above).
-# ccx/ccxx are nushell functions, so set CODEX_HOME explicitly from bash.
+# Account: ccx (CODEX_HOME=~/.codex). If its output says "hit your usage
+# limit", sol 6.1 is unavailable: substitute (above).
+# ccx is a nushell function, so set CODEX_HOME explicitly from bash.
 # --skip-git-repo-check: critiques and plans run outside a git repo.
 CODEX_HOME="$HOME/.codex" codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol \
   --output-schema "$SCHEMA" \

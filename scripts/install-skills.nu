@@ -126,11 +126,9 @@ def prune-stale [dest_root: path, live: list<string>, sources: list<path>, dry: 
   | ignore
 }
 
-# Codex homes to install into. ~/.codex always; the second account's
-# ~/.codex-2 only when that account exists, so a machine without one (Marvin's
-# box) does not get an empty home that looks like a logged-out account.
+# Codex homes to install into. There is one ChatGPT account, in ~/.codex.
 def codex-homes []: nothing -> list<string> {
-  [".codex" ".codex-2"] | where {|h| $h == ".codex" or ($env.HOME | path join $h | path exists) }
+  [".codex"]
 }
 
 def hook-script []: nothing -> string {
@@ -177,7 +175,6 @@ def install-hooks [dry: bool] {
   write-file $grok $grok_json $dry
 
   # Codex: write hooks.json if missing or already ours; otherwise warn.
-  # ~/.codex-2 is the second ChatGPT account (ccxx / default `codex`).
   let codex_json = ({
     description: "Shared goal-loop Stop hook from ~/Github/dotagents."
     hooks: {
@@ -283,8 +280,7 @@ def main [--dry-run] {
     prune-stale $dest $names $sources $dry_run
   }
 
-  # Codex ships system skills next to user skills. The second account
-  # (CODEX_HOME=~/.codex-2) reuses the copy under ~/.codex.
+  # Codex ships system skills next to user skills.
   let system_src = ($env.HOME | path join ".codex" "system-skills")
   for home_name in (codex-homes) {
     let system_dst = ($env.HOME | path join $home_name "skills" ".system")
@@ -322,7 +318,6 @@ def main [--dry-run] {
   let instruction_dests = ([
     ($env.HOME | path join ".claude" "CLAUDE.md")
     (do $codex_instructions ($env.HOME | path join ".codex"))
-    (do $codex_instructions ($env.HOME | path join ".codex-2"))
     ($env.HOME | path join ".gemini" "GEMINI.md")
   ] | where {|dest| ($dest | path dirname | path exists)})
   for dest in $instruction_dests {

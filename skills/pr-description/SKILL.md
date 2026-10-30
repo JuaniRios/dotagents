@@ -416,9 +416,7 @@ test -n "$marker" && tail -n +$((marker + 1)) "$out_dir/codex-review.log" | sed 
 
 The reviewer is sol 6.1 on the ccx account (`CODEX_HOME=~/.codex`), the same
 as the review panels in `skills/panel-runtime.md`. If the output says "hit
-your usage limit", rerun the same command once with the ccxx account
-(`CODEX_HOME="$HOME/.codex-2"`). If both accounts are out of credits, or
-the call still fails, skip the review and proceed to push.
+your usage limit", or the call fails, skip the review and proceed to push.
 
 **Apply Codex's feedback automatically** when it's reasonable — incorporate the
 suggested cuts/additions/corrections into the draft. You do not need user
