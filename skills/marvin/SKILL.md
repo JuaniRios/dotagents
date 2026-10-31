@@ -1,6 +1,6 @@
 ---
 name: marvin
-description: Juan's map of Marvin, the team's always-on AI box (@rain-marvin in Zulip, GitHub, and Linear). Use when asked to change, fix, debug, extend, operate, or explain Marvin — its NixOS config, the Python bot, the model router, review checks, Linear flow, scheduled tasks, usage alerts, accounts, or the box itself. Also use when a question mentions marvin.taile5cf8a.ts.net, T0Trade/marvin, rain-marvin, marvin-worker, or the rain-marvin/reviewed, coderabbit/reviewed, or human/reviewed checks.
+description: Juan's map of Marvin, the team's always-on AI box (@rain-marvin in Zulip, GitHub, and Linear). Use when asked to change, fix, debug, extend, operate, or explain Marvin — its NixOS config, the Python bot, the model router, review checks, Linear flow, scheduled tasks, usage alerts, accounts, or the box itself. Also use when a question mentions marvin.taile5cf8a.ts.net, T0Trade/marvin, rain-marvin, marvin-worker, or the rain-marvin/reviewed or human/reviewed checks.
 ---
 
 # Marvin
@@ -81,8 +81,7 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
   with `send-keys`.
 - Required checks, all posted by App 5077017 on ST0x repos:
   `rain-marvin/reviewed` (ruleset 24013665) and `human/reviewed` (ruleset
-  23778102). `coderabbit/reviewed` is off: no org is in `ORGS` in
-  `coderabbit_gate.py`, and the ruleset no longer requires it. The Graphite
+  23778102). The Graphite
   App must stay on the default-branch bypass list, because its merge queue
   fast-forwards trunk.
 - Off-box backup of secrets, state, and old ruleset JSON:
@@ -100,7 +99,7 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
 | Zulip behavior, instant commands | `bot/marvin/zulip.py` |
 | Webhook filters, Linear OAuth install | `bot/marvin/hooks.py` |
 | Review prompts, severity, verdict, check runs | `bot/marvin/review.py` |
-| `coderabbit/reviewed`, `human/reviewed` | `bot/marvin/coderabbit_gate.py`, `bot/marvin/human_gate.py` |
+| `human/reviewed`, gate checks on new heads, restack carry-over (`marvin gate`) | `bot/marvin/human_gate.py`, `bot/marvin/gate.py` |
 | Linear plan, go, implement flow | `bot/marvin/linear_flow.py`, `bot/marvin/linear.py` |
 | Account rotation, parking, Codex resets | `bot/marvin/accounts.py` |
 | Follow-ups, team memory | `bot/marvin/followups.py`, `bot/marvin/memory.py` |
