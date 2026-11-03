@@ -319,6 +319,8 @@ def main [--dry-run] {
     ($env.HOME | path join ".claude" "CLAUDE.md")
     (do $codex_instructions ($env.HOME | path join ".codex"))
     ($env.HOME | path join ".gemini" "GEMINI.md")
+    ($env.HOME | path join ".grok" "AGENTS.md")
+    ($env.HOME | path join ".kimi-code" "AGENTS.md")
   ] | where {|dest| ($dest | path dirname | path exists)})
   for dest in $instruction_dests {
     link-one $instructions $dest $dry_run | ignore
