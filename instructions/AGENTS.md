@@ -7,6 +7,11 @@ included, must open that file itself before any version-control work.
 
 @~/Github/agent-skills/skills/graphite/SKILL.md
 
+## Link every reference
+
+Follow the `link-references` skill in every reply: link each Linear issue,
+pull request, commit, release, CI run, and Zulip thread you mention.
+
 ## Zulip identities
 
 The `zulip` skill comes from T0Trade/agent-skills. On machines that have both
