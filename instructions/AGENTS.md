@@ -46,3 +46,17 @@ missing approval. Never call it done, finished, or wrapped up.
 
 Skip this only when the user explicitly asks for a draft or a push without
 review.
+
+## ship-stack is the default for every task
+
+For any task that changes code, config, or docs in a work repository, run
+the `ship-stack` skill. Do this even when the user does not name it, and
+whether the task is a Linear issue or a free-text request. ship-stack wraps
+`implement-issue` and `finish-pr`, never asks the user anything, stacks the
+follow-ups it finds, and stops at a merge-ready stack with a report.
+
+Do not use it for questions, reviews, investigations, or other read-only
+work. Do not use it where another skill owns the workflow, such as
+skill maintenance in `~/Github/dotagents` (`new-skill`, `edit-skill`),
+releases, deploys, or operations skills. Skip it when the user explicitly
+asks for a draft, a push without review, or one PR with no follow-ups.

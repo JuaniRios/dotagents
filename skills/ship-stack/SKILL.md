@@ -1,16 +1,16 @@
 ---
 name: ship-stack
 description: >
-  Take a task all the way to a merge-ready stack, without stopping to ask:
-  implement it, finish its PR with finish-pr, then implement every
-  follow-up found along the way as a Graphite stack on top (each finished
-  with finish-pr), verify the whole stack is green and mergeable, and report
-  what was done and every decision made so the user can merge. Use only
-  when the user explicitly asks for ship-stack, or asks to implement and
-  finish a task plus all its follow-ups end to end.
+  Default workflow for every task that changes code, config, or docs in a
+  work repository, whether a Linear issue or a free-text request, even when
+  the user does not name this skill. Implements the task without asking,
+  finishes its PR with finish-pr, implements every follow-up found along the
+  way as a Graphite stack on top (each finished with finish-pr), verifies
+  the stack is green and mergeable, and reports what was done and every
+  decision made so the user can merge. Not for questions, reviews,
+  investigations, or work another skill owns.
 argument-hint: "<task | linear-issue-link-or-id>"
 allowed-tools: Bash(*), Read, Write, Edit
-disable-model-invocation: true
 ---
 
 # ship-stack
