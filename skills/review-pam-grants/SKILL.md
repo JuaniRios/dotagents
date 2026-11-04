@@ -167,11 +167,31 @@ josh, juan, kais):
   `3600s`, `roles/storage.objectAdmin`. Expected when it names the
   release run it gates.
 
+**T0 liquidity after the Cloud Run cutover** (staging 2026-11-03,
+production 2026-11-04): the bot is the Cloud Run service `t0-liquidity`
+(`europe-west3`) on Cloud SQL `t0-liquidity-pg`. The `t0-liquidity` VM is
+stopped and kept one week as the SQLite rollback baseline.
+
+- An `app-deploy` grant for a liquidity release is expected to give
+  `run.developer` plus actAs on `t0-liquidity` (the release gate is
+  `cloud-run`), not GCS write on `images.env`.
+- A `prod-ssh` grant on `t0-liquidity` now only reaches the stopped VM.
+  Treat it as suspicious unless the user expects VM work, such as the
+  reviewed rollback or the VM's retirement.
+- An apply that sets `bot_enabled: true`, restores
+  `GATED_SERVICE_REPLICAS=1`, or starts the VM while `cloud_run_image` is
+  set is **suspicious**: the SQLite bot is not fenced by the Postgres
+  lease and would trade beside the Cloud Run bot. It is safe only as the
+  documented rollback, after `cloud_run_image: ""` deleted the service.
+
 Call out the **diff class** from the commit files, in plain language:
 
 - toml-only (config release, no image move)
 - `images.yaml` digest / `version` pin (code that will run)
 - `bot_enabled` or `GATED_SERVICE_REPLICAS` (start/stop the bot)
+- liquidity `cloud_run_image`, `cloud_run_config_version`, or
+  `cloud_run_ops_routes` (the Cloud Run bot: create, roll, or delete it,
+  or move the ops API routes)
 - `secrets_version` (secrets pin)
 - IAM / KMS / PAM / workflow files (identity)
 
