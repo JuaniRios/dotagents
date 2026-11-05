@@ -2,7 +2,7 @@
 name: council-eval
 description: >
   One unbiased review from each available model (opus 5.5, sol 6.1,
-  Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8) of a plan, document, diff, or
+  Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8) of a plan, document, diff, or
   question. Use when
   the user says council-eval, council, multi-model review, or wants
   each model to look at the same artifact once. Not the full review-loop.
@@ -16,7 +16,7 @@ One generalist lane per **model**. No specialists. No fix loop. The
 host harness assembles; it does not add a seventh opinion.
 
 **Lanes:** `review-opus` (opus 5.5), `review-sol` (sol 6.1),
-`review-kimi` (Kimi K3), `review-grok` (Cursor Grok 4.7), `review-composer` (composer 2.5),
+`review-kimi` (Kimi K3.1 Pro), `review-grok` (Cursor Grok 4.7), `review-composer` (composer 2.5),
 `review-flash` (flash 3.8).
 
 Lane catalogue, CLI recipes, Max preflight, and native-vs-foreign rules:
@@ -115,7 +115,7 @@ deterministically (no synthesis agent):
 
 ```
 # Council — <target one-liner>
-Lanes: opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7, composer 2.5, flash 3.8  (dropped: …)
+Lanes: opus 5.5, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8  (dropped: …)
 
 ## Findings
 ### [SEVERITY] <title>
@@ -135,7 +135,7 @@ Do not auto-fix. Do not start review-loop.
 
 ## Hard rules
 
-1. Six generalists only (opus 5.5, sol 6.1, Kimi K3, Cursor Grok 4.7,
+1. Six generalists only (opus 5.5, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7,
    composer 2.5, flash 3.8). No inspectors. No re-review loop.
 2. Use panel-runtime's native/foreign routing. Cursor Grok and composer are
    always distinct Cursor-Agent processes.
