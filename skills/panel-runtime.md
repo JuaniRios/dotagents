@@ -138,8 +138,11 @@ CODEX_HOME="$HOME/.codex" codex exec --skip-git-repo-check --sandbox read-only -
   -c service_tier="fast" \
   -c model_reasoning_effort="high" \
   -C "$repoRoot" \
-  "$(cat "$promptPath")"
+  "$(cat "$promptPath")" < /dev/null
 # If service_tier=fast is rejected, retry without it.
+# `< /dev/null` is required: with an open stdin, `codex exec` waits for more
+# input ("Reading additional input from stdin...") until the lane times out
+# (2026-11-05: five sol lanes lost 10 minutes each this way).
 
 # Cursor Grok 4.7 and composer 2.5 through the Cursor subscription.
 # Cursor JSON is an envelope and has no schema flag.
@@ -213,8 +216,28 @@ let a review lane's edit reach a commit. (2026-10-09: a flash lane
 reverted applied fixes in a worktree mid-review.)
 
 For both Cursor lanes, save stdout as `raw-<lane>-envelope.json`, extract
-`.result` with `jq -er` into `raw-<lane>.json`, then validate against the
-schema. These exact model IDs were verified with `cursor-agent models`. Always
+`.result` with `jq -er`, keep the last JSON object in that text as
+`raw-<lane>.json`, then validate against the schema. Models often write a
+sentence or a fenced block before the JSON, so never pipe the whole `.result`
+to `jq` as JSON (2026-11-05: that rejected valid answers in 31 commands, and
+14 lanes that exited 0 were marked failed):
+
+```bash
+jq -er .result "$out_dir/raw-<lane>-envelope.json" | python3 -c '
+import json, sys
+text, dec, found, i = sys.stdin.read(), json.JSONDecoder(), [], 0
+while (j := text.find("{", i)) >= 0:
+    try:
+        obj, i = dec.raw_decode(text, j)
+        found.append(obj)
+    except ValueError:
+        i = j + 1
+sys.exit("no JSON object in the answer") if not found else print(json.dumps(found[-1]))
+' > "$out_dir/raw-<lane>.json"
+```
+
+A lane whose answer holds a JSON object never counts as failed on its
+exit code or on surrounding prose. These exact model IDs were verified with `cursor-agent models`. Always
 pass them to `cursor-agent`, never to the direct `grok` CLI, which bills the
 separate xAI account. Kimi K3.1 Pro output gets the same `jq` extraction and schema
 validation. A parse or validation failure
@@ -308,7 +331,10 @@ skip them on size alone.
 The approach part needs web access to cite upstream sources and `gh` to
 read other repos. A native Claude child already has both. On the foreign
 CLI, add `--allowedTools "WebSearch WebFetch Read Grep Glob Bash(gh:*) Bash(git:*) Bash(rg:*)"`
-to the `opus-deep` call only. Without web access it checks local evidence
+to the `opus-deep` call only, and end the flags with `--` before the prompt:
+`--allowedTools "…" -- "$(cat "$promptPath")"`. `--allowedTools` takes several
+values, so without `--` it takes the prompt as one more tool and the lane fails
+at once (2026-11-05: 83193 and 84083). Without web access it checks local evidence
 and lists the rest as unchecked. `opus-solreuse` needs `gh` too, to check the
 catalog against the rainlanguage repos: give it the same flags.
 
