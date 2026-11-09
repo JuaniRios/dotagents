@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Refresh every login Juan's agents need, on juan-dev-server and the Mac.
 
-Runs on juan-dev-server. Each Google sign-in goes through the gcloud-login
-skill's Zulip helpers, one at a time. Tokens are then shared where one sign-in
+Runs on juan-dev-server. It first asks Juan on Telegram and waits for "go";
+it signs nothing in without that reply. Each Google sign-in then goes through
+the gcloud-login skill's helpers over the same Telegram bot, one at a time. Tokens are then shared where one sign-in
 can serve several places: the liquidity client's token also signs in to the
 Alpaca gateway (it admits that OAuth client), the issuance client's production
 token serves staging too (one OAuth client), and every cache file plus the
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import html
 import json
 import os
 import shutil
@@ -31,9 +33,18 @@ HOME = Path.home()
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 HELPERS = HOME / "Github/dotagents/skills/gcloud-login/scripts"
 LOG_DIR = HOME / "Github/dotagents/data/daily-logins"
-ZULIP_BOT = HOME / ".zuliprc-bot"
-ZULIP_ME = HOME / ".zuliprc-personal"
-RECIPIENT = "juan@rainlang.xyz"
+TELEGRAM_ENV = "~/.config/telegram-bot.env"  # same path on the Mac
+sys.path.insert(0, str(HELPERS))
+from telegram_bot import TelegramBot, TelegramError  # noqa: E402
+
+CONFIRM_HOURS = 12
+LOGIN_NAMES = {
+    "server-gcloud-t0": "gcloud T0",
+    "server-gcloud-s01": "gcloud S01",
+    "liquidity-production": "liquidity production",
+    "liquidity-staging": "liquidity staging",
+    "issuance": "issuance",
+}
 MAC = "mac-logins"  # ssh alias in nix-darwin-config home/server.nix
 T0 = "juan@t0trade.com"
 S01 = "juan@s01issuer.com"
@@ -140,9 +151,8 @@ class Run:
 def gcloud_login(run: Run, account: str, update_adc: bool, host: str, remote: bool) -> bool:
     args = [
         "--account", account,
-        "--recipient", RECIPIENT,
-        "--zulip-config", "~/.zuliprc-bot" if remote else str(ZULIP_BOT),
-        "--zulip-delete-config", "~/.zuliprc-personal" if remote else str(ZULIP_ME),
+        "--transport", "telegram",
+        "--telegram-env", TELEGRAM_ENV,
     ] + (["--update-adc"] if update_adc else [])
     if remote:
         helper = '"$HOME/Github/dotagents/skills/gcloud-login/scripts/zulip_remote_login.py"'
@@ -159,9 +169,8 @@ def ops_login(run: Run, client: str, env: str) -> bool:
     code = run.command([
         "python3", str(HELPERS / "zulip_ops_client_login.py"),
         "--client", client, "--env", env, "--force",
-        "--recipient", RECIPIENT,
-        "--zulip-config", str(ZULIP_BOT),
-        "--zulip-delete-config", str(ZULIP_ME),
+        "--transport", "telegram",
+        "--telegram-env", TELEGRAM_ENV,
     ])
     ok = code == 0
     run.record(f"{client} {env} sign-in", "server", "ok" if ok else f"failed (helper exit {code})")
@@ -281,7 +290,7 @@ os.chmod(os.path.join(home, "credentials.db"), 0o600)
 
 
 def mac_gcloud(run: Run) -> None:
-    """Copies the two accounts' gcloud credentials to the Mac; falls back to Zulip logins there."""
+    """Copies the two accounts' gcloud credentials to the Mac; falls back to Telegram logins there."""
     accounts = (T0, S01)
     copied = False
     if not run.dry_run:
@@ -305,7 +314,7 @@ def mac_gcloud(run: Run) -> None:
         if ok:
             run.record(f"check gcloud {account}", "mac", "ok")
             continue
-        run.log(f"[mac] gcloud {account} did not work from the copy; logging in on the Mac over Zulip")
+        run.log(f"[mac] gcloud {account} did not work from the copy; logging in on the Mac over Telegram")
         gcloud_login(run, account, update_adc=False, host="mac", remote=True)
     run.mac(f"gcloud config set account {T0} >/dev/null 2>&1", quiet=True)
 
@@ -336,21 +345,49 @@ def ipv6_on() -> bool:
     return bool(out.strip())
 
 
-def report(run: Run) -> int:
-    ok = sum(1 for _, _, r in run.results if r == "ok" or r.startswith("opened"))
-    bad = [(c, h, r) for c, h, r in run.results if not (r == "ok" or r.startswith("opened"))]
-    lines = [f"**Daily logins** {dt.date.today().isoformat()}: {ok} ok, {len(bad)} not ok.", ""]
-    lines += ["| Host | Credential | Result |", "|---|---|---|"]
+def is_ok(result: str) -> bool:
+    return result == "ok" or result.startswith("opened")
+
+
+def report(run: Run, bot: Optional[TelegramBot]) -> int:
+    bad = [(c, h, r) for c, h, r in run.results if not is_ok(r)]
+    summary = f"Daily logins {dt.date.today().isoformat()}: {len(run.results) - len(bad)} ok, {len(bad)} not ok."
+    lines = [summary, "", "| Host | Credential | Result |", "|---|---|---|"]
     lines += [f"| {h} | {c} | {r} |" for c, h, r in run.results]
     lines += ["", f"Log: `{run.log_path}` on juan-dev-server."]
-    text = "\n".join(lines)
-    run.log(text)
-    if not run.dry_run and shutil.which("zulipctl") and ZULIP_BOT.is_file():
-        subprocess.run(
-            ["zulipctl", "--config", str(ZULIP_BOT), "--compact", "dm", RECIPIENT],
-            input=text, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+    run.log("\n".join(lines))
+    if bot is not None and not run.dry_run:
+        rows = "\n".join(f"{'✅' if is_ok(r) else '❌'} {h} · {c}: {r}" for c, h, r in run.results)
+        text = (f"<b>{html.escape(summary)}</b>\n\n<pre>{html.escape(rows)}</pre>\n"
+                f"Log: <code>{html.escape(str(run.log_path))}</code>")
+        try:
+            bot.send_html(text[:4096])
+        except TelegramError as error:
+            run.log(f"could not send the report to Telegram: {error}")
     return 0 if not bad else 1
+
+
+def confirm(run: Run, bot: TelegramBot, logins: list[str], hours: float) -> bool:
+    """Asks on Telegram and waits for "go". Returns False on "skip" or no answer."""
+    deadline = (dt.datetime.now() + dt.timedelta(hours=hours)).strftime("%H:%M")
+    prompt = bot.dm(
+        f"**Daily logins ready.** {len(logins)} sign-ins: {', '.join(logins)}.\n\n"
+        f"Reply `go` when you are at your phone, or `skip`. Nothing starts before you "
+        f"reply. Waiting until {deadline}."
+    )
+    run.log(f"--- confirm: asked on Telegram, waiting until {deadline}")
+    answer = bot.wait_for_word(prompt, {"go", "skip"}, timeout=hours * 3600)
+    if answer is None:
+        bot.dm(f"No reply by {deadline}. Skipped today's logins.")
+        run.record("confirmation", "server", f"skipped (no reply in {hours:g} h)")
+        return False
+    if answer[1] == "skip":
+        bot.dm("Skipped today's logins.")
+        run.record("confirmation", "server", "skipped (you replied skip)")
+        return False
+    bot.dm(f"Starting. The sign-in requests come one at a time: {', '.join(logins)}.")
+    run.log("--- confirm: go")
+    return True
 
 
 def main() -> int:
@@ -358,6 +395,9 @@ def main() -> int:
     parser.add_argument("--only", help="comma list of steps: " + ",".join(STEPS) + ", or 'mac'")
     parser.add_argument("--skip-mac", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-confirm", action="store_true",
+                        help="start at once; for runs Juan starts himself")
+    parser.add_argument("--confirm-hours", type=float, default=CONFIRM_HOURS)
     args = parser.parse_args()
 
     steps = STEPS
@@ -374,9 +414,25 @@ def main() -> int:
 
     os.umask(0o077)
     run = Run(args.dry_run)
+    try:
+        bot = TelegramBot(TELEGRAM_ENV)
+        bot.connectivity_gate()
+    except TelegramError as error:
+        run.record("Telegram bot", "server", f"failed ({error})")
+        return report(run, None)
     if ipv6_on():
         run.record("IPv6 check", "server", "failed (IPv6 is on; gcloud-login forbids it)")
-        return report(run)
+        return report(run, bot)
+
+    logins = [LOGIN_NAMES[s] for s in steps if s in LOGIN_NAMES]
+    if logins and not args.no_confirm and not args.dry_run:
+        try:
+            if not confirm(run, bot, logins, args.confirm_hours):
+                report(run, None)  # the skip message already went to Telegram
+                return 0
+        except TelegramError as error:
+            run.record("confirmation", "server", f"failed ({error})")
+            return report(run, None)
 
     active = subprocess.run(["gcloud", "config", "get-value", "account"],
                             capture_output=True, text=True).stdout.strip() or T0
@@ -410,7 +466,7 @@ def main() -> int:
         if step == "server-gcloud-s01":
             subprocess.run(["gcloud", "config", "set", "account", active],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return report(run)
+    return report(run, bot)
 
 
 if __name__ == "__main__":

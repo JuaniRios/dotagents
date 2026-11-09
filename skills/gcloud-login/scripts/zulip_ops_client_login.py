@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete a st0x ops client loopback sign-in using a private Zulip DM handoff.
+"""Complete a st0x ops client loopback sign-in using a private Zulip DM or Telegram handoff.
 
 Covers st0x-liquidity-client (T0) and st0x-issuance-client (S01). Each client
 prints a Google sign-in URL and waits on a 127.0.0.1 port for the
@@ -39,6 +39,7 @@ from zulip_remote_login import (
     ZulipBot,
     ZulipMessageDeleter,
     code_only_replies,
+    telegram_transport,
     host_label,
     raise_interrupted,
     read_pty,
@@ -188,7 +189,7 @@ def run_login(
                         )
                         next_poll = time.monotonic()
                         print(
-                            "Sent a private sign-in request from Juan-Bot and waiting "
+                            "Sent a private sign-in request and waiting "
                             "for the correlated reply.",
                             flush=True,
                         )
@@ -200,7 +201,7 @@ def run_login(
                     replies = []
                     poll_failures += 1
                     if poll_failures >= 3:
-                        raise LoginError("Repeated Zulip polling failure")
+                        raise LoginError("Repeated chat polling failure")
                 else:
                     poll_failures = 0
                 next_poll = time.monotonic() + POLL_SECONDS
@@ -230,7 +231,7 @@ def run_login(
         if sign_in is None:
             raise LoginError("Timed out waiting for the client to print a sign-in URL")
         if reply_query is None:
-            raise LoginError("Timed out waiting for the private Zulip redirect reply")
+            raise LoginError("Timed out waiting for the private redirect reply")
 
         return_code, output = wait_for_child(
             process, master_fd, CLIENT_EXIT_GRACE_SECONDS, output
@@ -299,27 +300,29 @@ def run_attempt(
     if cleanup.ok:
         print(cleanup.summary(), flush=True)
     else:
-        print(f"error: Zulip cleanup incomplete. {cleanup.summary()}", file=sys.stderr, flush=True)
+        print(f"error: Message cleanup incomplete. {cleanup.summary()}", file=sys.stderr, flush=True)
     return 0 if failure is None and cleanup.ok else 1
 
 
 def orchestrate(args: argparse.Namespace) -> int:
     nu = shutil.which("nu")
-    zulipctl = shutil.which("zulipctl")
     if not nu:
         raise LoginError("nu is not installed")
-    if not zulipctl:
-        raise LoginError("zulipctl is not installed")
-    for path in (args.zulip_config, args.zulip_delete_config):
-        config = Path(path).expanduser()
-        if not config.is_file():
-            raise LoginError("Zulip credentials are missing")
-        if config.stat().st_mode & 0o077:
-            raise LoginError("Zulip credential permissions are too broad")
-
-    bot = OpsClientZulipBot(zulipctl, Path(args.zulip_config).expanduser(), args.recipient)
-    bot.connectivity_gate()
-    deleter = ZulipMessageDeleter(Path(args.zulip_delete_config).expanduser(), args.recipient)
+    if args.transport == "telegram":
+        bot = deleter = telegram_transport(args.telegram_env)
+    else:
+        zulipctl = shutil.which("zulipctl")
+        if not zulipctl:
+            raise LoginError("zulipctl is not installed")
+        for path in (args.zulip_config, args.zulip_delete_config):
+            config = Path(path).expanduser()
+            if not config.is_file():
+                raise LoginError("Zulip credentials are missing")
+            if config.stat().st_mode & 0o077:
+                raise LoginError("Zulip credential permissions are too broad")
+        bot = OpsClientZulipBot(zulipctl, Path(args.zulip_config).expanduser(), args.recipient)
+        bot.connectivity_gate()
+        deleter = ZulipMessageDeleter(Path(args.zulip_delete_config).expanduser(), args.recipient)
 
     token_path = refresh_token_path(args.client, args.env)
     if token_path.exists() and not args.force:
@@ -431,6 +434,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--recipient", default="juan@rainlang.xyz")
     parser.add_argument("--zulip-config", default="~/.zuliprc-bot")
     parser.add_argument("--zulip-delete-config", default="~/.zuliprc-personal")
+    parser.add_argument("--transport", choices=["zulip", "telegram"], default="zulip")
+    parser.add_argument("--telegram-env", default="~/.config/telegram-bot.env")
     parser.add_argument("--force", action="store_true", help="discard a cached refresh token")
     parser.add_argument(
         "--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help=argparse.SUPPRESS
@@ -452,7 +457,7 @@ def main() -> int:
         print(f"error: {sanitize(str(error))}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("error: Sign-in interrupted before any Zulip request was sent", file=sys.stderr)
+        print("error: Sign-in interrupted before any request was sent", file=sys.stderr)
         return 1
 
 

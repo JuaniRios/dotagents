@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete a gcloud browser-only login using a private Zulip DM handoff."""
+"""Complete a gcloud browser-only login using a private Zulip DM or Telegram chat handoff."""
 
 from __future__ import annotations
 
@@ -37,6 +37,25 @@ GCLOUD_EXIT_GRACE_SECONDS = 30.0
 
 class LoginError(RuntimeError):
     """A safe-to-display login orchestration failure."""
+
+
+def telegram_transport(env_file: str) -> Any:
+    """The Telegram bot, as both the bot and the deleter, raising LoginError."""
+    from telegram_bot import TelegramBot, TelegramError
+
+    class TelegramTransport(TelegramBot):
+        def _call(self, method: str, http_timeout: float = 30, **params: Any) -> Any:
+            try:
+                return super()._call(method, http_timeout, **params)
+            except TelegramError as error:
+                raise LoginError(str(error)) from None
+
+    try:
+        bot = TelegramTransport(env_file)
+    except TelegramError as error:
+        raise LoginError(str(error)) from None
+    bot.connectivity_gate()
+    return bot
 
 
 class TextExtractor(HTMLParser):
@@ -383,8 +402,8 @@ class CleanupResult:
 
     def summary(self) -> str:
         if not (self.deleted or self.failed or self.sweep_failed or self.request_unknown):
-            return "No Zulip login message was sent."
-        parts = [f"Permanently deleted {self.deleted} login message(s) from the Zulip DM."]
+            return "No login message was sent."
+        parts = [f"Permanently deleted {self.deleted} login message(s) from the private chat."]
         if self.failed:
             parts.append(f"Could not delete {self.failed} login message(s).")
         if self.sweep_failed:
@@ -398,7 +417,7 @@ class CleanupResult:
 
 
 class LoginAttempt:
-    """Tracks every Zulip message one login request sent or consumed."""
+    """Tracks every chat message one login request sent or consumed."""
 
     def __init__(self, bot: Any, deleter: Any) -> None:
         self.bot = bot
@@ -475,7 +494,7 @@ def run_login(
                             next_poll = time.monotonic()
                             print(
                                 "Sent a private Google authentication request "
-                                "from Juan-Bot and waiting for the correlated reply.",
+                                "and waiting for the correlated reply.",
                                 flush=True,
                             )
 
@@ -486,7 +505,7 @@ def run_login(
                     reply = None
                     poll_failures += 1
                     if poll_failures >= 3:
-                        raise LoginError("Repeated Zulip polling failure")
+                        raise LoginError("Repeated chat polling failure")
                 else:
                     poll_failures = 0
                 next_poll = time.monotonic() + POLL_SECONDS
@@ -509,7 +528,7 @@ def run_login(
                 raise LoginError(f"gcloud login failed before handoff: {safe_tail.strip()}")
 
         if code is None:
-            raise LoginError("Timed out waiting for the private Zulip authorization reply")
+            raise LoginError("Timed out waiting for the private authorization reply")
 
         remaining = max(1.0, deadline - time.monotonic())
         exit_grace = min(GCLOUD_EXIT_GRACE_SECONDS, remaining)
@@ -536,9 +555,16 @@ def orchestrate(args: argparse.Namespace) -> int:
     zulipctl = shutil.which("zulipctl")
     if not gcloud:
         raise LoginError("gcloud is not installed")
-    if not zulipctl:
+    if args.transport == "telegram":
+        bot = deleter = telegram_transport(args.telegram_env)
+    elif not zulipctl:
         raise LoginError("zulipctl is not installed")
+    else:
+        bot, deleter = zulip_transport(args, zulipctl)
+    return login_with(args, bot, deleter, gcloud)
 
+
+def zulip_transport(args: argparse.Namespace, zulipctl: str) -> tuple[Any, Any]:
     config = Path(args.zulip_config).expanduser()
     if not config.is_file():
         raise LoginError("Zulip bot credentials are missing")
@@ -553,7 +579,10 @@ def orchestrate(args: argparse.Namespace) -> int:
 
     bot = ZulipBot(zulipctl, config, args.recipient)
     bot.connectivity_gate()
-    deleter = ZulipMessageDeleter(delete_config, args.recipient)
+    return bot, ZulipMessageDeleter(delete_config, args.recipient)
+
+
+def login_with(args: argparse.Namespace, bot: Any, deleter: Any, gcloud: str) -> int:
     tracked_credentials = credential_paths(gcloud, args.update_adc)
     credentials_before = mtimes(tracked_credentials)
 
@@ -616,10 +645,10 @@ def run_attempt(
     if cleanup.ok:
         print(cleanup.summary(), flush=True)
     else:
-        print(f"error: Zulip cleanup incomplete. {cleanup.summary()}", file=sys.stderr, flush=True)
+        print(f"error: Message cleanup incomplete. {cleanup.summary()}", file=sys.stderr, flush=True)
         if failure is None:
             print(
-                "error: Google Cloud authentication succeeded, but Zulip message "
+                "error: Google Cloud authentication succeeded, but message "
                 "cleanup failed",
                 file=sys.stderr,
                 flush=True,
@@ -805,6 +834,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--recipient", default="juan@rainlang.xyz")
     parser.add_argument("--zulip-config", default="~/.zuliprc-bot")
     parser.add_argument("--zulip-delete-config", default="~/.zuliprc-personal")
+    parser.add_argument("--transport", choices=["zulip", "telegram"], default="zulip")
+    parser.add_argument("--telegram-env", default="~/.config/telegram-bot.env")
     parser.add_argument(
         "--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help=argparse.SUPPRESS
     )
@@ -823,7 +854,7 @@ def main() -> int:
         print(f"error: {sanitize(str(error))}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("error: Login interrupted before any Zulip request was sent", file=sys.stderr)
+        print("error: Login interrupted before any request was sent", file=sys.stderr)
         return 1
 
 

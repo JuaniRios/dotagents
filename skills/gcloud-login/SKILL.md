@@ -196,6 +196,26 @@ must never fetch, quote, summarize, or display that Zulip message. Run at most
 one gcloud login request at a time across the two hosts so a code-only reply is
 unambiguous. Never use a public or private channel topic for this exchange.
 
+## Telegram transport
+
+Both helpers take `--transport telegram` (default `zulip`). They then use the
+bot in `~/.config/telegram-bot.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+mode 600) through `scripts/telegram_bot.py`, in place of `zulipctl` and both
+Zulip configs. `daily-logins` uses this; for a one-off login, use Zulip unless
+the user asks for Telegram.
+
+- The helper checks that the chat is a private chat with one person and reads
+  only that person's text messages newer than its request.
+- The request is the same message, sent with link previews off, so Telegram
+  never fetches the sign-in URL.
+- Cleanup deletes the same message IDs as on Zulip with the bot token. A bot
+  can delete incoming messages in a private chat for 48 hours.
+- Telegram bot chats are not end-to-end encrypted, the same as Zulip. The
+  protection is the same too: single-use, PKCE-bound codes, redeemed at once
+  and deleted afterwards.
+- Never put the bot token in argv, output, or logs; the module sends it only
+  in the HTTPS request.
+
 ## Failure handling
 
 - Missing helper, `gcloud`, Python, `zulipctl`, or bot credentials: report the
