@@ -165,7 +165,32 @@ def gcloud_login(run: Run, account: str, update_adc: bool, host: str, remote: bo
     return ok
 
 
+# The wrappers read each OAuth client secret from these files. An empty one
+# fails only at the token exchange, after Juan has signed in on his phone.
+SECRET_KEYS = {
+    ("liquidity", "production"): ("st0x/liquidity-client.nuon", "prod_client_secret"),
+    ("liquidity", "staging"): ("st0x/liquidity-client.nuon", "staging_client_secret"),
+    ("issuance", "production"): ("st0x/issuance-client.nuon", "client_secret"),
+}
+
+
+def missing_secret(client: str, env: str) -> Optional[str]:
+    """Names the empty or missing secret for a client, reading only its length."""
+    rel, key = SECRET_KEYS[(client, env)]
+    proc = subprocess.run(
+        ["nu", "-c", f"open '{CONFIG / rel}' | get -i {key} | default '' | str length"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+    )
+    if proc.returncode != 0 or proc.stdout.strip() in ("", "0"):
+        return f"{key} in ~/.config/{rel}"
+    return None
+
+
 def ops_login(run: Run, client: str, env: str) -> bool:
+    missing = missing_secret(client, env)
+    if missing:
+        run.record(f"{client} {env} sign-in", "server", f"failed (empty {missing}; no prompt sent)")
+        return False
     code = run.command([
         "python3", str(HELPERS / "zulip_ops_client_login.py"),
         "--client", client, "--env", env, "--force",
