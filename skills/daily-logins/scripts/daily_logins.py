@@ -191,15 +191,26 @@ def ops_login(run: Run, client: str, env: str) -> bool:
     if missing:
         run.record(f"{client} {env} sign-in", "server", f"failed (empty {missing}; no prompt sent)")
         return False
+    token = CONFIG / f"st0x-{client}-client/oauth-{env}.json"
+    before = token.stat().st_mtime_ns if token.exists() else None
     code = run.command([
         "python3", str(HELPERS / "zulip_ops_client_login.py"),
         "--client", client, "--env", env, "--force",
         "--transport", "telegram",
         "--telegram-env", TELEGRAM_ENV,
     ])
-    ok = code == 0
-    run.record(f"{client} {env} sign-in", "server", "ok" if ok else f"failed (helper exit {code})")
-    return ok
+    if code == 0:
+        run.record(f"{client} {env} sign-in", "server", "ok")
+        return True
+    # The helper also runs a read-only check after the sign-in. If the new
+    # refresh token was saved, the sign-in worked and only that check failed
+    # (for example a 503 from the bot); the verify rows report the bot.
+    if not run.dry_run and token.exists() and token.stat().st_mtime_ns != before:
+        run.record(f"{client} {env} sign-in", "server", "ok")
+        run.log(f"    note: signed in, but the client's own check failed (helper exit {code})")
+        return True
+    run.record(f"{client} {env} sign-in", "server", f"failed (helper exit {code})")
+    return False
 
 
 def copy_private(src: Path, dst: Path) -> None:
