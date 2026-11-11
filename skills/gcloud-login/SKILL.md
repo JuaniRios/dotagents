@@ -67,6 +67,22 @@ back on.
    Then turn IPv6 off as described in "Never use IPv6".
 2. If this follows another command, confirm its failure is authentication or
    reauthentication—not IAM, IAP, API enablement, networking, or quota.
+   Read that command's full stderr, never a cut-off tail, and then run the
+   preflight below. Do not start a login while it passes.
+
+   ```bash
+   gcloud auth print-access-token --account="$ACCOUNT" >/dev/null && echo CLI_OK
+   gcloud auth application-default print-access-token >/dev/null && echo ADC_OK
+   ```
+
+   Run the ADC line only when the failed command uses ADC (a client library,
+   not the `gcloud` CLI). If the token the command needs prints OK, the
+   credentials are valid, and the daily logins usually keep them so. The
+   failure has another cause: diagnose that error instead, for example a
+   wrong `--account`, an unset active account, or the wrong project. Example
+   of the miss (2026-11-11): a truncated `...to select an already authenticated
+   account to use.` started a Zulip login hours after the daily logins had
+   refreshed both T0 credentials.
 3. Confirm the helper and `~/.zuliprc-bot` are readable. Do not print either
    credential file or any environment values.
 4. Record the active account (`gcloud config get-value account`), then run
