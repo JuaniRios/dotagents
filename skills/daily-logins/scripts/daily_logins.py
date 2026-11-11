@@ -487,6 +487,7 @@ def main() -> int:
         "loopyloupe": lambda: loopyloupe(run),
     }
     mac_reachable = True
+    last_login = next((s for s in reversed(steps) if s in LOGIN_NAMES), None)
     for step in steps:
         if step in MAC_STEPS:
             if mac_reachable and run.mac("true", quiet=True) != 0:
@@ -502,7 +503,29 @@ def main() -> int:
         if step == "server-gcloud-s01":
             subprocess.run(["gcloud", "config", "set", "account", active],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if logins and step == last_login and not args.dry_run:
+            phone_done(run, bot, rest=steps[steps.index(step) + 1:])
     return report(run, bot)
+
+
+def phone_done(run: Run, bot: TelegramBot, rest: list[str]) -> None:
+    """Tells Juan the phone part is over; the checks after it can take a long time."""
+    signins = [(c, r) for c, h, r in run.results if c.startswith(("gcloud ", "liquidity ", "issuance "))
+               and h == "server" and not c.startswith("check ")]
+    failed = [c for c, r in signins if not is_ok(r)]
+    lines = ["✅ <b>You're done with the phone part.</b>" if not failed else
+             f"⚠️ <b>Phone part over.</b> {len(signins) - len(failed)}/{len(signins)} sign-ins worked; "
+             f"failed: {html.escape(', '.join(failed))}."]
+    if rest:
+        lines.append("Checks on the server and Mac run now; the full report comes when they finish.")
+    if "mac-gcloud" in rest:
+        lines.append("One more request comes only if the gcloud copy to the Mac fails.")
+    if "loopyloupe" in rest:
+        lines.append("At the end, Loopyloupe opens in the Mac browser for a sign-in there.")
+    try:
+        bot.send_html("\n".join(lines))
+    except TelegramError as error:
+        run.log(f"could not send the phone-done message: {error}")
 
 
 if __name__ == "__main__":

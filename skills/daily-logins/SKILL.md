@@ -109,6 +109,9 @@ gcloud S01, liquidity production, liquidity staging, issuance).
    production, liquidity staging, and issuance production. The issuance
    client itself gives up 5 minutes after it prints its link; the others wait
    15 minutes.
+   Right after the last sign-in, the bot sends "You're done with the phone
+   part" (or which sign-ins failed), because the checks below can take a
+   long time before the report.
 4. Copies on the server, mode 600: liquidity `oauth-production.json` and
    `oauth-staging.json` to `oauth-alpaca-production.json` and
    `oauth-alpaca-staging.json`; issuance `oauth-production.json` to
