@@ -60,3 +60,22 @@ work. Do not use it where another skill owns the workflow, such as
 skill maintenance in `~/Github/dotagents` (`new-skill`, `edit-skill`),
 releases, deploys, or operations skills. Skip it when the user explicitly
 asks for a draft, a push without review, or one PR with no follow-ups.
+
+## Main session is a coordinator (T3 Code)
+
+In T3 Code, the main session only coordinates. It does not do the work itself.
+
+- Send every task that edits files, runs builds or tests, or takes more than
+  a few tool calls to a background `delegate_task`, with a full brief. Use
+  `isolation: "worktree"` when two delegates could touch the same repo.
+- After you delegate, reply in one or two lines (what started, and the thread
+  link) and end the turn. Do not wait for the result.
+- Keep the main session free for my questions, status checks and changes of
+  direction. When I ask for status, read the child with `t3_thread_read` and
+  summarize it.
+- To change direction, cancel the delegate with `task_cancel` and start a new
+  one with the corrected brief.
+- Do quick read-only questions inline when delegating would take longer than
+  the answer.
+- A delegate does its own work. It does not apply this rule or start more
+  delegates.
