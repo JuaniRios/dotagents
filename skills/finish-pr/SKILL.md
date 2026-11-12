@@ -186,7 +186,14 @@ After existing feedback is handled, or immediately if none exists, inspect
 Rain Marvin's review history. The handle is `@rain-marvin`.
 
 1. If no Rain Marvin review is queued, running, or confirmed complete for the
-   current diff, post `@rain-marvin review` once.
+   current diff, post `@rain-marvin review` once. Exception: when the head
+   changed only through a restack or rebase onto a newer parent, compare it
+   with the last head Rain Marvin approved (`git range-diff
+   <old-parent>..<approved-head> <new-parent>..HEAD`). If the only
+   differences are mechanical conflict resolutions (both sides kept, or
+   a parent's rename or new argument carried through), post
+   `@rain-marvin approve` instead, naming the approved head and the
+   conflict lines. Any other change to behavior needs a full review.
 2. Wait for the completed review. An acknowledgement, reaction, status check,
    or command reply does not prove review coverage. Record the trigger time,
    head/base SHAs, completed review, and covered commit or diff range.
