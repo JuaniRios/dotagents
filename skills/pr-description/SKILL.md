@@ -264,7 +264,7 @@ only the Not verified bullet.
 
 Length follows risk, not diff size. About 150 words for low risk, 250 for
 medium, and 400 for high, not counting URLs. At most 3 bullets per section,
-each one or two lines.
+each one or two lines. The slot list does not count toward that limit.
 
 ### Diff links
 
