@@ -294,23 +294,23 @@ links after `gt submit` opens it (step 9).
 
 ### Writing rules
 
-- **Write it in the user's voice, per the `write-as-me` skill loaded in step
-  1.** Register 3-4. Terse, why-first, honest about what's untested or fragile,
-  concrete identifiers in backticks. **Never use em dashes** — use a comma,
-  parentheses, "so"/"cause", or split the sentence. No corporate boilerplate
-  ("Key changes include", "In summary", "It's worth noting"), no adjective
-  inflation ("comprehensive", "seamless", "robust"). Always use the Oxford comma.
-- **Write in ASD-STE100 (Simplified Technical English).** The reviewer may be a
-  non-native speaker, so the body must read once and be clear. One idea per
-  sentence. Sentences under ~20 words. Active voice with a real subject ("the
-  handler retries the burn", not "the burn is retried"). Simple tenses only. One
-  word for one thing, reused across the whole body, no synonym variation. No noun
-  stack longer than 3 words. Keep the articles and the "that". No Latin ("e.g.",
-  "i.e.", "etc." become "for example", "that is", "and so on") and no slash
-  conjunctions ("and/or"). Expand an acronym the first time it appears. This
-  governs *sentence construction* only, it never overrides the voice, the
-  abbreviations, or the honesty from `write-as-me`. If plainness and the voice
-  conflict, keep the voice and split the sentence.
+- **Write it as Juan, per `write-as-me` (loaded in step 1).** Register 3-4. A
+  busy approver skims the body in about 30 seconds, so use short plain
+  sentences: what changes, why, and what is risky or untested. Contractions
+  are fine. No em dashes, Oxford comma always. `write-as-me` owns the voice
+  and the ASD-STE100 rules (one idea per sentence, about 20 words, active
+  voice, no Latin, no "and/or"). Do not restate them here; follow them.
+- **Sounds like AI: rewrite any draft that has these tells.**
+  - Openers and wrap-ups: "This PR introduces/adds/updates…", "In summary",
+    "Overall", "Key changes include", "It's worth noting".
+  - Marketing or inflated words: robust, seamless, comprehensive, streamlined,
+    enhance, leverage, ensure, significantly, crucial.
+  - Hedging padding: "should help to", "aims to", "potentially", stacked
+    qualifiers.
+  - Em dashes, colon-then-list rhythm in every bullet, bold on every other
+    phrase, or three-item lists added for cadence.
+  - A line per file or function, or prose that walks the diff.
+  - "N/A" or "None" sections. Delete the section.
 - **Accurate, not flowery.** Describe what the code actually does, not what
   you wish it did. If the diff is a refactor, say so in the slot list. Don't
   overstate impact.
@@ -352,7 +352,8 @@ If the user passed `--stack` (check the user's arguments):
 ## 8. Codex review pass
 
 When called by implement-issue, honor its recorded issue-thoroughness level:
-light uses host self-review with no spawned reviewer; standard reuses the
+light uses host self-review with no spawned reviewer, still checking the
+"Sounds like AI" list in step 6; standard reuses the
 single independent code-and-description pass if it covered this draft and
 diff. A standard-path skeleton uses host self-review until that final combined
 pass; do not spawn an interim reviewer. Verify wording corrections directly.
@@ -397,9 +398,12 @@ decision, a risk, a rollout step, or a rollback trap missing? Does Proof end
 with an honest 'Not verified' bullet?
 (4) BUDGET: is it within about 150 words for low risk, 250 for medium, or
 400 for high, with at most 3 bullets per section?
-(5) IN VOICE: terse and direct, no em dashes anywhere, no corporate
-boilerplate ('Key changes include', 'In summary', 'It's worth noting'), no
-adjective inflation ('comprehensive', 'seamless', 'robust')?
+(5) HUMAN: does it read like a sharp engineer typing to a teammate, not like
+an AI? Flag every tell: 'This PR introduces', 'In summary', 'Key changes
+include', 'It's worth noting', marketing words ('robust', 'seamless',
+'comprehensive', 'streamlined', 'leverage', 'ensure'), hedging padding, any em
+dash, bold or colon lists used for rhythm, N/A sections, or prose that walks
+the diff. Could a busy approver get it in 30 seconds?
 (6) PLAIN: does it follow ASD-STE100 (Simplified Technical English)? One
 idea per sentence, sentences under ~20 words, active voice with a real
 subject, simple tenses, one word per concept reused throughout, no noun stack
@@ -533,7 +537,8 @@ And a one-line confirmation per PR updated.
     markdown verbatim, and never replace a real screenshot with a local path or
     an invented URL.
 13. Always draft the body in the user's voice via the `write-as-me` skill,
-    loaded in step 1. Never ship a PR description containing an em dash.
+    loaded in step 1. Never ship a body with an em dash or any other tell from
+    the "Sounds like AI" list.
 14. Always write the body in ASD-STE100 (Simplified Technical English): one idea
     per sentence, short sentences, active voice, simple tenses, one word per
     concept, no Latin abbreviations. Plainness shapes the sentences, the voice
