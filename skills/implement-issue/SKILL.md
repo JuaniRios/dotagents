@@ -39,7 +39,7 @@ This applies to every work repository, `T0Trade/t0.devops` included.
 ## 3. Skeleton description
 
 `pr-description` as WIP: the merge brief headline from the issue (markdown
-link `[<ID>](<url>)`) and the slot line, each value `WIP`. No other
+link `[<ID>](<url>)`) and the slot list (one bulleted row per slot), each value `WIP`. No other
 sections. Auto-approve the skeleton.
 
 ## 4. Cross-link

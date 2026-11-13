@@ -145,7 +145,10 @@ them. If there is none, use the merge brief.
 ```markdown
 <Headline: 1 to 3 sentences.> [RAI-123](https://linear.app/<workspace>/issue/RAI-123)
 
-**Live effect:** <...> · **Risk:** <level> (<triggers>) · **Ships:** <...> · **Blocks:** <...>
+- **Live effect:** <...>
+- **Risk:** <level> (<triggers>)
+- **Ships:** <...>
+- **Blocks:** <...>
 
 ## Needs your call
 - @person <the question>
@@ -205,9 +208,11 @@ Draft a concise PR title (under 70 characters). Rules:
 the merge, where its output goes, and why now. Link the issue. In a stack,
 say which part this is and what the next part adds.
 
-### Slot line
+### Slot list
 
-Always present, directly under the headline, in this order:
+Always present, directly under the headline, as a bulleted list with one
+slot per row, in this order. Never join the slots on one line with ` · `:
+GitHub renders that as one long run-on line.
 
 - `Live effect:` none, or what changes for users, money, services, or alerts.
 - `Risk:` low, medium, or high, with the triggers in parentheses. The
@@ -225,9 +230,9 @@ Always present, directly under the headline, in this order:
 
 ### Sections
 
-Every section below the slot line is optional, except that Proof always
+Every section below the slot list is optional, except that Proof always
 keeps its Not verified bullet. Delete a section that has nothing real to
-say. A trivial PR is the headline, the slot line, and a Proof section with
+say. A trivial PR is the headline, the slot list, and a Proof section with
 only the Not verified bullet.
 
 - **Needs your call.** Only when the author needs a decision from another
@@ -307,7 +312,7 @@ links after `gt submit` opens it (step 9).
   abbreviations, or the honesty from `write-as-me`. If plainness and the voice
   conflict, keep the voice and split the sentence.
 - **Accurate, not flowery.** Describe what the code actually does, not what
-  you wish it did. If the diff is a refactor, say so in the slot line. Don't
+  you wish it did. If the diff is a refactor, say so in the slot list. Don't
   overstate impact.
 - **Link issues** you can discover from branch name, commit messages, or
   existing PR body. GitHub issues/PRs autolink from `#123` (use the repo's
@@ -386,7 +391,7 @@ what to watch after the merge? Flag any line that restates the diff, lists
 files, narrates the investigation, lists tests or lint runs, or explains
 mechanics (a How section is not allowed).
 (3) COMPLETE: does any line @mention JuaniRios or the PR author, or give
-either of them a remaining action? Flag it. Is the slot line present (Live effect, Risk with its triggers,
+either of them a remaining action? Flag it. Is the slot list present (Live effect, Risk with its triggers,
 Ships, and Blocks when needed) and is the risk level right? Is a disputable
 decision, a risk, a rollout step, or a rollback trap missing? Does Proof end
 with an honest 'Not verified' bullet?
@@ -508,7 +513,7 @@ And a one-line confirmation per PR updated.
 2. Write for the approver, not the code reader. No How section, no restated
    diff, no file lists, no test counts. If an agent can learn it from the
    diff, cut it.
-3. Always include the slot line (Live effect, Risk with its triggers, Ships,
+3. Always include the slot list (Live effect, Risk with its triggers, Ships,
    and Blocks when needed) and a `Not verified` bullet in Proof.
 4. Stay within the word budget for the risk tier: about 150 words for low,
    250 for medium, and 400 for high. Delete empty sections. Never publish a
