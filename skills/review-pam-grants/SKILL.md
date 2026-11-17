@@ -80,31 +80,59 @@ service account.
 
 ## 1. Find open grants
 
-Discover entitlements this account can approve, then list
-`APPROVAL_AWAITED` grants on each.
-
-Known gated projects (try these; skip 403 / empty):
-
-- T0: `t0-liquidity` `t0-oracle` `t0-pricing` `t0-bebop` `t0-artifacts`
-  `t0-price-publisher`
-- S01: `s01-issuance` `s01-artifacts` `s01-observability`
+Search every project the account can see. Do not search only a fixed
+list: a fixed list misses new gated projects. For each project, find the
+entitlements this account can approve, then list the grants on each.
+Run it once per account (`juan@t0trade.com`, then `juan@s01issuer.com`):
 
 ```bash
-gcloud pam entitlements search \
-  --account="$ACCOUNT" \
-  --caller-access-type=grant-approver \
-  --location=global \
-  --project="$PROJECT" \
-  --format='value(name)'
-
-gcloud pam grants search \
-  --account="$ACCOUNT" \
-  --entitlement="$ENTITLEMENT_ID" \
-  --location=global \
-  --project="$PROJECT" \
-  --caller-relationship=can-approve \
-  --format=json
+bash -c '
+ACCOUNT="$1"
+ERR=$(mktemp)
+for PROJECT in $(gcloud projects list --account="$ACCOUNT" --format="value(projectId)"); do
+  if ! OUT=$(gcloud pam entitlements search --account="$ACCOUNT" \
+      --caller-access-type=grant-approver --location=global \
+      --project="$PROJECT" --format="value(name)" 2>"$ERR"); then
+    if grep -qiE "reauth|credentials|login" "$ERR"; then
+      echo "AUTH ERROR on $PROJECT:"; cat "$ERR"; exit 1
+    fi
+    continue  # 403 or PAM API disabled: skip this project
+  fi
+  for NAME in $OUT; do
+    case "$NAME" in projects/*/locations/global/entitlements/*) ;; *) continue ;; esac
+    ENTITLEMENT_ID=${NAME##*/}
+    echo "== $PROJECT $ENTITLEMENT_ID"
+    gcloud pam grants search --account="$ACCOUNT" \
+      --entitlement="$ENTITLEMENT_ID" --location=global --project="$PROJECT" \
+      --caller-relationship=can-approve --format=json
+  done
+done' _ "$ACCOUNT"
 ```
+
+Skip a project that returns 403, returns nothing, or has the PAM API
+disabled. Do not skip an auth or reauth error: follow step 0.
+
+Known gated projects. This is a check, not the search scope. Expect the
+search to find at least these:
+
+- T0: `t0-liquidity` `t0-oracle` `t0-pricing` `t0-bebop` `t0-artifacts`
+  `t0-price-publisher` `t0-alpaca-ops`
+- S01: `s01-issuance` `s01-artifacts` `s01-observability`
+  `s01-alpaca-ops`
+
+If the search finds an approvable entitlement on a project that is not
+on this list, report it. Verify it with the same rules.
+
+Gotchas:
+
+- `gcloud pam` writes `Parsed [...] resource:` info lines to stderr.
+  These are not errors. Use the exit code to find a failure, not the
+  stderr text.
+- `--format='value(name)'` can give output that the shell splits badly.
+  Use only words with the full `projects/.../entitlements/<id>` shape.
+  The entitlement ID is the last path segment. Ignore all other words.
+- In zsh, `set -- $x` and unquoted `$x` do not word-split. Run loops
+  that split fields under `bash -c`, as above.
 
 `can-approve` never returns the user's own grant: PAM does not let a
 requester approve their own request, even when they are a listed
@@ -154,6 +182,17 @@ present. Fetch the run and the commit's files (`gh run view`,
   S01 `s01-artifacts` and `s01-observability` need 1 (approvers juan,
   kais).
 
+**Alpaca ops stacks** (`t0-alpaca-ops` in `T0Trade/t0.devops`,
+`s01-alpaca-ops` in `S01-Issuer/s01.devops`, both
+`terraform/production-alpaca-ops`): production `tf-apply-owner` stacks.
+Each needs 2 of 4 votes from alastair, josh, juan, kais (at that org's
+domain). The rules above apply: requester
+`tf-apply@$PROJECT.iam.gserviceaccount.com`, `roles/admin`, at most
+`14400s`. The usual diff class is the bot gateway (`t0-liqbot`,
+`s01-issuancebot`): `*_image` digest pins and `*_config_version` pins.
+The apply creates or rolls Cloud Run services that call the live Alpaca
+account, so state that in the blast radius.
+
 **Other S01 entitlements** (on `s01-issuance`, each 2 of 4 from alastair,
 josh, juan, kais):
 
@@ -192,6 +231,8 @@ Call out the **diff class** from the commit files, in plain language:
 - liquidity `cloud_run_image`, `cloud_run_config_version`, or
   `cloud_run_ops_routes` (the Cloud Run bot: create, roll, or delete it,
   or move the ops API routes)
+- alpaca-ops gateway `*_image` digest or `*_config_version` pin (Cloud
+  Run services that call the live Alpaca account)
 - `secrets_version` (secrets pin)
 - IAM / KMS / PAM / workflow files (identity)
 
