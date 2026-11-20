@@ -79,6 +79,9 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
   deploy). The box has no tmux on PATH; to drive a login from a session, run it
   under `nix build --print-out-paths nixpkgs#tmux` and send the pasted code
   with `send-keys`.
+- An expired login goes back into its own slot: `marvin accounts login
+  claude-1`, never `add`. `add` makes a new slot, so one login then fills two
+  (2026-11-20: leads@ became claude-4 while claude-1 stayed logged out).
 - Required checks, all posted by App 5077017 on ST0x repos:
   `rain-marvin/reviewed` (ruleset 24013665) and `human/reviewed` (ruleset
   23778102). The Graphite
@@ -148,12 +151,14 @@ where it comes from.
 
 ## Inspect and verify
 
-As `marvin`:
+As `marvin`, always through a login shell (`bash -lc`). A plain non-login SSH
+shell has no agent CLIs on PATH, so `marvin accounts` and `marvin models`
+wrongly report "not installed" or "login unknown":
 
 ```sh
-ssh marvin@marvin.taile5cf8a.ts.net 'marvin models; marvin jobs --all | head'
-ssh marvin@marvin.taile5cf8a.ts.net 'marvin job <id or text> --log 40'
-ssh marvin@marvin.taile5cf8a.ts.net 'marvin accounts'
+ssh marvin@marvin.taile5cf8a.ts.net 'bash -lc "marvin models; marvin jobs --all | head"'
+ssh marvin@marvin.taile5cf8a.ts.net 'bash -lc "marvin job <id or text> --log 40"'
+ssh marvin@marvin.taile5cf8a.ts.net 'bash -lc "marvin accounts"'
 ```
 
 As root:
