@@ -22,7 +22,11 @@ The `zulip` skill comes from T0Trade/agent-skills. On machines that have both
   it for organization-admin work and for messages Juan explicitly asks to send
   as himself.
 - Use Juan-Bot only to send messages to Juan, such as work-update reports and
-  gcloud-login prompts. Never read with it.
+  gcloud-login prompts. Never read with it, with one exception: the Juan-Bot
+  DM assistant (the `juan-bot` service on juan-dev-server, code in
+  `nix-darwin-config/modules/nixos/juan-bot`) reads the DMs sent to Juan-Bot
+  itself, and nothing else, so it can answer them. All other Zulip reading
+  still uses `~/.zuliprc-personal`.
 - Pass `--config` on every `zulipctl` command. Do not rely on `~/.zuliprc`.
 - Use the `write-as-me` skill for any prose sent as Juan.
 - Add Juan-Bot (`juan-bot@raingroup.zulipchat.com`) to the initial subscribers
