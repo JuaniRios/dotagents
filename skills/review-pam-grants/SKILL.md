@@ -116,9 +116,11 @@ Known gated projects. This is a check, not the search scope. Expect the
 search to find at least these:
 
 - T0: `t0-liquidity` `t0-oracle` `t0-pricing` `t0-bebop` `t0-artifacts`
-  `t0-price-publisher` `t0-alpaca-ops`
+  `t0-price-publisher` `t0-alpaca-ops` `t0-exporters`
+  `t0-loopyloupe-operator` `t0-uni-v4-price-oracle` `t0-turnkey-audit`
+  `st0x-artifacts`
 - S01: `s01-issuance` `s01-artifacts` `s01-observability`
-  `s01-alpaca-ops`
+  `s01-alpaca-ops` `s01-exporters` `s01-tsalt-ui` `s01-tsalt` `s01-site`
 
 If the search finds an approvable entitlement on a project that is not
 on this list, report it. Verify it with the same rules.
@@ -180,7 +182,8 @@ present. Fetch the run and the commit's files (`gh run view`,
 - Role binding is `roles/admin` on that project.
 - `approvals_needed` matches the entitlement: 2 for production stacks.
   S01 `s01-artifacts` and `s01-observability` need 1 (approvers juan,
-  kais).
+  kais). T0 `t0-exporters` needs 1 of 4 (jakub, josh, juan, kais), so
+  one vote runs the apply.
 
 **Alpaca ops stacks** (`t0-alpaca-ops` in `T0Trade/t0.devops`,
 `s01-alpaca-ops` in `S01-Issuer/s01.devops`, both
@@ -192,6 +195,14 @@ domain). The rules above apply: requester
 `s01-issuancebot`): `*_image` digest pins and `*_config_version` pins.
 The apply creates or rolls Cloud Run services that call the live Alpaca
 account, so state that in the blast radius.
+
+**S01 tsalt.xyz release** (`s01-tsalt-ui` `app-deploy`, 1 of 4 from
+jakub, josh, juan, kais): requester is
+`tsalt-ui-releaser@s01-artifacts.iam.gserviceaccount.com`, at most
+`3600s`, `roles/run.developer`. Expected when the justification names the
+`S01-Issuer/tsalt-ui` `release` run that is in progress and quotes the old
+and new `tsalt-ui` image digests. Blast radius: for 1 h the releaser can
+deploy the tsalt.xyz Cloud Run service.
 
 **Other S01 entitlements** (on `s01-issuance`, each 2 of 4 from alastair,
 josh, juan, kais):
