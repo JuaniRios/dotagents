@@ -98,6 +98,7 @@ gh-token broker (user marvin-app holds the App key) ──> 1-hour, one-repo tok
 | GitHub orgs Marvin works in | `orgs` in `modules/marvin/default.nix`, and install the App there |
 | Models, aliases, priority | `models` and `priority` in `modules/marvin/default.nix`; CLI command lines in `bot/marvin/router.py` |
 | Scheduled agent task | a block under `tasks` in `modules/marvin/default.nix` (schedule, prompt, Zulip target) |
+| Channel for alerts and scheduled reports | `marvin.zulipChannel` in `modules/marvin/default.nix` (default `marvin-general`; flake check `zulip-channel`) |
 | Lanes and concurrency | `LANES` and `LANE_THREADS` in `bot/marvin/jobqueue.py` |
 | Zulip behavior, instant commands | `bot/marvin/zulip.py` |
 | Webhook filters, Linear OAuth install | `bot/marvin/hooks.py` |
@@ -132,7 +133,7 @@ to `main`, so every change goes through a PR.
    (`https://app.graphite.com/github/pr/T0Trade/marvin/<number>`).
 5. Deploy happens on merge. The `pull_request` webhook makes `marvin-hooks`
    touch `/run/marvin-deploy/trigger`, and the root `marvin-deploy` unit runs
-   `rebuild`; a failure pages `#general > marvin / failures`. Watch it:
+   `rebuild`; a failure pages `#marvin-general > marvin / failures`. Watch it:
 
    ```sh
    ssh root@marvin.taile5cf8a.ts.net journalctl -u marvin-deploy -f
@@ -173,8 +174,11 @@ ssh root@marvin.taile5cf8a.ts.net 'journalctl -u marvin-worker -u marvin-zulip -
   `accounts.json`, `zulip-engaged.json`).
 - Prometheus and Alertmanager on loopback only:
   `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 root@marvin.taile5cf8a.ts.net`.
-- Alerts post to Zulip `#general > marvin / failures` and
-  `#devops general > marvin / usage`.
+- Failure and audit alerts and scheduled reports (P&L, daily summary,
+  self-debug) post to Zulip `#marvin-general` (e.g.
+  `#marvin-general > marvin / failures`), set only by the
+  `marvin.zulipChannel` option. Usage alerts stay in
+  `#devops general > marvin / usage`; replies stay where they were asked.
 - End to end: DM rain-marvin in Zulip (the reply names the model), or comment
   `@rain-marvin review` on a PR in a covered org.
 
