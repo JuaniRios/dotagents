@@ -181,14 +181,17 @@ present. Fetch the run and the commit's files (`gh run view`,
 - `BY:` is a GitHub actor, not a random email.
 - Role binding is `roles/admin` on that project.
 - `approvals_needed` matches the entitlement: 2 for production stacks.
-  S01 `s01-artifacts` and `s01-observability` need 1 (approvers juan,
-  kais). T0 `t0-exporters` needs 1 of 4 (jakub, josh, juan, kais), so
-  one vote runs the apply.
+  S01 `s01-observability` and T0 `t0-exporters` need 1 of 4, so one
+  vote runs the apply. Approvers on every entitlement are jakub, josh,
+  juan, kais (at that org's domain); Jakub replaced Alastair. If an
+  entitlement still lists alastair (seen on `s01-artifacts`
+  `tf-apply-owner`, 2 of 4, on 2026-11-23), its PAM config has not been
+  applied yet: report the drift.
 
 **Alpaca ops stacks** (`t0-alpaca-ops` in `T0Trade/t0.devops`,
 `s01-alpaca-ops` in `S01-Issuer/s01.devops`, both
 `terraform/production-alpaca-ops`): production `tf-apply-owner` stacks.
-Each needs 2 of 4 votes from alastair, josh, juan, kais (at that org's
+Each needs 2 of 4 votes from jakub, josh, juan, kais (at that org's
 domain). The rules above apply: requester
 `tf-apply@$PROJECT.iam.gserviceaccount.com`, `roles/admin`, at most
 `14400s`. The usual diff class is the bot gateway (`t0-liqbot`,
@@ -204,7 +207,7 @@ jakub, josh, juan, kais): requester is
 and new `tsalt-ui` image digests. Blast radius: for 1 h the releaser can
 deploy the tsalt.xyz Cloud Run service.
 
-**Other S01 entitlements** (on `s01-issuance`, each 2 of 4 from alastair,
+**Other S01 entitlements** (on `s01-issuance`, each 2 of 4 from jakub,
 josh, juan, kais):
 
 - `prod-ssh`: a human requester (one of those four) gets IAP tunnel,
