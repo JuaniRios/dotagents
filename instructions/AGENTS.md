@@ -47,6 +47,8 @@ review thread has a reply and is resolved.
 If CI fails or a bot does not approve, keep fixing and looping. If a real
 blocker stops you, report the PR as blocked with the failing check or the
 missing approval. Never call it done, finished, or wrapped up.
+Personal `JuaniRios` repositories skip Rain Marvin: finish-pr merges the PR
+once its other steps pass (description, green CI if any, threads resolved).
 
 Skip this only when the user explicitly asks for a draft or a push without
 review.

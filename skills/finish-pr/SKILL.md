@@ -8,7 +8,9 @@ description: >-
   unless a comment is underrated. Use when asked to address review
   feedback, drive Rain Marvin, or finish PR review, when an
   active implementation workflow requires it, and always before reporting a
-  PR you opened or changed as done. Do not trigger for status-only checks.
+  PR you opened or changed as done. In Juan's personal repositories (owner
+  `JuaniRios`) it skips Rain Marvin, requires green CI if the repository has
+  any, and squash-merges the PR. Do not trigger for status-only checks.
 ---
 
 # Finish PR
@@ -35,11 +37,36 @@ as incomplete, not wrapped up.
   question. Ordinary implementation details do not need a decision.
 - Do not merge, deploy, release, change branch protection, dismiss human
   reviews, enable paid review capacity, or create issues without authority.
+  The one exception is the merge in "Personal repositories" below.
 - Follow repository instructions and the graphite skill for version control.
   Use write-as-me for published replies. Preserve unrelated local changes.
   Stage explicit paths, never all dirty files.
 
-## 0. Prepare the PR
+## Personal repositories
+
+Find the owner from the repository, not from a list of names:
+`gh repo view --json owner --jq .owner.login` (or the owner in the `origin`
+remote URL). If the owner is `JuaniRios`, the repository is personal. Every
+other owner (T0Trade, ST0x-Technology, S01-Issuer, rainlanguage, and all
+other organizations) uses the full workflow in this skill.
+
+In a personal repository:
+
+- Do not run Rain Marvin and do not wait for it. Skip sections 3 and 4 and
+  the Rain Marvin conditions in sections 5 and 6. Do not post
+  `@rain-marvin` commands.
+- Still do section 0 (draft, description through pr-description, assignee;
+  reviewers only if CODEOWNERS names someone other than the author), and
+  still handle existing human feedback through sections 1 and 2.
+- If the repository has CI (any check on the head), every non-skipped check
+  must pass on the exact published head. Use ci-fix for failures. If it has
+  no CI, run the repository's local checks for the changed files (for
+  example the Nix build of the changed unit) and record the result.
+- Graphite usually does not sync personal repositories. Use the graphite
+  skill's GitHub fallback for publishing and merging, and show GitHub PR
+  links.
+- Then merge instead of stopping at ready (section 6, personal merge).
+
 
 Do this for every in-scope PR before touching feedback.
 
@@ -182,6 +209,8 @@ sections 1 and 2 like any other review comment.
 
 ## 3. Drive Rain Marvin through review and approval
 
+Skip this section and section 4 in a personal repository.
+
 After existing feedback is handled, or immediately if none exists, inspect
 Rain Marvin's review history. The handle is `@rain-marvin`.
 
@@ -307,7 +336,7 @@ perform the final audit:
 - Report human approvals separately, including stale approvals. Do not
   manufacture approval or wait indefinitely for another person's review.
 
-## 6. Mark ready for review
+## 6. Mark ready for review (and merge in a personal repository)
 
 Only when every condition holds on the exact published head:
 
@@ -322,11 +351,29 @@ head SHA immediately before; if it moved, return to the loop. For a stack,
 mark PRs ready bottom-up, each only after its own conditions hold. If any
 condition fails, leave the PR in draft and report why.
 
+**Personal merge.** In a personal repository, the Rain Marvin condition does
+not apply. When the other conditions hold:
+
+1. Check that `gh pr view <url> --json headRefOid` equals
+   `git rev-parse <branch>`. If not, publish with the safe force push and
+   check CI again.
+2. `gh pr ready <url>`, then
+   `gh pr merge <url> --squash --match-head-commit "$(git rev-parse <branch>)"`.
+   For a stack, merge bottom-up as in the graphite skill's GitHub fallback.
+3. Poll `gh pr view <url> --json state,mergeCommit` until it shows `MERGED`.
+4. Remove the merged branch and its worktree as in the graphite skill
+   ("Remove a merged branch"). Preserve unrelated local changes in other
+   checkouts; do not pull over them.
+
+Do not deploy. The PR is done when it shows `MERGED`.
+
 ## 7. Report
 
 Report each PR with its link, head, draft/ready state, fixes, Rain Marvin
 coverage and approval, remaining nits or decisions, CI, conflicts, and
-missing human approvals.
+missing human approvals. For a personal repository, report the GitHub PR
+link, the merge commit, CI, and that Rain Marvin was skipped by rule.
 "Ready for review" requires Rain Marvin's approval on the current head, the
 final audit, and a verified `gh pr ready`. It does not mean merged,
-deployed, or human-approved.
+deployed, or human-approved. In a personal repository, "done" means
+`MERGED` (not deployed).

@@ -6,7 +6,8 @@ description: >
   use light checks for low-risk config edits, one independent pass for simple
   changes, or full review loops for complex changes. Always run finish-pr,
   which loops Rain Marvin until it approves and then marks the PR ready for
-  review.
+  review (in a personal `JuaniRios` repository it skips Rain Marvin and
+  merges once CI is green).
   Use when the user wants an issue implemented end to end.
 argument-hint: "<issue-link-or-number>"
 allowed-tools: Bash(*), Read, Write, Edit
@@ -114,7 +115,9 @@ review rounds use targeted checks; do not repeatedly wait for full remote CI.
    existing feedback, and loops with Rain Marvin, with no round cap, until it
    approves the current head. Only then does it mark the PR
    ready for review. It owns replies, thread resolution, and final
-   verification. A blocked result is incomplete, not convergence.
+   verification. A blocked result is incomplete, not convergence. In a
+   personal repository (owner `JuaniRios`), finish-pr skips Rain Marvin and
+   merges the PR once CI is green; see its "Personal repositories" section.
    Ask only for substantive disagreements, alternatives, or real blockers.
 3. Do not wait for CI runs started by intermediate pushes. Those runs may be
    cancelled by later pushes.
@@ -127,8 +130,8 @@ meaningful changes. Reuse finish-pr's exact-head evidence;
 do not launch another pipeline to duplicate its final gate.
 If Graphite skipped CI, use the repository's permitted local equivalent
 (such as `nix run .#ci`) and disclose it. Do not report a PR that is still
-in draft, lacks either bot approval, or skipped optional multi-model review as
-converged; report remaining work and do not declare the issue complete.
+in draft, lacks either bot approval (not needed in a personal repository),
+or skipped optional multi-model review as converged; report remaining work and do not declare the issue complete.
 
 ## 11. Report
 

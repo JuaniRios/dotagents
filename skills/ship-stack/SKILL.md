@@ -7,8 +7,9 @@ description: >
   finishes its PR with finish-pr, implements every follow-up found along the
   way as a Graphite stack on top (each finished with finish-pr), verifies
   the stack is green and mergeable, and reports what was done and every
-  decision made so the user can merge. Not for questions, reviews,
-  investigations, or work another skill owns.
+  decision made so the user can merge. In Juan's personal repositories
+  (owner `JuaniRios`), finish-pr skips Rain Marvin and merges each PR. Not
+  for questions, reviews, investigations, or work another skill owns.
 argument-hint: "<task | linear-issue-link-or-id>"
 allowed-tools: Bash(*), Read, Write, Edit
 ---
@@ -61,6 +62,10 @@ when Rain Marvin approved the exact published head, CI is green on it,
 every thread has a reply and is resolved, and the PR is ready for review.
 Log follow-ups from its review rounds.
 
+In a personal repository (owner `JuaniRios`, see finish-pr "Personal
+repositories"), finish-pr skips Rain Marvin and is done when the PR shows
+`MERGED`. Stack follow-ups on trunk after each merge, and show GitHub links.
+
 ## 3. Follow-ups as a stack
 
 Triage the log: drop duplicates, items already fixed, and items too vague
@@ -88,7 +93,9 @@ approve each PR's exact current head.
 
 ## 4. Verify the stack is merge-ready
 
-Do not merge. The user merges. Verify every PR bottom to top on its exact
+Do not merge in a work repository. The user merges. (In a personal
+repository finish-pr already merged each PR; verify each shows `MERGED`.)
+Verify every PR bottom to top on its exact
 published head (`gh pr view <n> --json
 headRefOid,isDraft,mergeable,mergeStateStatus,reviewDecision` and
 `gh pr checks <n>`):
@@ -123,10 +130,12 @@ deployed.
 
 1. Never ask the user or wait for them after the task is known. Decide,
    log, and report.
-2. Never merge, deploy, or release. The user merges after reading the
-   report.
+2. Never merge, deploy, or release in a work repository. The user merges
+   after reading the report. In a personal repository finish-pr merges;
+   still never deploy or release.
 3. Every PR runs finish-pr to completion before the next starts, and again
    whenever its head moves.
-4. Version control through the `graphite` skill. Show Graphite PR links.
+4. Version control through the `graphite` skill. Show Graphite PR links
+   (GitHub links for personal repositories).
 5. No admin merges, rule bypasses, dismissed reviews, or branch-protection
    changes.

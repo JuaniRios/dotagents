@@ -65,11 +65,13 @@ redundant requests. Planning alone does not create a PR or trigger review.
 There is no round cap at any level: finish-pr loops with Rain Marvin until
 it approves the current head, then marks the PR ready for review. It owns
 fixes, replies, resolution, and final checks. This does
-not require adding a local model-review loop.
+not require adding a local model-review loop. In a personal repository
+(owner `JuaniRios`), finish-pr skips Rain Marvin and merges once CI is green.
 
 Required CI and repository checks still apply at every level. Use ci before
 Rust or Nix pushes as required; depth controls review overhead, not whether
 broken code may be shipped. Report skipped optional local reviews honestly. Do not
 claim review convergence when no covered review occurred.
 
-No level authorizes merging, deployment, or unrequested scope expansion.
+No level authorizes deployment or unrequested scope expansion, or merging
+outside finish-pr's personal-repository rule.
