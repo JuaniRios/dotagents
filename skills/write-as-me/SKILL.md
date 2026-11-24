@@ -1,6 +1,6 @@
 ---
 name: write-as-me
-description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. The draft always comes from a Gemini 4 Neon drafter run with the `agy` CLI, and so does every writeup posted to Zulip, Telegram, or a PR. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
+description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. The draft always comes from a Gemini 4 Neon drafter (T3 Code's Antigravity provider, or the `agy` CLI), and so does every writeup posted to Zulip, Telegram, or a PR. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
 ---
 
 # Write as me
@@ -13,7 +13,7 @@ formality up or down by audience, but the constants below never change.
 
 ## Who drafts: a Gemini 4 Neon drafter (always)
 
-You do not write the prose yourself. Gemini 4 Neon drafts it through `agy`, and
+You do not write the prose yourself. Gemini 4 Neon drafts it, and
 you check it. This applies to every use of this skill, and to every writeup
 that goes to Zulip, Telegram, or a PR (description, review body, inline
 comment, issue comment, thread reply), also when Juan-Bot sends it. Other
@@ -31,24 +31,41 @@ tell the drafter not to start subagents.
    it; paste the file into the brief if the drafter cannot read files. Ask for
    the final text only, with no comment around it. One run can draft several
    texts, for example all the thread replies of one review round.
-2. **Run the drafter.** Wait for it, because the next step needs the draft.
-   Run Juan's `agy` CLI (Google Antigravity) on every host, T3 Code included.
-   Do not use Cursor or `delegate_task` for this step:
+2. **Run the drafter.** The next step needs the draft. Never use Cursor.
+   - **In T3 Code** (the `delegate_task` tool exists): call
+     `orchestrator_capabilities` once per thread. If it lists provider
+     `antigravity` with model `gemini-4-neon` and no constraint, start the
+     drafter with `delegate_task`: target `{providerInstanceId: "antigravity",
+     model: "gemini-4-neon", options: {thought_level: "high"}}`,
+     `interactionMode: "plan"`, `role: "research"`, and the brief as `task`.
+     Do not set `runtimeMode`: the narrow modes pause for human approval.
+     This child is not sandboxed: plan mode and the research role do not stop
+     its file writes. So the brief must say "do not create or edit any file;
+     reply with the text only", and after it ends you check `git status` in
+     the checkout and undo any file it touched. A draft can take longer than
+     the 45 s cap of `mode: "wait"`, so follow the tool's `next`: its
+     completion wakes your thread. Do not poll it. Then read the draft with
+     `task_status`.
+   - **Elsewhere, or when T3 Code has no usable `antigravity` provider or the
+     delegate fails:** run Juan's `agy` CLI (Google Antigravity):
 
-   ```bash
-   agy --model gemini-4-neon-high --mode plan --sandbox \
-     --add-dir "$HOME/Github/dotagents/skills/write-as-me" \
-     --print-timeout 300s -p "$(cat "$brief")" < /dev/null
-   ```
+     ```bash
+     agy --model gemini-4-neon-high --mode plan --sandbox \
+       --add-dir "$HOME/Github/dotagents/skills/write-as-me" \
+       --print-timeout 300s -p "$(cat "$brief")" < /dev/null
+     ```
 
-   Put `-p` last: it takes the next argument as the prompt. A short draft
-   takes about 30 seconds. Headless `agy` refuses file writes, so a brief that
-   asks for one returns no text; ask for the text only. For a long or
-   important text (a weekly report, a PR description), you can use
+     Put `-p` last: it takes the next argument as the prompt. A short draft
+     takes about 30 seconds.
+
+   Headless `agy` refuses file writes, so a brief that asks for one returns
+   no text; on both routes, ask for the text only. For a long or important
+   text (a weekly report, a PR description), you can use
+   `thought_level: "xhigh"` or
    `gemini-4-neon-xhigh`.
-   - `agy` is missing, fails, or does not offer the model: stop and tell Juan
-     that the Neon drafter is not available. Do not draft it yourself and do
-     not use another model.
+   - No route works (no `antigravity` provider and `agy` is missing, fails,
+     or does not offer the model): stop and tell Juan that the Neon drafter
+     is not available. Do not draft it yourself and do not use another model.
 3. **Check the draft.** Every fact, number, and link must match the brief, and
    each link must point to the right target. Check the mechanics below (no em
    dashes, Oxford comma). Fix a wrong fact or link with the smallest edit. If

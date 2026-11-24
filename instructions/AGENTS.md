@@ -39,7 +39,8 @@ The `zulip` skill comes from T0Trade/agent-skills. On machines that have both
 
 Any writeup that goes to Zulip, Telegram, or a PR (description, comment,
 review, or thread reply), and any prose sent as Juan, is drafted by Gemini 4
-Neon through the `agy` CLI, never Cursor. Follow the "Who drafts" section of
+Neon, never Cursor: in T3 Code through `delegate_task` to the `antigravity`
+provider, elsewhere through the `agy` CLI. Follow the "Who drafts" section of
 the `write-as-me` skill: brief, draft, check, then use. Text a script or
 template builds with no free prose, such as sign-in links, is exempt. If the
 drafter is not available, tell me. Never draft it yourself instead.
@@ -95,4 +96,5 @@ In T3 Code, the main session only coordinates. It does not do the work itself.
   the answer.
 - A delegate does its own work. It does not apply this rule or start more
   delegates. One exception: any agent, a delegate included, runs the
-  Gemini 4 Neon drafter (`agy`) that `write-as-me` requires for a writeup.
+  Gemini 4 Neon drafter (T3 `antigravity` delegate or `agy`) that
+  `write-as-me` requires for a writeup.
