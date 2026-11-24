@@ -1,6 +1,6 @@
 ---
 name: write-as-me
-description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. The draft always comes from a Gemini 4 Neon subagent, and so does every writeup posted to Zulip, Telegram, or a PR. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
+description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. The draft always comes from a Gemini 4 Neon drafter run with the `agy` CLI, and so does every writeup posted to Zulip, Telegram, or a PR. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
 ---
 
 # Write as me
@@ -11,9 +11,9 @@ thinking out loud. Never AI-polished, never corporate, never padded.
 His voice is **one personality across a register gradient** — he dials
 formality up or down by audience, but the constants below never change.
 
-## Who drafts: a Gemini 4 Neon subagent (always)
+## Who drafts: a Gemini 4 Neon drafter (always)
 
-You do not write the prose yourself. A Gemini 4 Neon subagent drafts it, and
+You do not write the prose yourself. Gemini 4 Neon drafts it through `agy`, and
 you check it. This applies to every use of this skill, and to every writeup
 that goes to Zulip, Telegram, or a PR (description, review body, inline
 comment, issue comment, thread reply), also when Juan-Bot sends it. Other
@@ -32,16 +32,23 @@ tell the drafter not to start subagents.
    the final text only, with no comment around it. One run can draft several
    texts, for example all the thread replies of one review round.
 2. **Run the drafter.** Wait for it, because the next step needs the draft.
-   - T3 Code: `delegate_task` with target
-     `{providerInstanceId: "cursor", model: "gemini-4-neon"}`. Call
-     `orchestrator_capabilities` once per thread first. Keep the default
-     options (1m context, high effort).
-   - Other hosts: check that `cursor-agent status` prints `Logged in`, then
-     run `cursor-agent -p --mode ask --trust --model gemini-4-neon
-     --workspace "$PWD" "$(cat "$brief")" < /dev/null`.
-   - Neither works, or the model is not offered: stop and tell Juan that the
-     Neon drafter is not available. Do not draft it yourself and do not use
-     another model.
+   Run Juan's `agy` CLI (Google Antigravity) on every host, T3 Code included.
+   Do not use Cursor or `delegate_task` for this step:
+
+   ```bash
+   agy --model gemini-4-neon-high --mode plan --sandbox \
+     --add-dir "$HOME/Github/dotagents/skills/write-as-me" \
+     --print-timeout 300s -p "$(cat "$brief")" < /dev/null
+   ```
+
+   Put `-p` last: it takes the next argument as the prompt. A short draft
+   takes about 30 seconds. Headless `agy` refuses file writes, so a brief that
+   asks for one returns no text; ask for the text only. For a long or
+   important text (a weekly report, a PR description), you can use
+   `gemini-4-neon-xhigh`.
+   - `agy` is missing, fails, or does not offer the model: stop and tell Juan
+     that the Neon drafter is not available. Do not draft it yourself and do
+     not use another model.
 3. **Check the draft.** Every fact, number, and link must match the brief, and
    each link must point to the right target. Check the mechanics below (no em
    dashes, Oxford comma). Fix a wrong fact or link with the smallest edit. If
