@@ -89,7 +89,8 @@ Report the review and its URL. An incomplete panel, a `critical` or `high`
 finding that could not be verified, or findings lost during parsing do not
 count as either outcome and must not be submitted.
 
-Posted comments: ASD-STE100, lowercase severity prefix
+Posted comments are drafted by the `write-as-me` skill's Gemini 4 Neon
+drafter (see publish-review). They use ASD-STE100, lowercase severity prefix
 (`critical:` / `should fix:` / `minor:` / `nit:`, mapped from the schema
 severity as in panel-runtime; one prefix per comment), no em dashes, no
 AI/model mentions, no `#1` prefixes. `line` must be in the diff hunk.

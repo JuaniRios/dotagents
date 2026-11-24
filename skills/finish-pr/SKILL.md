@@ -39,7 +39,8 @@ as incomplete, not wrapped up.
   reviews, enable paid review capacity, or create issues without authority.
   The one exception is the merge in "Personal repositories" below.
 - Follow repository instructions and the graphite skill for version control.
-  Use write-as-me for published replies. Preserve unrelated local changes.
+  Draft every published reply and PR comment with write-as-me (its Gemini 4
+  Neon drafter; one run can draft all replies of a round). Preserve unrelated local changes.
   Stage explicit paths, never all dirty files.
 
 ## Personal repositories

@@ -101,8 +101,8 @@ sensible order rather than raw PR-number order.
 
 ## Step 5 — Compose the message
 
-Load the `write-as-me` skill first. This message is sent to a colleague as
-him, so the framing line and every PR description have to sound like him:
+Load the `write-as-me` skill first and have its Gemini 4 Neon drafter write
+the prose. This message is sent to a colleague as him, so the framing line and every PR description have to sound like him:
 short, direct, warm, no corporate padding.
 
 The voice applies to the prose — the ask, the section names, and each PR's

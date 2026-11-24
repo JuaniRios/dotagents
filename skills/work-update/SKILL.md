@@ -438,7 +438,8 @@ user's emphasis, corrections, intended next focus, and any missing decisions.
 Continue verification while awaiting that input. Do not invent personal
 intent or a team agreement from activity alone.
 
-Read `write-as-me` before drafting. Use the short template below. It
+Read `write-as-me` before drafting; its Gemini 4 Neon drafter writes the
+update from your brief. Use the short template below. It
 replaces the old six-section narrative (General direction, What I worked on,
 Discussions, Next, Blockers, PRs) and the old daily-report template. The team
 adopted it on 2026-10-09 ([announcement](https://raingroup.zulipchat.com/#narrow/channel/632881-engineering/topic/Progress.20Updates)).

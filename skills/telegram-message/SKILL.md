@@ -21,8 +21,8 @@ If no argument is provided, ask what to send.
 ## Step 2 — Format the message
 
 If you are **writing** the message (the user described what to say rather than
-handing you the exact text), load the `write-as-me` skill first and draft it
-in his voice. It goes out under his name.
+handing you the exact text), load the `write-as-me` skill first and have its
+Gemini 4 Neon drafter write it in his voice. It goes out under his name.
 
 Skip the voice skill when the user supplied the literal text to send, or when
 the content is machine output being relayed verbatim (logs, an error, a quoted
@@ -96,6 +96,6 @@ else:
 4. Keep messages concise and scannable.
 5. If `telegram-bot.env` is missing or send fails, print the formatted
    message and tell the user to copy-paste manually.
-6. When drafting the wording yourself, always load the `write-as-me` skill
-   first — the message is sent as him. Do not apply it to text the user
+6. When the wording is not supplied, always get it from the `write-as-me`
+   skill's Gemini 4 Neon drafter — the message is sent as him. Do not apply it to text the user
    supplied verbatim or to relayed machine output; format those unchanged.

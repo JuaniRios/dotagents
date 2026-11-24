@@ -28,11 +28,21 @@ The `zulip` skill comes from T0Trade/agent-skills. On machines that have both
   itself, and nothing else, so it can answer them. All other Zulip reading
   still uses `~/.zuliprc-personal`.
 - Pass `--config` on every `zulipctl` command. Do not rely on `~/.zuliprc`.
-- Use the `write-as-me` skill for any prose sent as Juan.
+- Use the `write-as-me` skill for any prose sent as Juan. Its Gemini 4 Neon
+  drafter writes every Zulip writeup, also the ones Juan-Bot sends.
 - Add Juan-Bot (`juan-bot@raingroup.zulipchat.com`) to the initial subscribers
   of every new private channel unless Juan excludes bots: after creation, Zulip
   may only allow a current content-access member to invite it. Report it apart
   from the human subscribers.
+
+## Writeups come from a Gemini 4 Neon drafter
+
+Any writeup that goes to Zulip, Telegram, or a PR (description, comment,
+review, or thread reply), and any prose sent as Juan, is drafted by a Gemini
+4 Neon subagent. Follow the "Who drafts" section of the `write-as-me` skill:
+brief, draft, check, then use. Text a script or template builds with no free
+prose, such as sign-in links, is exempt. If the drafter is not available,
+tell me. Never draft it yourself instead.
 
 ## Pull requests are not done until finish-pr passes
 
@@ -84,4 +94,5 @@ In T3 Code, the main session only coordinates. It does not do the work itself.
 - Do quick read-only questions inline when delegating would take longer than
   the answer.
 - A delegate does its own work. It does not apply this rule or start more
-  delegates.
+  delegates. One exception: any agent, a delegate included, starts the
+  Gemini 4 Neon drafter that `write-as-me` requires for a writeup.

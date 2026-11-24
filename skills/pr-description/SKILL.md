@@ -26,7 +26,8 @@ anything else.
 - `graphite` — version-control mechanics for the rest of this command.
 - `write-as-me` — the PR body is prose the user ships under his own name, so
   it MUST be in his voice, not yours. Load it now, before you read the diff, so
-  the first draft is already in-voice. The merge brief in step 5 fixes the
+  the first draft is already in-voice. Its Gemini 4 Neon drafter writes the
+  title and body from your brief; you check them before step 8. The merge brief in step 5 fixes the
   *structure*; this is about *voice*. Do not skip it just because the diff is
   small.
 
@@ -536,8 +537,8 @@ And a one-line confirmation per PR updated.
 12. Preserve screenshots across regeneration — re-insert already-hosted image
     markdown verbatim, and never replace a real screenshot with a local path or
     an invented URL.
-13. Always draft the body in the user's voice via the `write-as-me` skill,
-    loaded in step 1. Never ship a body with an em dash or any other tell from
+13. Always have the body drafted in the user's voice by the `write-as-me`
+    skill's Gemini 4 Neon drafter, loaded in step 1. Never ship a body with an em dash or any other tell from
     the "Sounds like AI" list.
 14. Always write the body in ASD-STE100 (Simplified Technical English): one idea
     per sentence, short sentences, active voice, simple tenses, one word per

@@ -102,7 +102,9 @@ COMMENT review. Report the error.
 
 ## 5. Compose inline comments (findings only)
 
-For each finding, write a **concise, human-like** inline comment. Do NOT
+For each finding, get a **concise, human-like** inline comment from the
+`write-as-me` skill's Gemini 4 Neon drafter (one run for all comments; brief
+it with the rules below). Do NOT
 copy the markdown verbatim. Transform each finding into a short review
 comment that:
 

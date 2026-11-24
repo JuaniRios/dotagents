@@ -1,6 +1,6 @@
 ---
 name: write-as-me
-description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
+description: Write in the user's own voice for ANY prose he'll send as himself — Telegram messages, Linear issues, progress/status reports, PR descriptions, docs, emails, review replies. Apply this WHENEVER drafting text on the user's behalf that another human will read as if he wrote it, even when not explicitly asked. The draft always comes from a Gemini 4 Neon subagent, and so does every writeup posted to Zulip, Telegram, or a PR. Skip only for code, internal notes, or machine output. Derived from ~1 year of his real GitHub + Telegram writing, and kept simple per ASD-STE100.
 ---
 
 # Write as me
@@ -10,6 +10,50 @@ thinking out loud. Never AI-polished, never corporate, never padded.
 
 His voice is **one personality across a register gradient** — he dials
 formality up or down by audience, but the constants below never change.
+
+## Who drafts: a Gemini 4 Neon subagent (always)
+
+You do not write the prose yourself. A Gemini 4 Neon subagent drafts it, and
+you check it. This applies to every use of this skill, and to every writeup
+that goes to Zulip, Telegram, or a PR (description, review body, inline
+comment, issue comment, thread reply), also when Juan-Bot sends it. Other
+skills point here for this step.
+
+It applies when you are a delegate or subagent too. This instruction is the
+explicit permission to start one child: the drafter. Start nothing else, and
+tell the drafter not to start subagents.
+
+1. **Brief.** Write the brief to a file. Include: the reader and channel, the
+   register, the goal, every fact, number, and identifier the text must
+   carry, each link as its exact URL, what is unknown or untested, and the
+   format (Zulip Markdown, Telegram HTML, the PR template, length). Tell the
+   drafter to read `~/Github/dotagents/skills/write-as-me/SKILL.md` and follow
+   it; paste the file into the brief if the drafter cannot read files. Ask for
+   the final text only, with no comment around it. One run can draft several
+   texts, for example all the thread replies of one review round.
+2. **Run the drafter.** Wait for it, because the next step needs the draft.
+   - T3 Code: `delegate_task` with target
+     `{providerInstanceId: "cursor", model: "gemini-4-neon"}`. Call
+     `orchestrator_capabilities` once per thread first. Keep the default
+     options (1m context, high effort).
+   - Other hosts: check that `cursor-agent status` prints `Logged in`, then
+     run `cursor-agent -p --mode ask --trust --model gemini-4-neon
+     --workspace "$PWD" "$(cat "$brief")" < /dev/null`.
+   - Neither works, or the model is not offered: stop and tell Juan that the
+     Neon drafter is not available. Do not draft it yourself and do not use
+     another model.
+3. **Check the draft.** Every fact, number, and link must match the brief, and
+   each link must point to the right target. Check the mechanics below (no em
+   dashes, Oxford comma). Fix a wrong fact or link with the smallest edit. If
+   the draft misses the voice or the facts badly, send it back with the
+   problems, once or twice. Do not rewrite the voice yourself.
+4. **Use it.** Hand the checked text back to the skill that asked for it.
+
+**Not a writeup** (no drafter needed): text the user gave word for word, machine
+output relayed as is (logs, errors), and text a script or template builds with
+no free prose, such as sign-in links and prompts from the `gcloud-login` and
+`daily-logins` helpers, or a generated list of PR links. If you add your own
+sentences to it, those sentences go through the drafter.
 
 ## The constants (every register)
 
