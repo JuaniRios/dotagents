@@ -25,6 +25,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import secrets
 import sys
 from pathlib import Path
 from typing import Callable, Optional
@@ -35,7 +36,7 @@ HELPERS = HOME / "Github/dotagents/skills/gcloud-login/scripts"
 LOG_DIR = HOME / "Github/dotagents/data/daily-logins"
 TELEGRAM_ENV = "~/.config/telegram-bot.env"  # same path on the Mac
 sys.path.insert(0, str(HELPERS))
-from telegram_bot import TelegramBot, TelegramError  # noqa: E402
+from telegram_bot import INBOX_SOCKET, TelegramBot, TelegramError  # noqa: E402
 
 CONFIRM_HOURS = 12
 LOGIN_NAMES = {
@@ -138,11 +139,21 @@ class Run:
                 self.log(f"    {line}")
         return proc.returncode
 
-    def mac(self, script: str, *, quiet: bool = False, timeout: Optional[float] = None) -> int:
-        """Runs a bash script on the Mac, sent on stdin so no shell quoting is needed."""
+    def mac(self, script: str, *, quiet: bool = False, timeout: Optional[float] = None,
+            inbox: bool = False) -> int:
+        """Runs a bash script on the Mac, sent on stdin so no shell quoting is needed.
+
+        inbox=True forwards Juan-Bot's Telegram inbox socket to the Mac for this SSH session only, so a
+        helper there gets Juan's replies from Juan-Bot instead of reading the bot itself. If the forward
+        fails, the helper finds no socket and reads directly (it says so)."""
+        forward, env = [], ""
+        if inbox and os.path.exists(INBOX_SOCKET):
+            remote = f"/tmp/jb-inbox-{secrets.token_hex(8)}.sock"
+            forward = ["-o", "StreamLocalBindMask=0177", "-R", f"{remote}:{INBOX_SOCKET}"]
+            env = f"export JB_INBOX_SOCKET={remote}\ntrap 'rm -f {remote}' EXIT\n"
         return self.command(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", MAC, "/bin/bash", "-s"],
-            stdin=f"set -u\n{MAC_PATH}\n{script}\n",
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", *forward, MAC, "/bin/bash", "-s"],
+            stdin=f"set -u\n{MAC_PATH}\n{env}{script}\n",
             quiet=quiet,
             timeout=timeout,
         )
@@ -156,7 +167,7 @@ def gcloud_login(run: Run, account: str, update_adc: bool, host: str, remote: bo
     ] + (["--update-adc"] if update_adc else [])
     if remote:
         helper = '"$HOME/Github/dotagents/skills/gcloud-login/scripts/zulip_remote_login.py"'
-        code = run.mac(f"set +x\npython3 {helper} {' '.join(args)}")
+        code = run.mac(f"set +x\npython3 {helper} {' '.join(args)}", inbox=True)
     else:
         code = run.command(["python3", str(HELPERS / "zulip_remote_login.py"), *args])
     ok = code == 0

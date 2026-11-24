@@ -222,6 +222,24 @@ the user asks for Telegram.
 
 - The helper checks that the chat is a private chat with one person and reads
   only that person's text messages newer than its request.
+- Juan-Bot (the `juan-bot` service on juan-dev-server) is the only program
+  that reads this bot with `getUpdates`. The helper gets Juan's replies from
+  Juan-Bot's inbox socket (`/var/lib/juan-bot/run/inbox.sock`): Juan-Bot
+  routes to it the replies to its own messages, and a code-shaped message
+  while it waits for one. It still sends and deletes its own messages. On the
+  Mac it uses `$JB_INBOX_SOCKET` (daily-logins forwards the socket over its
+  SSH session) or an `ssh -L` forward to `juan-dev-server`.
+- If the inbox does not answer, the helper prints "Juan-Bot's inbox is not
+  reachable … reading Telegram directly" and reads the bot itself, as before.
+  Juan-Bot then treats that time as blind (no PAM votes, a script's words and
+  codes left for it), so a reply can still reach only one of the two. Report
+  that line if it appears.
+- If Juan-Bot asks "could be for more than one thing", Juan replies to the
+  sign-in message itself; a Telegram reply to a helper's message always goes
+  to that helper.
+- Live check of the inbox, no login: `python3 scripts/telegram_bot.py
+  inbox-test [seconds]` sends "🧪 Juan-Bot inbox test: reply `ok`" and waits
+  (default 900 s) for Juan-Bot to route the reply.
 - The request is the same message, sent with link previews off, so Telegram
   never fetches the sign-in URL.
 - Cleanup deletes the same message IDs as on Zulip with the bot token. A bot

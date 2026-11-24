@@ -25,6 +25,14 @@ replies, and the helper deletes the exchange. This skill never handles a
 code, URL, or token itself; its script moves token files without reading them
 into output.
 
+Juan-Bot is the only program that reads the Telegram bot; this script and
+the helpers get Juan's replies from Juan-Bot's inbox (see the `gcloud-login`
+skill's "Telegram transport"). While the script waits for `go`, a plain `go`
+or `skip` goes to it, unless a Juan-Bot item (such as a PAM vote) waits on
+Juan too: then Juan-Bot asks him to reply to the message he means. A reply to
+the "Daily logins ready" message always goes to this script. For the Mac
+gcloud fallback, the SSH session forwards the inbox socket to the Mac.
+
 Telegram is used because Juan often mutes Zulip. Telegram bot chats are not
 end-to-end encrypted (bots cannot open Secret Chats); neither is Zulip. The
 codes are single-use, PKCE-bound, redeemed at once, and deleted afterwards.
@@ -57,7 +65,8 @@ Mac (the helper runs there, so the Mac needs the current helpers and
 
 ## Prerequisites
 
-- Server: `gcloud`, `python3`, `nu`, the nushell `st0x-*-client` wrappers
+- Server: the `juan-bot` service running (else the helpers read Telegram
+  directly and say so), `gcloud`, `python3`, `nu`, the nushell `st0x-*-client` wrappers
   (`nix-darwin-config` `home/shell.nix`) with
   `~/.config/st0x/{liquidity,issuance}-client.nuon`, and
   `~/.config/telegram-bot.env` (mode 600, a private chat with Juan).
