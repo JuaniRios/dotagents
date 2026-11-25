@@ -19,7 +19,8 @@ model.
 | composer 2.5 | standard | — | — | `cursor-agent -p --model composer-2.5` |
 | sol 6.1 | high | codex | isolated Codex child, `-m gpt-6.1-sol` high | `CODEX_HOME=~/.codex codex exec --skip-git-repo-check --sandbox read-only -m gpt-6.1-sol` (ccx) |
 | opus 5.5 | (xhigh when the lane says so) | claude | isolated Claude child, `model: claude-opus-5-5` | `env -u ANTHROPIC_API_KEY claude -p --model claude-opus-5-5` |
-| flash 3.8 | high | agy | isolated Agy child, `gemini-3.8-flash-high` | `agy -p --model gemini-3.8-flash-high` |
+| Gemini 4 Neon | high | agy | isolated Agy child, `gemini-4-neon-high` | `agy --model gemini-4-neon-high -p` |
+| flash 3.8 | high | agy | isolated Agy child, `gemini-3.8-flash-high` | `agy --model gemini-3.8-flash-high -p` |
 | Kimi K3.1 Pro | high (never max) | kimi | isolated Kimi child, `kimi-code/k3.1-pro` | `kimi -m kimi-code/k3.1-pro -p` |
 
 A model is **native** only on its home harness, and only as an
@@ -29,7 +30,12 @@ other harness, reach it through that model's foreign CLI. Never
 `kimi -p` on their home harnesses.
 
 Do not pick opus 5.5 through the Agy CLI (Agy lists Claude
-model ids; those are not this panel's Claude path).
+model ids; those are not this panel's Claude path). Put `-p` last on
+an `agy` command line: `agy -p --model X` reads `--model` as the prompt
+and fails.
+
+Gemini 4 Neon is a substitute only: no skill gives it a lane of its
+own, but it is the first substitute after opus 5.5.
 
 Cursor is not a supported host harness in this contract. Cursor Grok 4.7 and
 composer 2.5 are CLI-only lanes in every multi-model panel, using the exact
@@ -58,24 +64,31 @@ Max preflight below drops it:
 | opus 5.5 | Max preflight below |
 | sol 6.1 | `codex login status` exits 0 |
 | Cursor Grok 4.7, composer 2.5 | `cursor-agent status` prints `Logged in` |
-| flash 3.8 | `agy models` exits 0 (it fails fast when logged out; a lane would sit at a login prompt) |
+| Gemini 4 Neon, flash 3.8 | `agy models` exits 0 (it fails fast when logged out; a lane would sit at a login prompt) |
 | Kimi K3.1 Pro | `kimi -m kimi-code/k3.1-pro -p "Reply with OK" < /dev/null` exits 0 and prints `OK` (no status command; a logged-out CLI exits non-zero) |
 
 Never start a lane on an unavailable model. **Run it on the first
 available substitute instead**, with the same lane prompt and focus.
 
-Substitutes follow one preference order: **opus 5.5, sol 6.1, Kimi K3.1 Pro,
-Cursor Grok 4.7, composer 2.5, flash 3.8**. A lane's substitute is the
-first available model in that order, other than the missing model:
+Substitutes follow one preference order: **opus 5.5, Gemini 4 Neon,
+sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8**. A
+lane's substitute is the first available model in that order, other than
+the missing model:
 
 | Unavailable | Substitutes, in order |
 |---|---|
-| opus 5.5 | sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8 |
-| sol 6.1 | opus 5.5, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8 |
-| Kimi K3.1 Pro | opus 5.5, sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.8 |
-| Cursor Grok 4.7 | opus 5.5, sol 6.1, Kimi K3.1 Pro, composer 2.5, flash 3.8 |
-| composer 2.5 | opus 5.5, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, flash 3.8 |
-| flash 3.8 | opus 5.5, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5 |
+| opus 5.5 | Gemini 4 Neon, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8 |
+| sol 6.1 | opus 5.5, Gemini 4 Neon, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5, flash 3.8 |
+| Kimi K3.1 Pro | opus 5.5, Gemini 4 Neon, sol 6.1, Cursor Grok 4.7, composer 2.5, flash 3.8 |
+| Cursor Grok 4.7 | opus 5.5, Gemini 4 Neon, sol 6.1, Kimi K3.1 Pro, composer 2.5, flash 3.8 |
+| composer 2.5 | opus 5.5, Gemini 4 Neon, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, flash 3.8 |
+| flash 3.8 | opus 5.5, Gemini 4 Neon, sol 6.1, Kimi K3.1 Pro, Cursor Grok 4.7, composer 2.5 |
+
+A substitute must still keep the generals distinct models: skip a model
+that another general of the same pass already runs on. 2026-11-25: with
+opus 5.5 and Kimi K3.1 Pro out of usage, sol 6.1 was already a general, so
+the opus lane went to Cursor Grok 4.7, which timed out, and reviews ended
+without quorum.
 
 A substituted lane is labeled and recorded as the model that ran it
 (`flash-spec (on Kimi K3.1 Pro)`, `found_by: ["kimi-k3.1-pro"]`), never as
@@ -90,10 +103,13 @@ CLI makes both Cursor models unavailable; never fall back to the direct
 lanes move to their substitutes. Check the CLI with `command -v` before
 its preflight command; a missing CLI needs no other check.
 
-**On Marvin's box** (`MARVIN_JOB_ID` is set), flash 3.8 is not
-installed: Marvin has no Gemini subscription. Do not preflight it and do
-not look for `agy`. It is unavailable for the whole run, so skip it in
-every substitute chain, and council on Marvin drops it and says so.
+**On Marvin's box** (`MARVIN_JOB_ID` is set), Marvin checks
+availability itself, and the prompt lists the available models and often
+the model of each lane. Follow it. `agy` is signed in there, and
+Gemini 4 Neon runs when the prompt lists it. flash 3.8 is never one of
+Marvin's review models: treat it
+as unavailable for the whole run, skip it in every substitute chain, and
+council on Marvin drops it and says so.
 
 **Retries and stragglers:**
 
@@ -180,6 +196,9 @@ after=$(cd "$repoRoot" && git status --porcelain=v1 && git diff | sha256sum)
 [ "$before" = "$after" ] || echo "flash lane changed $repoRoot" >&2
 rm -rf "$snap"
 
+# Gemini 4 Neon — the same snapshot wrapper as flash 3.8, with
+# --model gemini-4-neon-high.
+
 # Kimi K3.1 Pro — Kimi Max subscription. -p runs with `auto` permissions and
 # no read-only flag (--plan cannot be combined with -p), so, like flash,
 # the lane runs only in a throwaway snapshot and the real tree is checked
@@ -206,7 +225,8 @@ jq -rs '[.[] | select(.role == "assistant" and ((.tool_calls // []) | length) ==
 
 **Review lanes must never change the code under review.** Every
 foreign-CLI lane runs read-only: sol uses `--sandbox read-only`, the
-Cursor lanes use `--mode ask`, and flash and Kimi K3.1 Pro run only in a
+Cursor lanes use `--mode ask`, and the Agy lanes (Gemini 4 Neon, flash 3.8)
+and Kimi K3.1 Pro run only in a
 snapshot copy as above, because no `agy` flag, and no `kimi -p` flag,
 makes them read-only. Prompt paths inside
 the snapshot are the same relative paths. If the real tree changed during
@@ -237,7 +257,9 @@ sys.exit("no JSON object in the answer") if not found else print(json.dumps(foun
 ```
 
 A lane whose answer holds a JSON object never counts as failed on its
-exit code or on surrounding prose. These exact model IDs were verified with `cursor-agent models`. Always
+exit code or on surrounding prose. The Agy lanes' JSON output puts the
+answer in `.response`, not `.result`: extract it with `jq -er .response`
+and the same parser. These exact model IDs were verified with `cursor-agent models`. Always
 pass them to `cursor-agent`, never to the direct `grok` CLI, which bills the
 separate xAI account. Kimi K3.1 Pro output gets the same `jq` extraction and schema
 validation. A parse or validation failure
@@ -271,7 +293,7 @@ substitute the remaining Claude-model lanes for the rest of the run.
 A pass counts only if **at least two different models** returned, and
 **at least one is not the host harness's home model** (treat Cursor Grok 4.7
 as host-equivalent on Grok; sol 6.1 on Codex; opus 5.5 on Claude;
-flash 3.8 on Agy; Kimi K3.1 Pro on Kimi).
+Gemini 4 Neon and flash 3.8 on Agy; Kimi K3.1 Pro on Kimi).
 Otherwise the pass is `incomplete`. Do not converge.
 
 ## Code-review lanes (review-loop, review-pr)
@@ -442,7 +464,7 @@ which.
 
 Critics, in parallel, one generalist each: opus 5.5, sol 6.1, Kimi K3.1 Pro,
 and Cursor Grok 4.7. The opus 5.5 critic also applies `approach-inspector`'s
-plan section. No flash 3.8 or composer 2.5, except as a substitute. If Claude is
+plan section. No Gemini 4 Neon, flash 3.8, or composer 2.5, except as a substitute. If Claude is
 unreachable, substitute the opus 5.5 critic and label the run `portable`. If Claude is the host, label it `claude-host`.
 
 Implementer and fixer stay on the host model (or a cheap same-harness
@@ -488,6 +510,6 @@ composite or focused specialist lane.
 5. Do not impersonate an unavailable **model**: a substitute runs under
    its own name.
 6. Never name a harness as if it were a model. Lanes are owned by
-   Cursor Grok 4.7, composer 2.5, sol 6.1, opus 5.5, flash 3.8, or
-   Kimi K3.1 Pro — not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy" /
+   Cursor Grok 4.7, composer 2.5, sol 6.1, opus 5.5, Gemini 4 Neon,
+   flash 3.8, or Kimi K3.1 Pro — not by "Cursor" / "Grok" / "Codex" / "Claude" / "Agy" /
    "Kimi".
