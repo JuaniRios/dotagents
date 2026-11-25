@@ -104,7 +104,7 @@ COMMENT review. Report the error.
 
 For each finding, get a **concise, human-like** inline comment from the
 `write-as-me` skill's Gemini 4 Neon drafter (one run for all comments; brief
-it with the rules below). Do NOT
+it with the rules below). If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable. Do NOT
 copy the markdown verbatim. Transform each finding into a short review
 comment that:
 

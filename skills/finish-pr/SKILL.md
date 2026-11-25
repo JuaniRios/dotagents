@@ -40,7 +40,7 @@ as incomplete, not wrapped up.
   The one exception is the merge in "Personal repositories" below.
 - Follow repository instructions and the graphite skill for version control.
   Draft every published reply and PR comment with write-as-me (its Gemini 4
-  Neon drafter; one run can draft all replies of a round). Preserve unrelated local changes.
+  Neon drafter; one run can draft all replies of a round). If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable. Preserve unrelated local changes.
   Stage explicit paths, never all dirty files.
 
 ## Personal repositories
@@ -97,7 +97,9 @@ Do this for every in-scope PR before touching feedback.
      the last matching pattern wins, as on GitHub; a matching line with no
      owners means that file has no owner. Request each owner: a user as
      `<login>`, a team `@org/team` as `org/team`.
-   - **Pseudo owners.** If there is no CODEOWNERS file, or a changed file
+   - **Pseudo owners.** Skip this and the next bullet, with no error, if
+     `~/Github/dotagents-private` does not exist; then request only the
+     code owners. If there is no CODEOWNERS file, or a changed file
      has no owner, also request the repository's pseudo owners from
      `~/Github/dotagents-private/data/pr-reviewers/<owner>/<repo>.json`.
      Run `~/Github/dotagents-private/scripts/data-sync.sh pull` before you

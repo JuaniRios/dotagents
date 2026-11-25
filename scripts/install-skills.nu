@@ -220,8 +220,10 @@ def install-hooks [dry: bool] {
   }
 }
 
-# Public rainlanguage repos whose skills/ Marvin's `@rain-marvin audit` runs
-# (T0Trade/marvin bot/marvin/audit.py).
+# Public rainlanguage repos whose skills/ this script links for local
+# harnesses. Marvin's `@rain-marvin audit` (T0Trade/marvin bot/marvin/audit.py)
+# runs the same skills, but Marvin does not run this script: it has its own
+# installer, home/files/install-skills.sh in T0Trade/marvin.
 const RAIN_SKILL_REPOS = ["claude-audit-skills", "adversarial-mutation-test"]
 
 def main [--dry-run] {

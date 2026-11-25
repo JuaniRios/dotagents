@@ -90,7 +90,7 @@ finding that could not be verified, or findings lost during parsing do not
 count as either outcome and must not be submitted.
 
 Posted comments are drafted by the `write-as-me` skill's Gemini 4 Neon
-drafter (see publish-review). They use ASD-STE100, lowercase severity prefix
+drafter (see publish-review). If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable. They use ASD-STE100, lowercase severity prefix
 (`critical:` / `should fix:` / `minor:` / `nit:`, mapped from the schema
 severity as in panel-runtime; one prefix per comment), no em dashes, no
 AI/model mentions, no `#1` prefixes. `line` must be in the diff hunk.

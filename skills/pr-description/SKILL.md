@@ -29,7 +29,7 @@ anything else.
   the first draft is already in-voice. Its Gemini 4 Neon drafter writes the
   title and body from your brief; you check them before step 8. The merge brief in step 5 fixes the
   *structure*; this is about *voice*. Do not skip it just because the diff is
-  small.
+  small. If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable.
 
 You will be using `gt` for all version-control
 reads in this command; raw `git` is only acceptable for read-only inspection
@@ -301,6 +301,7 @@ links after `gt submit` opens it (step 9).
   are fine. No em dashes, Oxford comma always. `write-as-me` owns the voice
   and the ASD-STE100 rules (one idea per sentence, about 20 words, active
   voice, no Latin, no "and/or"). Do not restate them here; follow them.
+  Without `write-as-me`, follow the same ASD-STE100 rules in your own words.
 - **Sounds like AI: rewrite any draft that has these tells.**
   - Openers and wrap-ups: "This PR introduces/adds/updates…", "In summary",
     "Overall", "Key changes include", "It's worth noting".
@@ -538,7 +539,7 @@ And a one-line confirmation per PR updated.
     markdown verbatim, and never replace a real screenshot with a local path or
     an invented URL.
 13. Always have the body drafted in the user's voice by the `write-as-me`
-    skill's Gemini 4 Neon drafter, loaded in step 1. Never ship a body with an em dash or any other tell from
+    skill's Gemini 4 Neon drafter, loaded in step 1. If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable. Never ship a body with an em dash or any other tell from
     the "Sounds like AI" list.
 14. Always write the body in ASD-STE100 (Simplified Technical English): one idea
     per sentence, short sentences, active voice, simple tenses, one word per

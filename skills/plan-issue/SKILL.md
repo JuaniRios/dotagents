@@ -39,7 +39,7 @@ the local plan in implement-issue.
 
 ## 1. Read the issue
 
-Use linear-cli and write-as-me. `linear issue view <ID>`.
+Use linear-cli and write-as-me. If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable. `linear issue view <ID>`.
 If `<ID> Plan summary` or `<ID> Implementation Plan` already exists, ask
 whether to rewrite or stop.
 
@@ -121,7 +121,7 @@ inline plan), actual review coverage, and the decisions needed.
 2. Publish both documents at every level. Titles are exactly
    `<ID> Plan summary` and `<ID> Implementation Plan`.
 3. The summary is concise and has no code identifiers; the how belongs only in
-   the implementation plan. Use write-as-me for prose.
+   the implementation plan. Use write-as-me for prose. If the `write-as-me` skill is not available, skip it: write the prose yourself in plain ASD-STE100 English, and do not stop or report the drafter as unavailable.
 4. Ground every claim in the repo.
 5. Apply the selected level's review, not a mandatory panel at every level.
 6. Deep panels follow panel-runtime. Never impersonate a dropped model.
