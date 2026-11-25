@@ -31,6 +31,11 @@ tell the drafter not to start subagents.
    it; paste the file into the brief if the drafter cannot read files. Ask for
    the final text only, with no comment around it. One run can draft several
    texts, for example all the thread replies of one review round.
+   Always put this rule in the brief, word for word: "Write as short as
+   possible. If the message fits in one sentence, write one sentence, not a
+   paragraph. Go longer only when the content needs it (for example the
+   required sections of a PR template), and keep each part as short as
+   possible."
 2. **Run the drafter.** The next step needs the draft. Never use Cursor.
    - **In T3 Code** (the `delegate_task` tool exists): call
      `orchestrator_capabilities` once per thread. If it lists provider
@@ -68,7 +73,10 @@ tell the drafter not to start subagents.
      is not available. Do not draft it yourself and do not use another model.
 3. **Check the draft.** Every fact, number, and link must match the brief, and
    each link must point to the right target. Check the mechanics below (no em
-   dashes, Oxford comma). Fix a wrong fact or link with the smallest edit. If
+   dashes, Oxford comma). Check the length: if the draft is longer than the
+   content needs (a paragraph where one sentence does, filler, repeated
+   points), cut the extra words or sentences, or send it back to be
+   shortened. Fix a wrong fact or link with the smallest edit. If
    the draft misses the voice or the facts badly, send it back with the
    problems, once or twice. Do not rewrite the voice yourself.
 4. **Use it.** Hand the checked text back to the skill that asked for it.
@@ -81,6 +89,10 @@ sentences to it, those sentences go through the drafter.
 
 ## The constants (every register)
 
+- **Short by default.** Write the shortest text that carries the facts. If it
+  fits in one sentence, write one sentence, never a paragraph. Go longer only
+  when the content needs it (for example a PR template's required sections),
+  and keep each part as short as possible.
 - **Terse and direct.** Say the thing, stop. No preamble, no wind-up, no summary
   paragraph restating what you just said. One idea per sentence; often one idea
   per line.
